@@ -8647,157 +8647,276 @@ function getVal(row, dim) {
  return v !== undefined ? String(v) : '—';
 }
 function renderAnalytics(){
- if(!window._anX)window._anX={group:'category'};
+ if(!window._anX)window._anX={dim:'category',measure:'sales',sort:'sales',sortDir:-1,period:'90d',channel:'all',drill:[]};
  const X=window._anX;
- const fmt=n=>'$'+Math.abs(Math.round(n)).toLocaleString();
- const fmtN=n=>Math.abs(n).toLocaleString();
- const D={
-  kpi:{grossSales:3191040,netSales:2248241,totalStock:77895,
-   orders:9708,aov:267,sessions:105200,convRate:1.67,
-   sellThrough:42,incoming:21983,activeItems:16094,
-   discounts:497755,returns:445043,shipping:10027
-  },
-  channels:{
-   'Online (Shopify)':{sales:1420000,orders:4200,pct:45},
-   'Atica Man POS':{sales:1100000,orders:3800,pct:35},
-   'Borsalino POS':{sales:630000,orders:1708,pct:20}
-  },
-  byCategory:[
-   {n:'Shirts',skus:4780,stock:49965,inc:15361,sales:38450,vel:1281,xr:1.7},
-   {n:'Suits',skus:6095,stock:7875,inc:15,sales:3136,vel:102,xr:2.5},
-   {n:'Pants',skus:819,stock:6585,inc:2259,sales:5300,vel:176,xr:1.7},
-   {n:'Suit Pants',skus:1623,stock:4104,inc:0,sales:2156,vel:71,xr:1.9},
-   {n:'Men\'s Ties',skus:266,stock:2263,inc:0,sales:1338,vel:44,xr:1.7},
-   {n:'Socks',skus:45,stock:1473,inc:0,sales:2320,vel:77,xr:0.6},
-   {n:'Cufflinks',skus:61,stock:1643,inc:0,sales:246,vel:8,xr:6.7},
-   {n:'Blazers',skus:446,stock:1036,inc:161,sales:997,vel:32,xr:2.7},
-   {n:'Gloves',skus:215,stock:798,inc:0,sales:277,vel:9,xr:2.9},
-   {n:'Kapote',skus:461,stock:327,inc:0,sales:279,vel:9,xr:1.2},
-   {n:'Hat',skus:160,stock:231,inc:0,sales:234,vel:7,xr:1.0},
-   {n:'Men\'s Ties Image V',skus:84,stock:200,inc:0,sales:298,vel:9,xr:0.7},
-   {n:'Shoes',skus:294,stock:158,inc:224,sales:4130,vel:4,xr:18.5},
-   {n:'Sweaters',skus:114,stock:111,inc:0,sales:538,vel:17,xr:0.2},
-   {n:'Coats',skus:285,stock:95,inc:485,sales:269,vel:8,xr:2.2},
-   {n:'Scarves',skus:14,stock:85,inc:0,sales:189,vel:6,xr:0.4},
-   {n:'Rain Coats',skus:81,stock:50,inc:0,sales:68,vel:2,xr:0.7},
-   {n:'Belts',skus:60,stock:724,inc:0,sales:339,vel:11,xr:2.1},
-   {n:'Accessories',skus:3,stock:20,inc:0,sales:28,vel:0.9,xr:0.7},
-   {n:'Vests',skus:42,stock:37,inc:0,sales:4,vel:0.1,xr:9.3}
-  ],
-  byVendor:[
-   {n:'TAL Group',products:25,stock:5681,sales:18200,type:'Shirts'},
-   {n:'Serena',products:12,stock:2815,sales:4100,type:'Pants'},
-   {n:'Shandong',products:126,stock:4510,sales:8900,type:'Suits/Pants/Blazers'},
-   {n:'JYY',products:8,stock:178,sales:1200,type:'Suits/Blazers'},
-   {n:'Mr. Hatter',products:22,stock:130,sales:234,type:'Hats'},
-   {n:'Dong Guan Hao Sen',products:5,stock:473,sales:246,type:'Cufflinks'},
-   {n:'Richie',products:2,stock:400,sales:180,type:'Belts'},
-   {n:'Scime',products:2,stock:31,sales:159,type:'Belts'},
-   {n:'Sharmoon',products:3,stock:96,sales:410,type:'Blazers'},
-   {n:'Dino Draghi',products:3,stock:22,sales:980,type:'Shoes'},
-   {n:'Manifattura Italiana',products:4,stock:45,sales:1650,type:'Shoes'},
-   {n:'Hefei Easy Way',products:2,stock:112,sales:520,type:'Ties'},
-   {n:'Silvio Fiorello',products:1,stock:43,sales:85,type:'Ties'}
-  ],
-  monthly:[
-   {m:'Oct',sales:580000,orders:1620},
-   {m:'Nov',sales:640000,orders:1780},
-   {m:'Dec',sales:825000,orders:2300},
-   {m:'Jan',sales:470000,orders:1310},
-   {m:'Feb',sales:465000,orders:1296},
-   {m:'Mar',sales:210000,orders:585}
-  ]
+
+ // === DATA LAYER ===
+ const products=[
+  {id:1,name:'Classic White Shirt',sku:'SH-CWS-001',cat:'Shirts',vendor:'TAL Group',ch:'Online (Shopify)',stock:1200,inc:400,cost:28,price:89,sales30:142,sales90:485,units30:58,units90:198,returns:12,disc:2100,created:'2024-06-15'},
+  {id:2,name:'Slim Fit Blue',sku:'SH-SFB-002',cat:'Shirts',vendor:'TAL Group',ch:'Atica Man POS',stock:890,inc:300,cost:32,price:95,sales30:98,sales90:310,units30:42,units90:135,returns:8,disc:1400,created:'2024-07-01'},
+  {id:3,name:'French Cuff Ivory',sku:'SH-FCI-003',cat:'Shirts',vendor:'TAL Group',ch:'Online (Shopify)',stock:650,inc:200,cost:35,price:110,sales30:76,sales90:240,units30:28,units90:89,returns:5,disc:980,created:'2024-08-10'},
+  {id:4,name:'Oxford Button Down',sku:'SH-OBD-004',cat:'Shirts',vendor:'Shandong',ch:'Borsalino POS',stock:420,inc:150,cost:24,price:79,sales30:55,sales90:180,units30:22,units90:74,returns:3,disc:650,created:'2024-09-01'},
+  {id:5,name:'Spread Collar Dress',sku:'SH-SCD-005',cat:'Shirts',vendor:'TAL Group',ch:'Online (Shopify)',stock:380,inc:100,cost:30,price:99,sales30:67,sales90:215,units30:27,units90:88,returns:6,disc:1100,created:'2024-05-20'},
+  {id:6,name:'2-Button Navy Suit',sku:'SU-2BN-001',cat:'Suits',vendor:'Shandong',ch:'Atica Man POS',stock:280,inc:0,cost:180,price:599,sales30:38,sales90:125,units30:8,units90:26,returns:2,disc:4200,created:'2024-03-15'},
+  {id:7,name:'3-Piece Charcoal',sku:'SU-3PC-002',cat:'Suits',vendor:'JYY',ch:'Online (Shopify)',stock:195,inc:15,cost:220,price:749,sales30:24,sales90:78,units30:4,units90:13,returns:1,disc:3100,created:'2024-04-01'},
+  {id:8,name:'Double Breasted Black',sku:'SU-DBB-003',cat:'Suits',vendor:'Shandong',ch:'Borsalino POS',stock:160,inc:0,cost:195,price:649,sales30:18,sales90:62,units30:3,units90:12,returns:1,disc:2800,created:'2024-06-01'},
+  {id:9,name:'Slim Chino Tan',sku:'PA-SCT-001',cat:'Pants',vendor:'Serena',ch:'Online (Shopify)',stock:720,inc:250,cost:22,price:69,sales30:95,sales90:320,units30:45,units90:152,returns:8,disc:1200,created:'2024-07-15'},
+  {id:10,name:'Dress Pant Navy',sku:'PA-DPN-002',cat:'Pants',vendor:'Serena',ch:'Atica Man POS',stock:540,inc:180,cost:28,price:85,sales30:72,sales90:245,units30:32,units90:108,returns:5,disc:900,created:'2024-08-01'},
+  {id:11,name:'Flat Front Grey',sku:'PA-FFG-003',cat:'Pants',vendor:'Shandong',ch:'Borsalino POS',stock:380,inc:120,cost:25,price:75,sales30:48,sales90:165,units30:21,units90:72,returns:4,disc:700,created:'2024-09-10'},
+  {id:12,name:'Suit Pant Charcoal',sku:'SP-SPC-001',cat:'Suit Pants',vendor:'Shandong',ch:'Atica Man POS',stock:450,inc:0,cost:45,price:149,sales30:35,sales90:118,units30:10,units90:32,returns:2,disc:1800,created:'2024-05-01'},
+  {id:13,name:'Suit Pant Navy Slim',sku:'SP-SNS-002',cat:'Suit Pants',vendor:'JYY',ch:'Online (Shopify)',stock:320,inc:0,cost:48,price:159,sales30:28,sales90:95,units30:7,units90:24,returns:1,disc:1500,created:'2024-06-15'},
+  {id:14,name:'Silk Tie Burgundy',sku:'TI-STB-001',cat:'Ties',vendor:'Hefei Easy Way',ch:'Online (Shopify)',stock:280,inc:0,cost:12,price:49,sales30:45,sales90:155,units30:35,units90:120,returns:3,disc:400,created:'2024-04-01'},
+  {id:15,name:'Knit Tie Navy',sku:'TI-KTN-002',cat:'Ties',vendor:'Silvio Fiorello',ch:'Atica Man POS',stock:180,inc:0,cost:15,price:55,sales30:28,sales90:92,units30:18,units90:62,returns:2,disc:350,created:'2024-05-15'},
+  {id:16,name:'Italian Derby Black',sku:'SH-IDB-001',cat:'Shoes',vendor:'Dino Draghi',ch:'Borsalino POS',stock:65,inc:80,cost:95,price:289,sales30:22,sales90:74,units30:3,units90:10,returns:1,disc:1200,created:'2024-03-01'},
+  {id:17,name:'Oxford Cap Toe',sku:'SH-OCT-002',cat:'Shoes',vendor:'Manifattura Italiana',ch:'Online (Shopify)',stock:48,inc:60,cost:110,price:329,sales30:18,sales90:58,units30:2,units90:7,returns:0,disc:980,created:'2024-04-15'},
+  {id:18,name:'Suede Loafer Brown',sku:'SH-SLB-003',cat:'Shoes',vendor:'Manifattura Italiana',ch:'Atica Man POS',stock:35,inc:45,cost:88,price:249,sales30:15,sales90:52,units30:2,units90:8,returns:1,disc:750,created:'2024-06-01'},
+  {id:19,name:'Wool Blazer Navy',sku:'BL-WBN-001',cat:'Blazers',vendor:'Sharmoon',ch:'Online (Shopify)',stock:185,inc:60,cost:85,price:279,sales30:22,sales90:72,units30:4,units90:14,returns:1,disc:1100,created:'2024-07-01'},
+  {id:20,name:'Cotton Crew Socks',sku:'SO-CCS-001',cat:'Socks',vendor:'TAL Group',ch:'Online (Shopify)',stock:1200,inc:0,cost:3,price:12,sales30:180,sales90:620,units30:180,units90:620,returns:5,disc:200,created:'2024-01-15'},
+  {id:21,name:'Leather Belt Black',sku:'BE-LBB-001',cat:'Belts',vendor:'Richie',ch:'Atica Man POS',stock:340,inc:0,cost:18,price:59,sales30:32,sales90:108,units30:18,units90:62,returns:2,disc:450,created:'2024-02-01'},
+  {id:22,name:'Silver Knot Cufflinks',sku:'CU-SKC-001',cat:'Cufflinks',vendor:'Dong Guan Hao Sen',ch:'Borsalino POS',stock:420,inc:0,cost:8,price:39,sales30:18,sales90:62,units30:12,units90:42,returns:1,disc:180,created:'2024-03-15'},
+  {id:23,name:'Leather Gloves Brown',sku:'GL-LGB-001',cat:'Gloves',vendor:'Shandong',ch:'Online (Shopify)',stock:290,inc:0,cost:22,price:69,sales30:12,sales90:42,units30:6,units90:18,returns:1,disc:280,created:'2024-08-01'},
+  {id:24,name:'Wool Overcoat Grey',sku:'CO-WOG-001',cat:'Coats',vendor:'Shandong',ch:'Atica Man POS',stock:45,inc:85,cost:120,price:399,sales30:8,sales90:28,units30:2,units90:7,returns:0,disc:1400,created:'2024-09-01'},
+  {id:25,name:'Kapote Black',sku:'KA-KB-001',cat:'Kapote',vendor:'Shandong',ch:'Atica Man POS',stock:160,inc:0,cost:95,price:349,sales30:10,sales90:35,units30:3,units90:10,returns:0,disc:800,created:'2024-05-01'},
+  {id:26,name:'Fedora Hat Black',sku:'HA-FHB-001',cat:'Hats',vendor:'Mr. Hatter',ch:'Borsalino POS',stock:110,inc:0,cost:35,price:129,sales30:8,sales90:28,units30:3,units90:9,returns:1,disc:350,created:'2024-06-15'},
+  {id:27,name:'Cashmere Sweater V',sku:'SW-CSV-001',cat:'Sweaters',vendor:'Shandong',ch:'Online (Shopify)',stock:65,inc:0,cost:45,price:149,sales30:10,sales90:35,units30:3,units90:9,returns:1,disc:520,created:'2024-07-01'},
+  {id:28,name:'Silk Scarf Navy',sku:'SC-SSN-001',cat:'Scarves',vendor:'TAL Group',ch:'Atica Man POS',stock:45,inc:0,cost:18,price:59,sales30:6,sales90:22,units30:4,units90:14,returns:0,disc:150,created:'2024-08-15'},
+  {id:29,name:'Rain Coat Grey',sku:'RC-RCG-001',cat:'Rain Coats',vendor:'Shandong',ch:'Online (Shopify)',stock:30,inc:0,cost:55,price:179,sales30:4,sales90:14,units30:1,units90:5,returns:0,disc:280,created:'2024-09-01'},
+  {id:30,name:'Vest Charcoal',sku:'VE-VCH-001',cat:'Vests',vendor:'JYY',ch:'Atica Man POS',stock:22,inc:0,cost:38,price:129,sales30:2,sales90:8,units30:1,units90:3,returns:0,disc:120,created:'2024-04-01'}
+ ];
+
+ // === FILTER ENGINE ===
+ const periodDays={7:'7d',30:'30d',90:'90d'};
+ const filtered=products.filter(p=>{
+  if(X.channel!=='all' && p.ch!==X.channel) return false;
+  return true;
+ });
+
+ // === MEASURE DEFINITIONS ===
+ const is30=X.period==='30d'||X.period==='7d';
+ const measures={
+  sales:{label:'Revenue',fn:p=>p.price*(is30?p.units30:p.units90),fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--grn)'},
+  units:{label:'Units Sold',fn:p=>is30?p.units30:p.units90,fmt:v=>Math.round(v).toLocaleString(),color:'var(--grn)'},
+  stock:{label:'Stock',fn:p=>p.stock,fmt:v=>v.toLocaleString(),color:'var(--txt)'},
+  margin:{label:'Margin %',fn:p=>((p.price-p.cost)/p.price*100),fmt:v=>v.toFixed(1)+'%',color:'var(--grn)'},
+  aov:{label:'Avg Price',fn:p=>p.price,fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--txt)'},
+  velocity:{label:'Vel/wk',fn:p=>(is30?p.units30/4.3:p.units90/13),fmt:v=>v.toFixed(1),color:'var(--txt2)'},
+  sellThru:{label:'Sell-Thru %',fn:p=>{const s=is30?p.units30:p.units90;return p.stock>0?(s/(s+p.stock)*100):0;},fmt:v=>v.toFixed(1)+'%',color:null},
+  xrate:{label:'X Rate',fn:p=>{const s=is30?p.units30:p.units90;const vel=is30?s/4.3:s/13;return p.stock>0?(vel*52/p.stock):0;},fmt:v=>v.toFixed(1),color:null},
+  returns:{label:'Returns',fn:p=>p.returns,fmt:v=>v.toLocaleString(),color:'var(--brick)'},
+  discounts:{label:'Discounts',fn:p=>p.disc,fmt:v=>'$'+v.toLocaleString(),color:'var(--brick)'},
+  incoming:{label:'Incoming',fn:p=>p.inc,fmt:v=>v.toLocaleString(),color:'#22c55e'},
+  cost:{label:'Cost',fn:p=>p.cost*(is30?p.units30:p.units90),fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--brick)'},
+  gp:{label:'Gross Profit',fn:p=>(p.price-p.cost)*(is30?p.units30:p.units90),fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--grn)'}
  };
- const groups={category:D.byCategory,vendor:D.byVendor};
- const gData=groups[X.group]||D.byCategory;
 
- // Channel breakdown
- const channelRows=Object.entries(D.channels).map(([ch,d])=>`<div style="display:grid;grid-template-columns:1fr 100px 60px 80px;padding:8px 0;border-bottom:1px solid var(--brd);font-size:12px;align-items:center">
-  <span style="font-weight:600">${ch}</span>
-  <span style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--grn)">${fmt(d.sales)}</span>
-  <span style="text-align:right;font-family:var(--mono);color:var(--txt2)">${fmtN(d.orders)}</span>
-  <div style="text-align:right"><div style="background:var(--grn);height:6px;border-radius:3px;width:${d.pct}%;margin-left:auto"></div><span style="font-size:10px;color:var(--txt3)">${d.pct}%</span></div>
- </div>`).join('');
+ // === DIMENSION DEFINITIONS ===
+ const dims={
+  category:{label:'Category',key:'cat'},
+  vendor:{label:'Vendor',key:'vendor'},
+  channel:{label:'Channel',key:'ch'},
+  product:{label:'Product',key:'name'}
+ };
 
- // Sales breakdown
- const salesBreak=`<div style="padding:12px 0">
-  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--grn);font-weight:600">Gross Sales</span><span style="font-family:var(--mono);font-weight:600">${fmt(D.kpi.grossSales)}</span></div>
-  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--brick)">Discounts</span><span style="font-family:var(--mono);color:var(--brick)">-${fmt(D.kpi.discounts)}</span></div>
-  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--brick)">Returns</span><span style="font-family:var(--mono);color:var(--brick)">-${fmt(D.kpi.returns)}</span></div>
-  <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;font-weight:700;border-top:2px solid var(--brd-s)"><span>Net Sales</span><span style="font-family:var(--mono);color:var(--grn)">${fmt(D.kpi.netSales)}</span></div>
-  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--txt3)">Shipping</span><span style="font-family:var(--mono)">${fmt(D.kpi.shipping)}</span></div>
- </div>`;
+ // === AGGREGATION ===
+ const dimKey=dims[X.dim].key;
+ const grouped={};
+ filtered.forEach(p=>{
+  const k=p[dimKey];
+  if(!grouped[k])grouped[k]={key:k,items:[],_agg:{}};
+  grouped[k].items.push(p);
+ });
 
- // Group selector
- const groupBtns=['category','vendor'].map(g=>`<button onclick="window._anX.group='${g}';navigate('analytics')" style="padding:6px 14px;border-radius:16px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;text-transform:capitalize;background:${X.group===g?'var(--grn)':'var(--sur2)'};color:${X.group===g?'#fff':'var(--txt2)'}">${g}</button>`).join('');
+ // Compute all measures for each group
+ const activeMeasures=['sales','units','stock','margin','velocity','xrate','incoming'];
+ Object.values(grouped).forEach(g=>{
+  activeMeasures.forEach(m=>{
+   const mDef=measures[m];
+   if(m==='margin'){
+    const totalRev=g.items.reduce((s,p)=>s+p.price*(is30?p.units30:p.units90),0);
+    const totalCost=g.items.reduce((s,p)=>s+p.cost*(is30?p.units30:p.units90),0);
+    g._agg[m]=totalRev>0?((totalRev-totalCost)/totalRev*100):0;
+   } else if(m==='velocity'){
+    const totalUnits=g.items.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
+    g._agg[m]=is30?totalUnits/4.3:totalUnits/13;
+   } else if(m==='xrate'){
+    const totalUnits=g.items.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
+    const totalStock=g.items.reduce((s,p)=>s+p.stock,0);
+    const vel=is30?totalUnits/4.3:totalUnits/13;
+    g._agg[m]=totalStock>0?(vel*52/totalStock):0;
+   } else if(m==='aov'){
+    g._agg[m]=g.items.reduce((s,p)=>s+p.price,0)/g.items.length;
+   } else if(m==='sellThru'){
+    const s=g.items.reduce((a,p)=>a+(is30?p.units30:p.units90),0);
+    const st=g.items.reduce((a,p)=>a+p.stock,0);
+    g._agg[m]=st>0?(s/(s+st)*100):0;
+   } else {
+    g._agg[m]=g.items.reduce((s,p)=>s+mDef.fn(p),0);
+   }
+  });
+  g._agg.products=g.items.length;
+ });
 
- // Data table header
- const isVendor=X.group==='vendor';
- const colHeader=isVendor
-  ?`<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 1.5fr;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
-   <span>Vendor</span><span style="text-align:right">Products</span><span style="text-align:right">Stock</span><span style="text-align:right;color:var(--grn)">Sales</span><span style="text-align:right">Category</span></div>`
-  :`<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 80px 60px 70px;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
-   <span>Category</span><span style="text-align:right">SKUs</span><span style="text-align:right">Stock</span><span style="text-align:right;color:#22c55e">Inc</span><span style="text-align:right;color:var(--grn)">Sales</span><span style="text-align:right">Vel</span><span style="text-align:right;background:rgba(200,150,0,.08);border-radius:4px;padding:2px 4px">X Rate</span></div>`;
+ // Sort
+ let rows=Object.values(grouped);
+ const sortM=X.sort;
+ rows.sort((a,b)=>{
+  const av=a._agg[sortM]||0, bv=b._agg[sortM]||0;
+  return X.sortDir*(av-bv);
+ });
 
- // Data table rows
- const dataRows=gData.map(r=>{
-  if(isVendor){
-   return `<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 1.5fr;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center" class="row-hover">
-    <span style="font-weight:600">${r.n}</span>
-    <span style="text-align:right;font-family:var(--mono)">${r.products}</span>
-    <span style="text-align:right;font-family:var(--mono)">${fmtN(r.stock)}</span>
-    <span style="text-align:right;font-family:var(--mono);color:var(--grn);font-weight:600">${fmtN(r.sales)}</span>
-    <span style="text-align:right;font-size:11px;color:var(--txt3)">${r.type}</span>
-   </div>`;
+ // === TOTALS ===
+ const totals={};
+ activeMeasures.forEach(m=>{
+  if(m==='margin'){
+   const tr=filtered.reduce((s,p)=>s+p.price*(is30?p.units30:p.units90),0);
+   const tc=filtered.reduce((s,p)=>s+p.cost*(is30?p.units30:p.units90),0);
+   totals[m]=tr>0?((tr-tc)/tr*100):0;
+  } else if(m==='velocity'){
+   const tu=filtered.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
+   totals[m]=is30?tu/4.3:tu/13;
+  } else if(m==='xrate'){
+   const tu=filtered.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
+   const ts=filtered.reduce((s,p)=>s+p.stock,0);
+   const vel=is30?tu/4.3:tu/13;
+   totals[m]=ts>0?(vel*52/ts):0;
+  } else {
+   totals[m]=rows.reduce((s,r)=>s+r._agg[m],0);
   }
-  const xrColor=r.xr>=2?'var(--grn)':r.xr>=1?'#b8860b':'var(--brick)';
-  return `<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 80px 60px 70px;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center" class="row-hover">
-   <div><span style="font-weight:600">${r.n}</span> <span style="color:var(--txt3);font-size:10px">(${fmtN(r.skus)} skus)</span></div>
-   <span style="text-align:right;font-family:var(--mono)">${fmtN(r.stock)}</span>
-   <span style="text-align:right;font-family:var(--mono);color:${r.inc>0?'#22c55e':'var(--txt3)'}">${r.inc>0?'+'+fmtN(r.inc):'-'}</span>
-   <span style="text-align:right;font-family:var(--mono);color:var(--grn);font-weight:600">${fmtN(r.sales)}</span>
-   <span style="text-align:right;font-family:var(--mono);color:var(--txt2)">${r.vel.toFixed(r.vel<10?1:0)}</span>
-   <span style="text-align:right;font-family:var(--mono);font-weight:600;color:${xrColor};background:rgba(200,150,0,.06);border-radius:4px;padding:2px 6px">${r.xr.toFixed(1)}</span>
-  </div>`;
+ });
+ totals.products=filtered.length;
+
+ // === XR COLOR ===
+ const xrCol=v=>v>=2?'var(--grn)':v>=1?'#b8860b':'var(--brick)';
+ const stCol=v=>v>=40?'var(--grn)':v>=20?'#b8860b':'var(--brick)';
+
+ // === DRILL STATE ===
+ const drillPath=X.drill||[];
+ let drillProducts=null;
+ if(drillPath.length>0){
+  const drillKey=drillPath[drillPath.length-1];
+  drillProducts=filtered.filter(p=>p[dimKey]===drillKey);
+ }
+
+ // === BUILD UI ===
+ const channels=['all','Online (Shopify)','Atica Man POS','Borsalino POS'];
+ const periods=['7d','30d','90d'];
+ const dimList=['category','vendor','channel','product'];
+
+ // Period pills
+ const periodBtns=periods.map(p=>`<button onclick="window._anX.period='${p}';navigate('analytics')" style="padding:4px 12px;border-radius:12px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--mono);background:${X.period===p?'var(--grn)':'var(--sur2)'};color:${X.period===p?'#fff':'var(--txt2)'}">${p}</button>`).join('');
+
+ // Channel filter
+ const chBtns=channels.map(c=>{
+  const label=c==='all'?'All Channels':c.replace(' (Shopify)','').replace(' POS','');
+  return `<button onclick="window._anX.channel='${c}';navigate('analytics')" style="padding:4px 12px;border-radius:12px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;background:${X.channel===c?'var(--grn)':'var(--sur2)'};color:${X.channel===c?'#fff':'var(--txt2)'}">${label}</button>`;
  }).join('');
 
- $('page').innerHTML=`
- <div style="max-width:1100px">
-  <div class="back-link" onclick="navigate('dashboard')">&larr; Dashboard</div>
-  <div class="page-title">Analytics</div>
-  <div class="page-sub">Shopify + Lightspeed &middot; Combined View</div>
+ // Dimension selector
+ const dimBtns=dimList.map(d=>`<button onclick="window._anX.dim='${d}';window._anX.drill=[];navigate('analytics')" style="padding:4px 12px;border-radius:12px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;text-transform:capitalize;background:${X.dim===d?'var(--grn)':'var(--sur2)'};color:${X.dim===d?'#fff':'var(--txt2)'}">${d}</button>`).join('');
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
-   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px">
-    <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600;margin-bottom:10px">Sales by Channel</div>
-    <div style="display:grid;grid-template-columns:1fr 100px 60px 80px;padding:4px 0;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--brd)">
-     <span>Channel</span><span style="text-align:right">Revenue</span><span style="text-align:right">Orders</span><span style="text-align:right">Share</span>
-    </div>
-    ${channelRows}
-   </div>
-   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px">
-    <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600;margin-bottom:10px">Sales Breakdown (90 Days)</div>
-    ${salesBreak}
-   </div>
-  </div>
+ // Sort helper
+ const sortHdr=(key,label,align)=>{
+  const active=X.sort===key;
+  const arrow=active?(X.sortDir===-1?' &#9660;':' &#9650;'):'';
+  return `<span onclick="if(window._anX.sort==='${key}'){window._anX.sortDir*=-1}else{window._anX.sort='${key}';window._anX.sortDir=-1};navigate('analytics')" style="text-align:${align||'right'};cursor:pointer;user-select:none;${active?'color:var(--grn);':''}">${label}${arrow}</span>`;
+ };
 
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-   <div class="sec-hdr" style="margin:0">Data Breakdown</div>
-   <div style="display:flex;gap:6px">${groupBtns}</div>
-  </div>
+ // Measure format helper
+ const mfmt=(key,val)=>{
+  const m=measures[key];
+  if(!m)return val;
+  return m.fmt(val);
+ };
+ const mcol=(key,val)=>{
+  if(key==='xrate')return xrCol(val);
+  if(key==='sellThru')return stCol(val);
+  const m=measures[key];
+  return m&&m.color?m.color:'var(--txt)';
+ };
 
-  <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px">
-   ${colHeader}
-   ${dataRows}
-  </div>
+ // === DRILL VIEW (product-level detail) ===
+ if(drillProducts){
+  const dKer½drillPath[drillPath.length-1];
+  // Sort drill products
+  drillProducts.sort((a,b)=>{
+   const mDef=measures[X.sort];
+   if(!mDef)return 0;
+   return X.sortDir*(mDef.fn(a)-mDef.fn(b));
+  });
 
-  <div style="display:flex;gap:8px;margin-top:16px">
-   <button class="btn" onclick="navigate('fin-cashflow')">Cash Flow</button>
-   <button class="btn" onclick="navigate('bookkeeping')">Bookkeeping</button>
-   <button class="btn" onclick="navigate('dashboard')">Dashboard</button>
-  </div>
- </div>`;
-}
+  const drillRows=drillProducts.map(p=>{
+   const rev=p.price*(is30?p.units30:p.units90);
+   const units=is30?p.units30:p.units90;
+   const vel=is30?units/4.3:units/13;
+   const xr=p.stock>0?(vel*52/p.stock):0;
+   const mg=(p.price-p.cost)/p.price*100;
+   const st=p.stock>0?(units/(units+p.stock)*100):0;
+   return `<div style="display:grid;grid-template-columns:2.5fr 80px 60px 60px 55px 55px 55px 55px;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center" class="row-hover">
+    <div><span style="font-weight:600">${p.name}</span><br><span style="font-size:10px;color:var(--txt3);font-family:var(--mono)">${p.sku}</span></div>
+    <span style="text-align:right;font-family:var(--mono);color:var(--grn);font-weight:600">$${Math.round(rev).toLocaleString()}</span>
+    <span style="text-align:right;font-family:var(--mono)">${units}</span>
+    <span style="text-align:right;font-family:var(--mono)">${p.stock.toLocaleString()}</span>
+    <span style="text-align:right;font-family:var(--mono);color:${p.inc>0?'#22c55e':'var(--txt3)'}">${p.inc>0?'+'+p.inc:'-'}</span>
+    <span style="text-align:right;font-family:var(--mono)">${mg.toFixed(0)}%</span>
+    <span style="text-align:right;font-family:var(--mono)">${vel.toFixed(1)}</span>
+    <span style="text-align:right;font-family:var(--mono);font-weight:600;color:${xrCol(xr)};background:rgba(200,150,0,.06);border-radius:4px;padding:2px 6px">${xr.toFixed(1)}</span>
+   </div>`;
+  }).join('');
+
+  $('page').innerHTML=`
+  <div style="max-width:1200px">
+   <div class="back-link" onclick="window._anX.drill=[];navigate('analytics')">&larr; All ${dims[X.dim].label}s</div>
+   ]Û\ÜÏHYÙK]]HÙÙ^_OÙ]]Û\ÜÏHYÙK\ÝXÙ[ÙXÝË[ÝHÙXÝÈ	ZYÝÈ	Ö\[ÙH	ZYÝÈ[YÝÛY]ÏÙ]]Ý[OH\Ü^N^ÙØ\ÛX\Ú[XÝÛNMÜ\[ÙßOÙ]]Ý[OHXÚÙÜÝ[\K\Ý\NØÜ\\ÛÛY\KX
+NØÜ\\Y]\Î\K\
+NÛÝ\ÝÎY[ÛX\Ú[XÝÛN]Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎY
+
+
+M\
+M\
+M\
+M\ÜY[ÎLMÙÛ\Ú^NLÙÛ]ÙZYÚÌÝ^][ÙÜN\\Ø\ÙNØÛÛÜ\K]ÊNØÜ\XÝÛNÛÛY\KX\ÊHÜ[ÙXÝÜÜ[	ÜÛÜ	ÜØ[\ÉË	Ô][YIÊ_B	ÜÛÜ	Ý[]ÉË	Õ[]ÉÊ_B	ÜÛÜ	ÜÝØÚÉË	ÔÝØÚÉÊ_B	ÜÛÜ	Ú[ÛÛZ[ÉË	Ò[ÉÊ_B	ÜÛÜ	ÛX\Ú[Ë	ÓX\Ú[Ê_B	ÜÛÜ	Ý[ØÚ]IË	Õ[ÝÚÉÊ_B	ÜÛÜ	Þ]IË	Ö]IÊ_BÙ]	Ù[ÝÜßBÙ]]Ý[OH\Ü^N^ÙØ\ÛX\Ú[]ÜM]ÛÛ\ÜÏHÛÛXÚÏHÚ[ÝËØ[[V×NÛ]YØ]J	Ø[[]XÜÉÊHXÚÈÈÝ[[X\OØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ù\ÚØ\	ÊH\ÚØ\Ø]ÛÙ]Ù]Â]\ÂBËÈOOHÕSSPTHPHOOBÛÛÝÛÛYV[OOOIÜÙXÝ	ÂÖÖÉÜØ[\ÉË	Ô][YIË	Î	×KÉÜÝØÚÉË	ÔÝØÚÉË	Í	×KÉÚ[ÛÛZ[ÉË	Ò[ÉË	ÍM\	×KÉÛX\Ú[Ë	ÓX\Ú[Ë	ÍM\	×KÉÝ[ØÚ]IË	Õ[ÝÚÉË	ÍM\	×KÉÞ]IË	Ö]IË	Í	×WBÖÉÜØ[\ÉË	Ô][YIË	Î	×KÉÝ[]ÉË	Õ[]ÉË	Í	×KÉÜÝØÚÉË	ÔÝØÚÉË	Í\	×KÉÚ[ÛÛZ[ÉË	Ò[ÉË	ÍM\	×KÉÛX\Ú[Ë	ÓX\Ú[Ë	ÍM\	×KÉÝ[ØÚ]IË	Õ[ÝÚÉË	ÍM\	×KÉÞ]IË	Ö]IË	Í	×WNÂÛÛÝÜYÛÛÏIÌY	ÊØÛÛYX\
+ÏOÖÌJKÚ[	È	ÊNÂÛÛÝXY\Ù[ÏXÛÛYX\
+ÏOÛÜÖÌKÖÌWJJKÚ[	ÉÊNÂÛÛÝ]TÝÜÏ\ÝÜËX\
+OÂÛÛÝÙ[ÏXÛÛYX\
+ÏOÂÛÛÝ[\ØYÙÖØÖÌWNÂÛÛÝÛÛÜ[XÛÛ
+ÖÌK[
+NÂÛÛÝ\ÐÛXÖÌOOOIÜØ[\ÉßÖÌOOOIÞ]IÎÂ]\Ü[Ý[OH^X[YÛYÚÙÛY[Z[N\K[[ÛÊNÉÚ\ÐÛÉÙÛ]ÙZYÚÉÎÉßXÛÛÜØÛÛÜNÉØÖÌOOOIÞ]IÏÉØXÚÙÜÝ[ØJML
+NØÜ\\Y]\ÎÜY[Î
+	ÎÉßHÛY]
+ÖÌK[
+_OÜÜ[ÂJKÚ[	ÉÊNÂÛÛÝ[ÛXÚÏV[HOOIÜÙXÝ	ÏØÛÛXÚÏHÚ[ÝËØ[[VÉÉÜÙ^K\XÙJÉËÙË	È_I×NÛ]YØ]J	Ø[[]XÜÉÊHÝ[OHÝ\ÛÜÚ[\È	ÎÂ]\]	Ù[ÛXÚßHÛ\ÜÏHÝËZÝ\Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎÙÜYÛÛßNÜY[ÎLMÙÛ\Ú^NLØÜ\XÝÛN\ÛÛY\KX
+NØ[YÛZ][\ÎÙ[\ÉÖ[HOOIÜÙXÝ	ÏÉØÝ\ÛÜÚ[\ÎÉßH]Ü[Ý[OHÛ]ÙZYÚÜÙ^_OÜÜ[Ü[Ý[OHÛ\Ú^NLØÛÛÜ\K]ÊH	ÜØYÙËÙXÝßH	ÜØYÙËÙXÝÏOOLOÉÚ][IÎÚ][\ÉßJOÜÜ[Ù]	ØÙ[ßBÙ]ÂJKÚ[	ÉÊNÂËÈÝ[ÈÝÂÛÛÝÝ[Ù[ÏXÛÛYX\
+ÏOÂÛÛÝ[]Ý[ÖØÖÌWNÂ]\Ü[Ý[OH^X[YÛYÚÙÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌØÛÛÜÛXÛÛ
+ÖÌK[
+_HÛY]
+ÖÌK[
+_OÜÜ[ÂJKÚ[	ÉÊNÂËÈÝ[[X\HÔHÝ\
+ÛÛ\XÝÝØ\ÊBÛÛÝÝ[]Y[\YYXÙJ
+Ë
+OOÊÜXÙJ\ÌÌÜ[]ÌÌ[]ÎL
+K
+NÂÛÛÝÝ[[]ÏY[\YYXÙJ
+Ë
+OOÊÊ\ÌÌÜ[]ÌÌ[]ÎL
+K
+NÂÛÛÝÝ[ÝÏY[\YYXÙJ
+Ë
+OOÊÜÝØÚË
+NÂÛÛÝ]ÓX\Ú[]Ý[ËX\Ú[ÂÛÛÝÜTÝ\X]Ý[OH\Ü^N^ÙØ\ÜY[ÎLMØXÚÙÜÝ[\K\Ý\NØÜ\\ÛÛY\KX
+NØÜ\\Y]\Î\K\
+NÛX\Ú[XÝÛNMÙÛ\Ú^NLØ[YÛZ][\ÎÙ[\Ù^]Ü\Ü\]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚ][YOÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMØÛÛÜ\KYÜH	ÓX]Ý[
+Ý[]KÓØØ[TÝ[Ê
+_OÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚ[]ÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÝÝ[[]ËÓØØ[TÝ[Ê
+_OÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚÝØÚÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÝÝ[ÝËÓØØ[TÝ[Ê
+_OÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚ]ÈX\Ú[ÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMØ]ÓX\Ú[Ñ^Y
+J_IOÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚÙXÝÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÙ[\Y[ÝOÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚÜÝ\ÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÜÝÜË[ÝOÜÜ[Ù]Ù]Â	
+	ÜYÙIÊK[\SX]Ý[OHX^]ÚYL]Û\ÜÏHXÚË[[ÈÛÛXÚÏH]YØ]J	Ù\ÚØ\	ÊH\È\ÚØ\Ù]]Û\ÜÏHYÙK]]H[[]XÜÏÙ]]Û\ÜÏHYÙK\ÝXÚÜYH
+ÈYÚÜYY	ZYÝÈ[\XÝ]OÙ]]Ý[OH\Ü^N^Ù^]Ü\Ü\ÙØ\LÛX\Ú[XÝÛNMØ[YÛZ][\ÎÙ[\]Ý[OH\Ü^N^ÙØ\Ø[YÛZ][\ÎÙ[\Ü[Ý[OHÛ\Ú^NLÙÛ]ÙZYÚØÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÛX\Ú[\YÚ\[ÙÜÜ[Ü\[ÙßOÙ]]Ý[OH\Ü^N^ÙØ\Ø[YÛZ][\ÎÙ[\Ü[Ý[OHÛ\Ú^NLÙÛ]ÙZYÚØÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÛX\Ú[\YÚÚ[[ÜÜ[ØÚßOÙ]Ù]	ÚÜTÝ\B]Ý[OH\Ü^N^Ø[YÛZ][\ÎÙ[\ÙØ\LÛX\Ú[XÝÛNL]Û\ÜÏHÙXËZÝ[OHX\Ú[XZÙÝÛÙ]]Ý[OH\Ü^N^ÙØ\Ù[PßOÙ]	Ö[HOOIÜÙXÝ	ÏÉÏÜ[Ý[OHÛ\Ú^NLØÛÛÜ\K]ÊNÛX\Ú[[YÛXÚÈ[HÝÈÈ[ÝÛÜÜ[ÎÉßBÙ]]Ý[OHXÚÙÜÝ[\K\Ý\NØÜ\\ÛÛY\KX
+NØÜ\\Y]\Î\K\
+NÛÝ\ÝÎY[ÛX\Ú[XÝÛN]Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎÙÜYÛÛßNÜY[ÎLMÙÛ\Ú^NLÙÛ]ÙZYÚÌÝ^][ÙÜN\\Ø\ÙNØÛÛÜ\K]ÊNØÜ\XÝÛNÛÛY\KX\ÊHÜ[Ù[\ÖÖ[WKX[OÜÜ[	ÚXY\Ù[ßBÙ]	Ù]TÝÜßB]Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎÙÜYÛÛßNÜY[ÎLMÙÛ\Ú^NLØÜ\]ÜÛÛY\KX\ÊNØXÚÙÜÝ[ØJ
+
+HÜ[Ý[OHÛ]ÙZYÚÌÝ[
+	Ù[\Y[ÝHÙXÝÊOÜÜ[	ÝÝ[Ù[ßBÙ]Ù]]Ý[OH\Ü^N^ÙØ\ÛX\Ú[]ÜM]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ø[YÜXØ\Ý	ÊHÜXØ\ÝØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ø[XØ]	ÊHØ]YÛÜH	[\ÓØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ù[XØ\ÚÝÉÊHØ\ÚÝÏØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ù\ÚØ\	ÊH\ÚØ\Ø]ÛÙ]Ù]ÂB
 function axRenderDimRow() {
  const row = $('ax-dims-row'); if (!row) return;
  row.innerHTML = `<div class="drill-path" style="margin-bottom:0">${_ax.dims.map((d, i) => {
