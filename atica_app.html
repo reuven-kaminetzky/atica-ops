@@ -8647,10 +8647,8 @@ function renderAnalytics(){
  const X=window._anX;
  const fmt=n=>'$'+Math.abs(Math.round(n)).toLocaleString();
  const fmtN=n=>Math.abs(n).toLocaleString();
- // Combined data: Shopify online + Alloc8/Lightspeed in-store
  const D={
-  kpi:{
-   grossSales:3191040,netSales:2248241,totalStock:77895,
+  kpi:{grossSales:3191040,netSales:2248241,totalStock:77895,
    orders:9708,aov:267,sessions:105200,convRate:1.67,
    sellThrough:42,incoming:21983,activeItems:16094,
    discounts:497755,returns:445043,shipping:10027
@@ -8709,20 +8707,6 @@ function renderAnalytics(){
  const groups={category:D.byCategory,vendor:D.byVendor};
  const gData=groups[X.group]||D.byCategory;
 
- // Status badge helper
- const badge=(val,thresholds)=>{
-  if(val>=thresholds[0])return '<span style="background:rgba(26,88,48,.12);color:var(--grn);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">Healthy</span>';
-  if(val>=thresholds[1])return '<span style="background:rgba(200,150,0,.12);color:#b8860b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">Watch</span>';
-  return '<span style="background:rgba(138,58,42,.12);color:var(--brick);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">Low</span>';
- };
-
- // Build KPI cards
- const kpiCard=(icon,label,value,sub,color)=>`<div class="kpi-cell">
-  <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:${color||'var(--grn)'}">${value}</div>
-  <div class="kpi-label">${label}</div>
-  ${sub?'<div style="font-size:10px;color:var(--txt3);margin-top:4px">'+sub+'</div>':''}
- </div>`;
-
  // Channel breakdown
  const channelRows=Object.entries(D.channels).map(([ch,d])=>`<div style="display:grid;grid-template-columns:1fr 100px 60px 80px;padding:8px 0;border-bottom:1px solid var(--brd);font-size:12px;align-items:center">
   <span style="font-weight:600">${ch}</span>
@@ -8743,7 +8727,7 @@ function renderAnalytics(){
  // Group selector
  const groupBtns=['category','vendor'].map(g=>`<button onclick="window._anX.group='${g}';navigate('analytics')" style="padding:6px 14px;border-radius:16px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;text-transform:capitalize;background:${X.group===g?'var(--grn)':'var(--sur2)'};color:${X.group===g?'#fff':'var(--txt2)'}">${g}</button>`).join('');
 
- // Data table header (different columns per group)
+ // Data table header
  const isVendor=X.group==='vendor';
  const colHeader=isVendor
   ?`<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 1.5fr;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
@@ -8773,23 +8757,11 @@ function renderAnalytics(){
   </div>`;
  }).join('');
 
- // Sell-through gauge
- const gaugeAngle=D.kpi.sellThrough/100*180;
- const gaugeColor=D.kpi.sellThrough>=50?'var(--grn)':D.kpi.sellThrough>=30?'#e6a817':'var(--brick)';
-
  $('page').innerHTML=`
  <div style="max-width:1100px">
   <div class="back-link" onclick="navigate('dashboard')">&larr; Dashboard</div>
   <div class="page-title">Analytics</div>
   <div class="page-sub">Shopify + Lightspeed &middot; Combined View</div>
-
-  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
-   ${kpiCard('','Gross Sales',fmt(D.kpi.grossSales),'90-day total','var(--grn)')}
-   ${kpiCard('','Total Stock',fmtN(D.kpi.totalStock),'+'+fmtN(D.kpi.incoming)+' incoming','var(--txt)')}
-   ${kpiCard('','Orders',fmtN(D.kpi.orders),'AOV: '+fmt(D.kpi.aov),'var(--txt)')}
-   ${kpiCard('','Sell-Through',D.kpi.sellThrough+'%','Efficiency score',gaugeColor)}
-   ${kpiCard('','Active Items',fmtN(D.kpi.activeItems),'Total variants tracked','var(--txt)')}
-  </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px">
