@@ -1,3 +1,46 @@
+
+     // Auto-create master products for unmatched Shopify products
+     const matchedIds=new Set();
+     for(const arr of Object.values(shopifyBySeedId)) for(const sp of arr) matchedIds.add(sp.shopifyId);
+     const unmatchedGroups={};
+     const _cat=t=>{
+       if(/gift\s+card/i.test(t))return'_gift-cards'; if(/baseball|cap\b/i.test(t))return'_caps';
+       if(/suit\s*(bag|cover)/i.test(t))return'_suit-bags'; if(/shirt/i.test(t))return'_other-shirts';
+       if(/pant|trouser/i.test(t))return'_other-pants'; if(/suit/i.test(t))return'_other-suits';
+       if(/blazer|jacket/i.test(t))return'_other-blazers'; if(/shoe|boot|loafer/i.test(t))return'_other-shoes';
+       return'_misc';
+     };
+     const _labels={'_gift-cards':'Gift Cards','_caps':'Caps & Hats','_suit-bags':'Suit Bags','_other-shirts':'Other Shirts','_other-pants':'Other Pants','_other-suits':'Other Suits','_other-blazers':'Other Blazers','_other-shoes':'Other Shoes','_misc':'Miscellaneous'};
+     for(const sp of prodData.products){
+       if(/^DO NOT USE/i.test(sp.title))continue; if(matchedIds.has(sp.shopifyId))continue;
+       const gid=_cat(sp.title); if(!unmatchedGroups[gid])unmatchedGroups[gid]=[]; unmatchedGroups[gid].push(sp);
+     }
+     let autoCreated=0;
+     for(const [gid,sps] of Object.entries(unmatchedGroups)){
+       const pr=sps[0]; const nm=_labels[gid]||gid;
+       const np={id:gid,code:gid.replace(/^_/,'').toUpperCase().replace(/-/g,''),name:nm,
+         cat:/shirt/i.test(nm)?'Shirts':/pant/i.test(nm)?'Pants':/suit/i.test(nm)?'Suits':/blazer/i.test(nm)?'Blazers':/shoe|boot/i.test(nm)?'Shoes':'Accessories',
+         shopifyId:pr.shopifyId,shopifyHandle:pr.handle,shopifyMatchCount:sps.length,shopifyAutoCreated:true,
+         retail:Math.max(...sps.flatMap(p=>p.variants.map(v=>parseFloat(v.price)||0)))};
+       if(pr.images&&pr.images.length>0){np.heroImg=pr.images[0].src;np.gallery=sps.flatMap(p=>(p.images||[]).map(i=>i.src)).slice(0,12);}
+       products.push(np); autoCreated++;
+       const gs=[];
+       for(const mp of sps) for(const sv of mp.variants){
+         const vel=velBySku[(sv.sku||'').toUpperCase()]||{};
+         gs.push({id:'sv-'+sv.variantId,code:sv.sku||String(sv.variantId),
+           name:(sps.length>1?mp.title+' - ':'')+(sv.title||'Default'),
+           color:'#888888',sku:sv.sku||'',status:'active',shopify:true,shopifyVariantId:sv.variantId,shopifyProductTitle:mp.title,
+           price:parseFloat(sv.price)||0,inventoryQty:sv.inventoryQty||0,inventoryItemId:sv.inventoryItemId,sell:50,
+           vel:vel.unitsPerDay?Math.round(vel.unitsPerDay*30*10)/10:0,grade:'C',colorFamily:'dark'});
+       }
+       styles[gid]=gs;
+       const li={};
+       for(const mp of sps) for(const sv of mp.variants) if(sv.inventoryItemId&&invByItemId[sv.inventoryItemId])
+         for(const [ln,av] of Object.entries(invByItemId[sv.inventoryItemId])) li[ln]=(li[ln]||0)+av;
+       if(Object.keys(li).length>0){inventory[gid]=li; np.inc=Object.values(li).reduce((a,b)=>a+b,0);}
+     }
+     console.log('[Sync] Auto-created',autoCreated,'new product lines');
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2011,7 +2054,77 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
  }
 
  const _CODE_TO_ID={};SEED_PRODUCTS.forEach(p=>{_CODE_TO_ID[p.code.toUpperCase()]=p.id;});
- async function syncFromShopify(){try{const statusRes=await fetch('/api/shopify/status');if(!statusRes.ok)return{synced:false,reason:'API unavailable'};const statusData=await statusRes.json();if(!statusData.connected)return{synced:false,reason:'Not connected'};console.log('[Sync] Shopify connected:',statusData.shop,statusData.domain);const[prodRes,invRes,velRes,salesRes]=await Promise.all([fetch('/api/shopify/sync/products',{method:'POST'}),fetch('/api/shopify/sync/inventory',{method:'POST'}),fetch('/api/shopify/velocity?days=30'),fetch('/api/shopify/sales?days=30')]);const prodData=prodRes.ok?await prodRes.json():null;const invData=invRes.ok?await invRes.json():null;const velData=velRes.ok?await velRes.json():null;const salesData=salesRes.ok?await salesRes.json():null;if(!prodData||!prodData.products){console.warn('[Sync] No product data');return{synced:false,reason:'No product data'};}console.log('[Sync] Fetched:',prodData.count,'products,',invData?.locations?.length||0,'inv locations');const skuToShopify={};for(const sp of prodData.products){for(const v of sp.variants){if(v.sku)skuToShopify[v.sku.toUpperCase()]={product:sp,variant:v};}}const velBySku={};if(velData&&velData.velocity){for(const v of velData.velocity)velBySku[(v.sku||'').toUpperCase()]=v;}const invByItemId={};if(invData&&invData.locations){for(const loc of invData.locations){for(const lvl of loc.levels){if(!invByItemId[lvl.inventoryItemId])invByItemId[lvl.inventoryItemId]={};invByItemId[lvl.inventoryItemId][loc.locationName]=lvl.available||0;}}}const shopifyByCode={};for(const sp of prodData.products){for(const v of sp.variants){if(!v.sku)continue;const prefix=v.sku.toUpperCase().split('-')[0];if(_CODE_TO_ID[prefix]&&!shopifyByCode[prefix])shopifyByCode[prefix]=sp;}}const products=JSON.parse(JSON.stringify(SEED_PRODUCTS));const styles=JSON.parse(JSON.stringify(SEED_STYLES));const inventory=JSON.parse(JSON.stringify(SEED_INV));let matchCount=0;for(const prod of products){const sp=shopifyByCode[prod.code.toUpperCase()];if(!sp)continue;matchCount++;prod.shopifyId=sp.shopifyId;prod.shopifyHandle=sp.handle;prod.shopifyStatus=sp.status;prod.shopifyTags=sp.tags;prod.shopifyUpdatedAt=sp.updatedAt;if(sp.images&&sp.images.length>0){prod.heroImg=sp.images[0].src;prod.gallery=sp.images.map(i=>i.src);}if(sp.handle)prod.shopifyUrl='https://aticaman.com/products/'+sp.handle;const seedStyles=styles[prod.id]||[];const liveStyles=[];for(const sv of sp.variants){const skuU=(sv.sku||'').toUpperCase();const ex=seedStyles.find(s=>s.sku&&s.sku.toUpperCase()===skuU);const vel=velBySku[skuU]||{};liveStyles.push({id:ex?ex.id:'sv-'+sv.variantId,code:ex?ex.code:(sv.sku?sv.sku.split('-').slice(1).join('-'):String(sv.variantId)),name:sv.title||(ex?ex.name:'Default'),color:ex?ex.color:'#888888',sku:sv.sku||'',status:'active',shopify:true,shopifyVariantId:sv.variantId,price:parseFloat(sv.price)||0,inventoryQty:sv.inventoryQty||0,inventoryItemId:sv.inventoryItemId,sell:ex?ex.sell:50,vel:vel.unitsPerDay?Math.round(vel.unitsPerDay*30*10)/10:(ex?ex.vel:0),grade:ex?ex.grade:'C',colorFamily:ex?ex.colorFamily:'dark'});}if(liveStyles.length>0)styles[prod.id]=liveStyles;const totalVel=liveStyles.reduce((s,st)=>s+(st.vel||0),0);if(totalVel>0)prod.vel=Math.round(totalVel*10)/10;const prices=sp.variants.map(v=>parseFloat(v.price)).filter(p=>p>0);if(prices.length>0)prod.retail=Math.max(...prices);const liveInv={};for(const sv of sp.variants){if(sv.inventoryItemId&&invByItemId[sv.inventoryItemId]){for(const[locName,avail]of Object.entries(invByItemId[sv.inventoryItemId])){liveInv[locName]=(liveInv[locName]||0)+avail;}}}if(Object.keys(liveInv).length>0){inventory[prod.id]=liveInv;prod.inc=Object.values(liveInv).reduce((a,b)=>a+b,0);}}save(KEYS.PRODUCTS,products);save(KEYS.STYLES,styles);save(KEYS.INVENTORY,inventory);if(salesData)save('am_shopify_sales',salesData);if(velData)save('am_shopify_velocity',velData);const intg=getIntegrations();intg.shopify={connected:true,lastSync:new Date().toISOString(),store:statusData.domain||'atica-brand.myshopify.com',syncedProducts:prodData.count,syncedOrders:salesData?salesData.totalOrders:(intg.shopify?intg.shopify.syncedOrders:0),syncedInventory:!!invData,matchedProducts:matchCount,webhooks:['orders/create','inventory_levels/update','products/update'],status:'active'};save(KEYS.INTEGRATIONS,intg);console.log('[Sync] Complete:',matchCount+'/'+products.length,'matched,',prodData.count,'Shopify total');return{synced:true,matched:matchCount,shopifyTotal:prodData.count,locations:invData?.locations?.length||0};}catch(err){console.warn('[Sync] Failed:',err.message);return{synced:false,reason:err.message};}}
+
+
+ const _TITLE_MATCHERS = {
+   'londoner':t=>/londoner/i.test(t)&&!/boys/i.test(t),
+   'dress':t=>(/dress\s+(shirt|collar)/i.test(t)||/brooklyner/i.test(t)||/CML\s+MC\s+Shirt/i.test(t))&&!/boys/i.test(t)&&!/performance/i.test(t)&&!/do not use/i.test(t),
+   'knit':t=>/polo/i.test(t)&&!/boys/i.test(t),
+   'milano':t=>/milano/i.test(t),'edinburgh':t=>/edinburgh/i.test(t),'bengal':t=>/bengal/i.test(t),
+   'oxford-bd':t=>/oxford\s+button/i.test(t),'linen-shirt':t=>/linen.*shirt/i.test(t),
+   'perf-shirt':t=>(/performance.*(shirt|polo|tee)/i.test(t)||/buttonless.*polo/i.test(t))&&!/do not use/i.test(t),
+   'tuxedo-shirt':t=>/tuxedo\s+shirt/i.test(t),'band-collar':t=>/band\s+collar/i.test(t),
+   'windowpane':t=>/windowpane/i.test(t),'herringbone':t=>/herringbone/i.test(t),
+   'royal-oxford':t=>/royal\s+oxford/i.test(t),
+   'pinpoint':t=>/pinpoint/i.test(t)||/boston.*shirt/i.test(t),
+   'hc360':(t,p)=>(/half\s+canvas\s+(suit|pant)/i.test(t)||/barberis.*half/i.test(t))&&!/boys/i.test(t)&&!/do not use/i.test(t)&&p<=400,
+   'hc480':(t,p)=>(/half\s+canvas\s+(suit|pant)/i.test(t)||/barberis.*half/i.test(t))&&!/boys/i.test(t)&&!/do not use/i.test(t)&&p>400,
+   'wash-suit':t=>/washable\s+suit/i.test(t)&&!/boys/i.test(t),
+   'summer-suit':t=>/summer.*suit/i.test(t)||/linen.*suit/i.test(t),
+   'wash-blazer':t=>/parkway.*blazer/i.test(t)||(/travel\s+blazer/i.test(t)&&!/cerruti/i.test(t)),
+   'travel-blazer':t=>/cerruti/i.test(t),'maggia':t=>/maggia/i.test(t),
+   '5pkt':t=>/parkway/i.test(t)&&/pant|stretch/i.test(t),
+   'suit-pant':t=>(/suit\s+pant/i.test(t)||/essential.*(stretch\s+)?pant/i.test(t))&&!/boys/i.test(t)&&!/do not use/i.test(t)&&!/parkway/i.test(t)&&!/half\s+canvas/i.test(t),
+   'kapote':t=>/kapote/i.test(t)&&!/silk/i.test(t),'silk-kapote':t=>/silk.*kapote/i.test(t),
+   'raincoat':t=>/overcoat/i.test(t)||/raincoat/i.test(t),
+   'ties':t=>/\btie\b/i.test(t)||/\bties\b/i.test(t),'belts':t=>/\bbelt\b/i.test(t),
+   'dress-shoe':t=>/oxford/i.test(t)||/wholecut/i.test(t)||/dress\s+shoe/i.test(t)||/brogue/i.test(t),
+   'luxury-shoe':t=>/loafer/i.test(t)||/beatle/i.test(t)||/monk/i.test(t)||/chelsea/i.test(t)||/buckle\s+strap/i.test(t)||/brace\s+/i.test(t),
+   'boys-suit':t=>/boys.*(suit|half\s+canvas)/i.test(t)&&!/pant/i.test(t)&&!/do not use/i.test(t),
+   'boys-shirt':t=>/boys.*(shirt|londoner)/i.test(t),
+   'boys-blazer':t=>/boys.*blazer/i.test(t)&&!/do not use/i.test(t),
+   'boys-pant':t=>/boys.*(pant|trouser)/i.test(t)&&!/do not use/i.test(t),
+     const shopifyBySeedId = {};
+     for(const sp of prodData.products){
+       if(/^DO NOT USE/i.test(sp.title)) continue;
+       const maxPrice = Math.max(...(sp.variants||[]).map(v=>parseFloat(v.price)||0),0);
+       for(const [seedId,matcher] of Object.entries(_TITLE_MATCHERS)){
+         try{ if(matcher(sp.title,maxPrice)){ if(!shopifyBySeedId[seedId]) shopifyBySeedId[seedId]=[]; shopifyBySeedId[seedId].push(sp); break; } }catch(e){}
+       }
+     }
+     console.log('[Sync] Title-matched:',Object.keys(shopifyBySeedId).length,'seed lines');
+
+     for(const prod of products){
+       const matchedShopify=shopifyBySeedId[prod.id];
+       if(!matchedShopify||matchedShopify.length===0) continue;
+       matchCount++;
+       const sp=matchedShopify[0];
+       prod.shopifyId=sp.shopifyId; prod.shopifyHandle=sp.handle; prod.shopifyStatus=sp.status;
+       prod.shopifyTags=sp.tags; prod.shopifyUpdatedAt=sp.updatedAt; prod.shopifyMatchCount=matchedShopify.length;
+       if(sp.images&&sp.images.length>0){ prod.heroImg=sp.images[0].src; prod.gallery=matchedShopify.flatMap(mp=>(mp.images||[]).map(i=>i.src)).slice(0,12); }
+       if(sp.handle) prod.shopifyUrl='https://aticaman.com/products/'+sp.handle;
+       const seedStyles=styles[prod.id]||[]; const liveStyles=[];
+       for(const mp of matchedShopify){ for(const sv of mp.variants){
+         const skuU=(sv.sku||'').toUpperCase(); const ex=seedStyles.find(s=>s.sku&&s.sku.toUpperCase()===skuU); const vel=velBySku[skuU]||{};
+         liveStyles.push({id:ex?ex.id:'sv-'+sv.variantId, code:ex?ex.code:(sv.sku||String(sv.variantId)),
+           name:(mp.title!==sp.title?mp.title+' - ':'')+(sv.title||(ex?ex.name:'Default')),
+           color:ex?ex.color:'#888888', sku:sv.sku||'', status:'active', shopify:true,
+           shopifyVariantId:sv.variantId, shopifyProductTitle:mp.title,
+           price:parseFloat(sv.price)||0, inventoryQty:sv.inventoryQty||0, inventoryItemId:sv.inventoryItemId,
+           sell:ex?ex.sell:50, vel:vel.unitsPerDay?Math.round(vel.unitsPerDay*30*10)/10:(ex?ex.vel:0),
+           grade:ex?ex.grade:'C', colorFamily:ex?ex.colorFamily:'dark'});
+       }}
+       if(liveStyles.length>0) styles[prod.id]=liveStyles;
+       const totalVel=liveStyles.reduce((s,st)=>s+(st.vel||0),0); if(totalVel>0) prod.vel=Math.round(totalVel*10)/10;
+       const prices=matchedShopify.flatMap(mp=>mp.variants.map(v=>parseFloat(v.price))).filter(p=>p>0);
+       if(prices.length>0) prod.retail=Math.max(...prices);
+       const liveInv={};
+       for(const mp of matchedShopify){ for(const sv of mp.variants){
+         if(sv.inventoryItemId&&invByItemId[sv.inventoryItemId])
+           for(const [ln,av] of Object.entries(invByItemId[sv.inventoryItemId])) liveInv[ln]=(liveInv[ln]||0)+av;
+       }}
+       if(Object.keys(liveInv).length>0){ inventory[prod.id]=liveInv; prod.inc=Object.values(liveInv).reduce((a,b)=>a+b,0); }
+     }
  function getShopifySales(){try{const d=localStorage.getItem('am_shopify_sales');return d?JSON.parse(d):null;}catch(e){return null;}}
  function getShopifyVelocity(){try{const d=localStorage.getItem('am_shopify_velocity');return d?JSON.parse(d):null;}catch(e){return null;}}
  return {getProducts,getProduct,getPOs,getPO,getStyles,getInventory,getInventoryFor,totalStock,updateInventory,getNotifs,addNotif,getUnread,markAllRead,createPO,advanceStage,executeTransfer,reset,LOCS,SIZE_SETS,CORE,getDemandSignals,addDemandSignal,getDemandForProduct,getDemandSummary,getWebAnalytics,getWebAnalyticsFor,getAdjustedVelocity,getIntegrations,updateIntegration,getVendors,getVendor,getVendorByName,getVendorForProduct,getCategoryConfig,CATEGORY_CONFIG,CATEGORY_COMPONENTS,TECH_PACK_FIELDS,MP_LIFECYCLE,PO_MILESTONE_DEFS,getPOMilestones,setPOMilestone,getPOReadiness,LAUNCH_STEPS,getLaunchTrack,setLaunchStep,getLaunchReadiness,getIncomingShipments,LOYALTY_TIERS,getCustomers,getCustomer,getCustomerLTV,getCustomerTier,getCustomersByStore,getCustomersByTag,getCustomerRecommendations,getCustomerSegments,generateEmailCampaign,WS_TIERS,getWSAccounts,getWSAccount,getWSOrders,getWSOrder,getWSOrdersForAccount,getWSAccountAR,getStoreStock,getStoreInventory,JEWISH_SEASONS,getCurrentSeason,getSeasonalForecast,QB_ACCOUNTS,allocateLandedCost,getCashFlowProjection,getRealFinancials,validateSKU,validateProduct,validatePO,runIntegrityCheck,getOverlapScore,getStyleOverlap,getOverlapCoverage,calculateOptimalDistribution,getDistributionPlan,getOverlapReport,STORE_VELOCITY_SHARE,OVERLAP_RULES,FABRIC_MILLS,FABRIC_TYPES,FABRIC_BOM,FABRIC_INVENTORY,getFabricMills,getFabricMill,getFabricTypes,getFabricType,getFabricBOM,getFabricInventory,getFabricAtFactory,getFabricValue,getProductCostBreakdown,getAllCostBreakdowns,getFabricForecast,getShipments,getShipment,updateShipmentStatus,updateShipmentETA,assignContainer,simulateSFUpdate,SF_CONFIG,getProjection,aggregateProjection,syncFromShopify,getShopifySales,getShopifyVelocity};
