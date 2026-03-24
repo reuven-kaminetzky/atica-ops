@@ -2711,133 +2711,187 @@ function showSearchResults(query) {
  </div>`).join('') : '<div style="padding:14px;color:var(--faded);font-size:12px;text-align:center">No results for "'+query+'"</div>';
 }
 function renderFinCashflow(){
- const prods=Store.getProducts();
- const pos=Store.getPOs();
- const season=Store.getCurrentSeason();
- const planned=(()=>{try{return JSON.parse(localStorage.getItem('am_planned_pos')||'[]');}catch(e){return[];}})();
- const weeklyRev=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.retail),0);
- const monthlyRev=Math.round(weeklyRev*4.33);
- const allPayments=pos.flatMap(po=>(po.payments||[]).map(pm=>({...pm,poId:po.id,poName:po.mpName,vendor:po.vendor})));
- const unpaid=allPayments.filter(pm=>pm.status!=='paid');
- const overdue=unpaid.filter(pm=>pm.status==='overdue');
- const dueSoon=unpaid.filter(pm=>pm.status==='due');
- const totalUnpaid=unpaid.reduce((s,pm)=>s+(pm.amount||0),0);
- const totalOverdue=overdue.reduce((s,pm)=>s+(pm.amount||0),0);
- const totalPlannedFOB=planned.reduce((s,pp)=>s+(pp.fobTotal||0),0);
- const totalPlannedLanded=Math.round(totalPlannedFOB*1.34);
- const weeks=[];
- const now=new Date();
- let runningBalance=monthlyRev*1.5; // Starting cash estimate
- for(let w=0;w<12;w++){
- const weekStart=new Date(now.getTime()+w*7*86400000);
- const weekLabel=weekStart.toLocaleDateString('en-US',{month:'short',day:'numeric'});
- const rev=weeklyRev;
- let payments=0;
- unpaid.forEach(pm=>{
- if(!pm.due)return;
- const due=new Date(pm.due);
- const diffDays=Math.round((due-weekStart)/86400000);
- if(diffDays>=0&&diffDays<7) payments+=pm.amount||0;
- });
- let plannedCost=0;
- if(w<4) plannedCost=Math.round(totalPlannedLanded*0.5/4); // 50% deposits spread
+ if(!window._cfX)window._cfX={};
+ window._cfToggle=function(k){window._cfX[k]=!window._cfX[k];navigate('fin-cashflow');};
+ const X=window._cfX;
+ const fmt=n=>'$'+Math.abs(Math.round(n)).toLocaleString();
+ const D={
+  months:['March','April','May','June','July','August','September','October','November','December'],
+  available:{LoC:75000,TD:66000,Chase:282000},
+  inflow:{'Cash Sales':[580000,470000,465000,640000,525000,825000,650000,575000,550000,575000],'Accounts Receivable':[30000,30000,35000,25000,35000,45000,42500,45000,38500,42500],'Shopify Loan':[-54900,-45000,-45000,-59850,0,0,0,0,0,0]},
+  inflowTotals:[555100,455000,455000,605150,560000,870000,692500,620000,588500,617500],
+  opex:{totals:[145000,300000,275000,300000,275000,305000,275000,275000,275000,275000],
+   items:[{n:'Rent',t:24650,loc:{CH:4700,Lakewood:7250,Monsey:6200,Main:6500}},{n:'Payroll',t:106000,loc:{CH:20000,Lakewood:36000,Monsey:16000,Main:34000}},{n:'Bookkeeping',t:3600},{n:'Marketing',t:25000},{n:'Storage',t:10000},{n:'Software',t:2000},{n:'Supplies',t:2200},{n:'Shipping & Delivery',t:6500},{n:'Website',t:4000},{n:'Insurance',t:1100},{n:'Transportation',t:2000},{n:'Misc',t:5300,loc:{CH:1000,Lakewood:1000,Monsey:800,Main:2500}}]},
+  shipping:[48900,75000,0,0,0,0,0,0,0,0],
+  vendors:{'Suits':[0,0,0,0,108000,0,78000,0,0,42000],'TAL':[0,0,0,0,162000,0,144000,0,144000,0],'Coats':[0,0,0,54000,0,0,36000,0,36000,0],'Pants':[0,0,0,0,54000,0,0,48000,0,54000],'General':[0,0,15000,15000,35000,35000,35000,35000,35000,35000]},
+  orders:[
+   {v:'Nanshan',d:'Fabric 700m HC suits & Blazer',a:7700,p:[7700,0,0,0,0,0,0,0,0,0]},
+   {v:'Reda/VBC',d:'Fabric 1500m HC suits',a:30000,p:[10000,0,20000,0,0,0,0,0,0,0]},
+   {v:'Reda',d:'Fabric 1200m travel blazers',a:24000,p:[7200,0,0,16800,0,0,0,0,0,0]},
+   {v:'Turkish Vendor',d:'Fabric 3000m new products',a:32000,p:[30000,0,0,0,0,0,0,0,0,0]},
+   {v:'JYY',d:'Kapote QTY 120',a:8640,p:[0,8640,0,0,0,0,0,0,0,0]},
+   {v:'JYY',d:'HC Suits 200 QTY',a:13600,p:[0,0,13600,0,0,0,0,0,0,0]},
+   {v:'JYY',d:'Kapote QTY 150',a:10800,p:[0,0,0,10800,0,0,0,0,0,0]},
+   {v:'TAL',d:'Boys Knit 1,200',a:13200,p:[0,13200,0,0,0,0,0,0,0,0]},
+   {v:'TAL',d:'Polo 2,530',a:24035,p:[0,24035,0,0,0,0,0,0,0,0]},
+   {v:'TAL',d:'Tokyo Knit Shirts 3,730',a:55950,p:[0,55950,0,0,0,0,0,0,0,0]},
+   {v:'TAL',d:'Polo 490',a:6860,p:[0,6860,0,0,0,0,0,0,0,0]},
+   {v:'TAL',d:'Lux Perf Pants 300',a:4200,p:[4200,0,0,0,0,0,0,0,0,0]},
+   {v:'TAL',d:'PO13 Londoner 7,344',a:91800,p:[0,0,91800,0,0,0,0,0,0,0]},
+   {v:'TAL Vietnam',d:'Londoner 1,000',a:13000,p:[0,3900,9100,0,0,0,0,0,0,0]},
+   {v:'Sharmoon',d:'Travel Blazer 250',a:12500,p:[0,0,12500,0,0,0,0,0,0,0]},
+   {v:'Sharmoon',d:'Knit Wool Blazer 250',a:12500,p:[0,0,12500,0,0,0,0,0,0,0]},
+   {v:'Serena',d:'Boys Essential Pants 1,000',a:10000,p:[0,0,10000,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Wool Raincoats 400',a:30000,p:[0,30000,0,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'PO4 HC Boys Suits',a:16600,p:[0,4980,11620,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Travel Blazer 200',a:15200,p:[15200,0,0,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Wash Boys Blazer 280',a:9800,p:[0,2940,6860,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'PO5 Wash Blazer 1,100',a:36850,p:[0,11055,25795,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'PO2 Wash Dress Pants 3,000',a:43500,p:[0,13050,30450,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Travel Blazers 200',a:6000,p:[0,0,6000,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Essential Pants Parkway 2,000',a:27900,p:[0,0,27900,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Essential Pants 2,000',a:27900,p:[0,27900,0,0,0,0,0,0,0,0]},
+   {v:'Shandong',d:'Superstar Fabric 4,000m',a:16000,p:[0,0,4800,11200,0,0,0,0,0,0]}
+  ],
+  invoices:[
+   {v:'Maglificio Maggia',d:'Knit Blazer Wool Fabric',a:10277,m:0},{v:'TAL',d:'Kupas-Balvini 4,060',a:50107,m:0},{v:'TAL',d:'Milano 3,081',a:44817,m:0},{v:'TAL',d:'Edinburgh 497',a:6903,m:0},{v:'TAL',d:'Polo Dress Collar 1,768',a:18292,m:0},{v:'Dino Draghi',d:'Premium Italian Shoes 636',a:22765,m:0},{v:'Manifattura Italiana',d:'Lux Italian Shoes 344',a:17202,m:0},{v:'Serena',d:'Essential Pants 3,653',a:12055,m:0},{v:'Shandong',d:'PO4 Washable Blazers',a:23865,m:0},{v:'Shandong',d:'Washable Kapote 147',a:6321,m:0},{v:'Silvio Fiorello',d:'Ties 43',a:2537,m:0},{v:'Hefei Easy Way',d:'Ties 1,015',a:1812,m:0},
+   {v:'Guangdon XDDD',d:'Shoes 908',a:18115,m:1},{v:'Serena',d:'Essential Pants balance',a:28128,m:1},{v:'Hefei Easy Way',d:'Ties balance',a:4227,m:1}
+  ],
+  construction:[{v:'Cruz Wood Working - Monsey',b:11000,p:[5000,0,0,0,0,0,0,0,0,0]},{v:'Construction Monsey (Jacob)',b:22516,p:[0,0,0,0,0,0,0,0,0,0]}],
+  outTotals:[490153,627980,572925,464050,634000,377500,568000,395500,490000,443500],
+  netCF:[487947,314967,197042,338142,264142,756642,881142,1105642,1204142,1378142],
+  bal:{assets:3977307,liab:4090486,
+   assetItems:{'Inventory (US)':1930100,'Inventory (Overseas)':930439,'Cash on Hand':71000,'Lakewood RE':650000,'CH RE':380000,'Other Assets':15000,'Accounts Receivable':768},
+   liabItems:{'Investments':4200000,'Other Liabilities':149900,'Line of Credit':99507,'Credit Card':41079,'Losses':-350000,'Interest Expenses':-50000}}
+ };
+ const avail=D.available.LoC+D.available.TD+D.available.Chase;
+ const annIn=D.inflowTotals.reduce((s,v)=>s+v,0);
+ const annOut=D.outTotals.reduce((s,v)=>s+v,0);
+ const net=avail+annIn-annOut;
+ // Build section toggle helper
+ const sec=(key,title,content)=>{
+  const open=X[key];
+  return `<div style="border-top:1px solid var(--brd)">
+   <div onclick="window._cfToggle('${key}')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase" class="row-hover">
+    <span>${title}</span><span style="font-size:11px;transition:transform .2s;display:inline-block;transform:rotate(${open?'90':'0'}deg)">â¸</span>
+   </div>
+   ${open?'<div style="padding:0 16px 12px">'+content+'</div>':''}
+  </div>`;
+ };
+ const row=(label,val,color)=>`<div style="display:grid;grid-template-columns:1fr 100px;padding:6px 0;border-bottom:1px solid var(--brd);font-size:12px"><span>${label}</span><span style="text-align:right;font-family:var(--mono);font-weight:600;color:${color||''}">${val}</span></div>`;
+ const totalRow=(label,val,color)=>`<div style="display:grid;grid-template-columns:1fr 100px;padding:10px 0;font-size:13px;font-weight:700;border-top:2px solid var(--brd-s)"><span>${label}</span><span style="text-align:right;font-family:var(--mono);color:${color||''}">${val}</span></div>`;
 
- const netFlow=rev-payments-plannedCost;
- runningBalance+=netFlow;
+ const monthCards=D.months.map((mon,mi)=>{
+  const startBal=mi===0?avail:D.netCF[mi-1];
+  const endBal=D.netCF[mi];
+  const nf=D.inflowTotals[mi]-D.outTotals[mi];
+  const mk='m'+mi;
+  const expanded=X[mk];
 
- weeks.push({w:w+1,label:weekLabel,rev,payments,plannedCost,netFlow,balance:runningBalance});
- }
- const monthlyCOGS=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.fob*1.34*4.33),0);
- const monthlyGross=monthlyRev-monthlyCOGS;
- const grossPct=monthlyRev>0?Math.round(monthlyGross/monthlyRev*100):0;
- const monthlyOpex=Math.round(monthlyRev*0.25); // 25% of rev
- const monthlyNet=monthlyGross-monthlyOpex;
- const netPct=monthlyRev>0?Math.round(monthlyNet/monthlyRev*100):0;
+  // Inflows section
+  let inflowHtml='';
+  Object.keys(D.inflow).forEach(k=>{
+   const v=D.inflow[k][mi];
+   if(v!==0) inflowHtml+=row(k+(v<0?' (repayment)':''),v<0?'-'+fmt(v):fmt(v),v<0?'var(--brick)':'var(--grn)');
+  });
+  inflowHtml+=totalRow('Total Inflow',fmt(D.inflowTotals[mi]),'var(--grn')');
+
+  // OpEx section
+  let opexHtml='';
+  if(D.opex.totals[mi]>0){
+   D.opex.items.forEach(ex=>{
+    opexHtml+=row(ex.n,fmt(ex.t),'var(--brick)');
+    if(ex.loc) opexHtml+='<div style="padding:2px 0 6px 12px;font-size:10px;color:var(--txt3)">'+Object.entries(ex.loc).map(([l,a])=>l+': '+fmt(a)).join(' Â· ')+'</div>';
+   });
+  }
+  opexHtml+=totalRow('Total OpEx',fmt(D.opex.totals[mi]),'var(--brick)');
+
+  // Vendor payments
+  let vendorHtml='';
+  let vendorTotal=0;
+  Object.keys(D.vendors).forEach(v=>{
+   if(D.vendors[v][mi]>0){vendorHtml+=row(v,fmt(D.vendors[v][mi]),'var(--brick)');vendorTotal+=D.vendors[v][mi];}
+   });
+  // Outstanding orders for this month
+  D.orders.forEach(o=>{
+   if(o.p[mi]>0){vendorHtml+=row(o.v+' â '+o.d,fmt(o.p[mi]),'var(--brick)');vendorTotal+=o.p[mi];}
+   });
+  // Invoices due this month
+  D.invoices.filter(i=>i.m===mi).forEach(i=>{
+   vendorHtml+=row(i.v+' â '+i.d,fmt(i.a),'var(--brick)');vendorTotal+=i.a;
+  });
+  if(vendorTotal>0) vendorHtml+=totalRow('Vendor Total',fmt(vendorTotal),'var(--brick)');
+  else vendorHtml='<div style="color:var(--txt3);font-size:12px;padding:4px 0">No vendor payments</div>';
+
+  // Construction
+  let constHtml='';
+  let constTotal=0;
+  D.construction.forEach(c=>{
+   if(c.p[mi]>0){constHtml+=row(c.v,fmt(c.p[mi]),'var(--brick)');constTotal+=c.p[mi];}
+  });
+
+  // Shipping
+  let shipHtml=D.shipping[mi]>0?row('Shipping & Duties',fmt(D.shipping[mi]),'var(--brick)'):'';
+
+  return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);margin-bottom:8px;overflow:hidden">
+   <div onclick="window._cfToggle('${mk}')" style="cursor:pointer;display:grid;grid-template-columns:24px 1fr 1fr 1fr;align-items:center;padding:14px 16px" class="row-hover">
+    <span style="font-size:13px;color:var(--txt3);transition:transform .15s;display:inline-block;transform:rotate(${expanded?'90':'0'}deg)">â¸</span>
+    <div><span style="font-family:var(--display);font-size:17px;font-weight:600">${mon}</span></div>
+    <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);margin-bottom:2px">Net Flow</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:${nf>=0?'var(--grn)':'var(--brick)'}">${nf>=0?'+':''}${fmt(nf)}</div></div>
+    <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);margin-bottom:2px">End Balance</div><div style="font-family:var(--mono);font-size:15px;font-weight:700">${fmt(endBal)}</div></div>
+   </div>
+   ${expanded?`
+   <div style="border-top:1px solid var(--brd);padding:12px 16px;background:rgba(26,88,48,.04)">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+     <div><div style="font-size:10px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px">Starting Balance</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(startBal)}</div></div>
+     <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px">Ending Balance</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(endBal)}</div></div>
+    </div>
+   </div>
+   ${sec(mk+'_in','Inflows â '+fmt(D.inflowTotals[mi]),inflowHtml)}
+   ${sec(mk+'_ox','Operating Expenses â '+fmt(D.opex.totals[mi]),opexHtml)}
+   ${sec(mk+'_vn','Inventory & Vendor Payments'+(vendorTotal>0?' â '+fmt(vendorTotal):''),vendorHtml)}
+   ${D.shipping[mi]>0?sec(mk+'_sh','Shipping & Duties â '+fmt(D.shipping[mi]),shipHtml):''}
+   ${constTotal>0?sec(mk+'_cn','Construction â '+fmt(constTotal),constHtml):''}
+   <div style="border-top:2px solid var(--brd-s);padding:12px 16px;background:rgba(0,0,0,.02)">
+    <div style="display:grid;grid-template-columns:1fr 100px;font-size:13px;font-weight:700">
+     <span>Total Outflow</span><span style="text-align:right;font-family:var(--mono);color:var(--brick)">${fmt(D.outTotals[mi])}</span>
+    </div>
+   </div>
+   `:''}
+  </div>`;
+ }).join('');
 
  $('page').innerHTML=`
- <div style="max-width:940px">
- <div class="back-link" onclick="navigate('bookkeeping')">← Finance</div>
- <div class="page-title">Cash Flow</div>
- <div class="page-sub">12-week projection · ${season.label}</div>
-
- <!-- TOP KPIs -->
- <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
- <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">$${Math.round(monthlyRev/1000)}K</div><div class="kpi-label">revenue/mo</div></div>
- <div class="kpi-cell"><div class="kpi-num">$${Math.round(monthlyCOGS/1000)}K</div><div class="kpi-label">COGS/mo</div></div>
- <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:${totalOverdue>0?'var(--brick)':'var(--faded)'}">$${Math.round(totalUnpaid/1000)}K</div><div class="kpi-label">unpaid AP</div></div>
- <div style="padding:14px 6px;text-align:center"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--amb)">$${Math.round(totalPlannedLanded/1000)}K</div><div class="kpi-label">planned spend</div></div>
- </div>
-
- <!-- P&L SUMMARY -->
- <div class="sec-hdr">Monthly P&L Estimate</div>
- <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:24px">
- ${[
- {l:'Revenue',v:'$'+Math.round(monthlyRev/1000)+'K',pct:'100%',bold:false,color:'var(--grn)'},
- {l:'Cost of goods (landed)',v:'($'+Math.round(monthlyCOGS/1000)+'K)',pct:'-'+(100-grossPct)+'%',bold:false,color:'var(--brick)'},
- {l:'Gross profit',v:'$'+Math.round(monthlyGross/1000)+'K',pct:grossPct+'%',bold:true,color:'var(--grn)'},
- {l:'Operating expenses (~25%)',v:'($'+Math.round(monthlyOpex/1000)+'K)',pct:'-25%',bold:false,color:''},
- {l:'Net profit estimate',v:'$'+Math.round(monthlyNet/1000)+'K',pct:netPct+'%',bold:true,color:monthlyNet>0?'var(--grn)':'var(--brick)'}].map(r=>`
- <div style="display:grid;grid-template-columns:1fr 80px 50px;padding:${r.bold?'14px':'10px'} 16px;border-bottom:1px solid var(--brd);${r.bold?'background:var(--sur);font-weight:700':''}">
- <span style="font-size:${r.bold?'14px':'12px'}">${r.l}</span>
- <span style="font-family:var(--mono);font-size:${r.bold?'16px':'13px'};text-align:right;color:${r.color}">${r.v}</span>
- <span style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--faded)">${r.pct}</span>
- </div>`).join('')}
- </div>
-
- <!-- OVERDUE ALERT -->
- ${overdue.length?`
- <div style="background:rgba(138,58,42,.06);border:1px solid rgba(138,58,42,.2);border-radius:var(--rl);padding:14px 16px;margin-bottom:20px">
- <div style="font-size:13px;font-weight:600;color:var(--brick);margin-bottom:8px">⚠ $${totalOverdue.toLocaleString()} overdue across ${overdue.length} payments</div>
- ${overdue.slice(0,5).map(pm=>`<div style="font-family:var(--mono);font-size:11px;padding:3px 0;color:var(--brick)">${pm.poName} · ${pm.desc} · $${(pm.amount||0).toLocaleString()} · due ${pm.due||'—'}</div>`).join('')}
- </div>
- `:''}
-
- <!-- 12-WEEK CASH FLOW TABLE -->
- <div class="sec-hdr">12-Week Cash Flow</div>
- <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px;overflow-x:auto">
- <table style="width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px;min-width:600px">
- <thead>
- <tr style="border-bottom:2px solid var(--ink);background:var(--sur)">
- <th style="padding:10px 8px;text-align:left;font-size:9px;color:var(--faded)">WEEK</th>
- <th style="padding:10px 8px;text-align:right;font-size:9px;color:var(--faded)">REVENUE</th>
- <th style="padding:10px 8px;text-align:right;font-size:9px;color:var(--faded)">AP DUE</th>
- <th style="padding:10px 8px;text-align:right;font-size:9px;color:var(--faded)">PLANNED</th>
- <th style="padding:10px 8px;text-align:right;font-size:9px;color:var(--faded)">NET FLOW</th>
- <th style="padding:10px 8px;text-align:right;font-size:9px;color:var(--faded)">BALANCE</th>
- </tr>
- </thead>
- <tbody>
- ${weeks.map(wk=>`
- <tr style="border-bottom:1px solid var(--brd)">
- <td style="padding:8px;font-size:10px;color:var(--faded)">Wk ${wk.w} · ${wk.label}</td>
- <td style="padding:8px;text-align:right;color:var(--grn)">+$${Math.round(wk.rev/1000)}K</td>
- <td style="padding:8px;text-align:right;color:${wk.payments>0?'var(--brick)':'var(--faded)'}">${wk.payments>0?'-$'+Math.round(wk.payments/1000)+'K':'—'}</td>
- <td style="padding:8px;text-align:right;color:${wk.plannedCost>0?'var(--amb)':'var(--faded)'}">${wk.plannedCost>0?'-$'+Math.round(wk.plannedCost/1000)+'K':'—'}</td>
- <td style="padding:8px;text-align:right;font-weight:700;color:${wk.netFlow>=0?'var(--grn)':'var(--brick)'}">${wk.netFlow>=0?'+':'-'}$${Math.abs(Math.round(wk.netFlow/1000))}K</td>
- <td style="padding:8px;text-align:right;font-weight:700;color:${wk.balance>=0?'':'var(--brick)'}">$${Math.round(wk.balance/1000)}K</td>
- </tr>`).join('')}
- </tbody>
- </table>
- </div>
-
- <!-- UPCOMING PAYMENTS -->
- <div class="sec-hdr">Upcoming Payments · ${unpaid.length}</div>
- ${unpaid.sort((a,b)=>{
- const da=a.due?new Date(a.due):new Date('2099-01-01');
- const db=b.due?new Date(b.due):new Date('2099-01-01');
- return da-db;
- }).slice(0,10).map(pm=>`
- <div onclick="navigate('po-payments','${pm.poId}')" style="display:grid;grid-template-columns:1fr 80px 60px;padding:10px 14px;border-bottom:1px solid var(--brd);cursor:pointer;font-size:12px" class="row-hover">
- <div><span style="font-weight:500">${pm.poName}</span><div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${pm.desc} · ${pm.vendor}</div></div>
- <span style="font-family:var(--mono);font-size:13px;text-align:right;font-weight:700">$${(pm.amount||0).toLocaleString()}</span>
- <div style="text-align:right"><span class="badge ${pm.status==='overdue'?'b-red':'b-amb'}">${pm.status}</span><div style="font-family:var(--mono);font-size:8px;color:var(--faded)">${pm.due||''}</div></div>
- </div>`).join('')}
-
- <div style="display:flex;gap:8px;margin-top:16px">
- <button class="btn" onclick="navigate('fin-ap')">Full AP</button>
- <button class="btn" onclick="navigate('production-planning')">Production planning</button>
- <button class="btn" onclick="navigate('fin-margins')">Margins</button>
- </div>
+ <div style="max-width:1000px">
+  <div class="back-link" onclick="navigate('bookkeeping')">â Finance</div>
+  <div class="page-title">Cash Flow</div>
+  <div class="page-sub">March â December Â· Real Data</div>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
+   <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(avail)}</div><div class="kpi-label">Available Cash</div></div>
+   <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(annIn)}</div><div class="kpi-label">Annual Inflow</div></div>
+   <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--brick)">${fmt(annOut)}</div><div class="kpi-label">Annual Outflow</div></div>
+   <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:${net>=0?'var(--grn)':'var(--brick)'}">${net>=0?'+':''}${fmt(net)}</div><div class="kpi-label">Net Position</div></div>
+  </div>
+  <div class="sec-hdr">Balance Sheet</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
+   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px 16px">
+    <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600;margin-bottom:6px">Assets</div>
+    <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--grn);margin-bottom:10px">${fmt(D.bal.assets)}</div>
+    ${Object.entries(D.bal.assetItems).map(([k,v])=>'<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;color:var(--txt2)"><span>'+k+'</span><span style="font-family:var(--mono)">'+fmt(v)+'</span></div>').join('')}
+   </div>
+   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px 16px">
+    <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600;margin-bottom:6px">Liabilities</div>
+    <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--brick);margin-bottom:10px">${fmt(D.bal.liab)}</div>
+    ${Object.entries(D.bal.liabItems).map(([k,v])=>'<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:11px;color:var(--txt2)"><span>'+k+'</span><span style="font-family:var(--mono)">'+(v<0?'-':'')+fmt(v)+'</span></div>').join('')}
+   </div>
+  </div>
+  <div class="sec-hdr">Monthly Breakdown</div>
+  ${monthCards}
+  <div style="display:flex;gap:8px;margin-top:16px">
+   <button class="btn" onclick="navigate('fin-ap')">Full AP</button>
+   <button class="btn" onclick="navigate('fin-margins')">Margins</button>
+   <button class="btn" onclick="navigate('bookkeeping')">Bookkeeping</button>
+  </div>
  </div>`;
 }
 function renderFinAP(){
