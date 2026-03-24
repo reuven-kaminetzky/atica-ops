@@ -19,6 +19,12 @@
   to = "/.netlify/functions/webhooks-shopify"
   status = 200
 
+# Stocky PO proxy
+[[redirects]]
+  from = "/api/stocky/*"
+  to = "/.netlify/functions/stocky/:splat"
+  status = 200
+
 # OAuth callback (temporary)
 [[redirects]]
   from = "/auth/callback"
