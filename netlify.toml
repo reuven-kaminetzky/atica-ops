@@ -19,6 +19,11 @@
   to = "/.netlify/functions/webhooks-shopify"
   status = 200
 
+# Inventory mirror app
+[[redirects]]
+  from = "/inventory"
+  to = "/inventory.html"
+  status = 200
 
 # SPA fallback (must be last)
 [[redirects]]
