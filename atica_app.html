@@ -2773,7 +2773,7 @@ function renderFinCashflow(){
   const open=X[key];
   return `<div style="border-top:1px solid var(--brd)">
    <div onclick="window._cfToggle('${key}')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:12px 16px;font-size:12px;font-weight:600;color:var(--txt2);text-transform:uppercase" class="row-hover">
-    <span>${title}</span><span style="font-size:11px;transition:transform .2s;display:inline-block;transform:rotate(${open?'90':'0'}deg)">â¸</span>
+    <span>${title}</span><span style="font-size:11px;transition:transform .2s;display:inline-block;transform:rotate(${open?'90':'0'}deg)">&#9656;</span>
    </div>
    ${open?'<div style="padding:0 16px 12px">'+content+'</div>':''}
   </div>`;
@@ -2801,7 +2801,7 @@ function renderFinCashflow(){
   if(D.opex.totals[mi]>0){
    D.opex.items.forEach(ex=>{
     opexHtml+=row(ex.n,fmt(ex.t),'var(--brick)');
-    if(ex.loc) opexHtml+='<div style="padding:2px 0 6px 12px;font-size:10px;color:var(--txt3)">'+Object.entries(ex.loc).map(([l,a])=>l+': '+fmt(a)).join(' Â· ')+'</div>';
+    if(ex.loc) opexHtml+='<div style="padding:2px 0 6px 12px;font-size:10px;color:var(--txt3)">'+Object.entries(ex.loc).map(([l,a])=>l+': '+fmt(a)).join(' &middot; ')+'</div>';
    });
   }
   opexHtml+=totalRow('Total OpEx',fmt(D.opex.totals[mi]),'var(--brick)');
@@ -2811,14 +2811,14 @@ function renderFinCashflow(){
   let vendorTotal=0;
   Object.keys(D.vendors).forEach(v=>{
    if(D.vendors[v][mi]>0){vendorHtml+=row(v,fmt(D.vendors[v][mi]),'var(--brick)');vendorTotal+=D.vendors[v][mi];}
-   });
+  });
   // Outstanding orders for this month
   D.orders.forEach(o=>{
-   if(o.p[mi]>0){vendorHtml+=row(o.v+' â '+o.d,fmt(o.p[mi]),'var(--brick)');vendorTotal+=o.p[mi];}
-   });
+   if(o.p[mi]>0){vendorHtml+=row(o.v+'  -  '+o.d,fmt(o.p[mi]),'var(--brick)');vendorTotal+=o.p[mi];}
+  });
   // Invoices due this month
   D.invoices.filter(i=>i.m===mi).forEach(i=>{
-   vendorHtml+=row(i.v+' â '+i.d,fmt(i.a),'var(--brick)');vendorTotal+=i.a;
+   vendorHtml+=row(i.v+'  -  '+i.d,fmt(i.a),'var(--brick)');vendorTotal+=i.a;
   });
   if(vendorTotal>0) vendorHtml+=totalRow('Vendor Total',fmt(vendorTotal),'var(--brick)');
   else vendorHtml='<div style="color:var(--txt3);font-size:12px;padding:4px 0">No vendor payments</div>';
@@ -2835,7 +2835,7 @@ function renderFinCashflow(){
 
   return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);margin-bottom:8px;overflow:hidden">
    <div onclick="window._cfToggle('${mk}')" style="cursor:pointer;display:grid;grid-template-columns:24px 1fr 1fr 1fr;align-items:center;padding:14px 16px" class="row-hover">
-    <span style="font-size:13px;color:var(--txt3);transition:transform .15s;display:inline-block;transform:rotate(${expanded?'90':'0'}deg)">â¸</span>
+    <span style="font-size:13px;color:var(--txt3);transition:transform .15s;display:inline-block;transform:rotate(${expanded?'90':'0'}deg)">&#9656;</span>
     <div><span style="font-family:var(--display);font-size:17px;font-weight:600">${mon}</span></div>
     <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);margin-bottom:2px">Net Flow</div><div style="font-family:var(--mono);font-size:15px;font-weight:700;color:${nf>=0?'var(--grn)':'var(--brick)'}">${nf>=0?'+':''}${fmt(nf)}</div></div>
     <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);margin-bottom:2px">End Balance</div><div style="font-family:var(--mono);font-size:15px;font-weight:700">${fmt(endBal)}</div></div>
@@ -2847,11 +2847,11 @@ function renderFinCashflow(){
      <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px">Ending Balance</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(endBal)}</div></div>
     </div>
    </div>
-   ${sec(mk+'_in','Inflows â '+fmt(D.inflowTotals[mi]),inflowHtml)}
-   ${sec(mk+'_ox','Operating Expenses â '+fmt(D.opex.totals[mi]),opexHtml)}
-   ${sec(mk+'_vn','Inventory & Vendor Payments'+(vendorTotal>0?' â '+fmt(vendorTotal):''),vendorHtml)}
-   ${D.shipping[mi]>0?sec(mk+'_sh','Shipping & Duties â '+fmt(D.shipping[mi]),shipHtml):''}
-   ${constTotal>0?sec(mk+'_cn','Construction â '+fmt(constTotal),constHtml):''}
+   ${sec(mk+'_in','Inflows  -  '+fmt(D.inflowTotals[mi]),inflowHtml)}
+   ${sec(mk+'_ox','Operating Expenses  -  '+fmt(D.opex.totals[mi]),opexHtml)}
+   ${sec(mk+'_vn','Inventory & Vendor Payments'+(vendorTotal>0?'  -  '+fmt(vendorTotal):''),vendorHtml)}
+   ${D.shipping[mi]>0?sec(mk+'_sh','Shipping & Duties  -  '+fmt(D.shipping[mi]),shipHtml):''}
+   ${constTotal>0?sec(mk+'_cn','Construction  -  '+fmt(constTotal),constHtml):''}
    <div style="border-top:2px solid var(--brd-s);padding:12px 16px;background:rgba(0,0,0,.02)">
     <div style="display:grid;grid-template-columns:1fr 100px;font-size:13px;font-weight:700">
      <span>Total Outflow</span><span style="text-align:right;font-family:var(--mono);color:var(--brick)">${fmt(D.outTotals[mi])}</span>
@@ -2863,9 +2863,9 @@ function renderFinCashflow(){
 
  $('page').innerHTML=`
  <div style="max-width:1000px">
-  <div class="back-link" onclick="navigate('bookkeeping')">â Finance</div>
+  <div class="back-link" onclick="navigate('bookkeeping')">&larr; Finance</div>
   <div class="page-title">Cash Flow</div>
-  <div class="page-sub">March â December Â· Real Data</div>
+  <div class="page-sub">March - December &middot; Real Data</div>
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
    <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(avail)}</div><div class="kpi-label">Available Cash</div></div>
    <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(annIn)}</div><div class="kpi-label">Annual Inflow</div></div>
