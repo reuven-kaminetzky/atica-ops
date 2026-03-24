@@ -3864,7 +3864,7 @@ function renderAnScorecard(){
   // Per-vendor metrics
   const vendorMetrics={};
   prods.forEach(p=>{
-    const vn=p.vendor.split('(')[0].trim();
+    const vn=(p.vendor||'').split('(')[0].trim();
     if(!vendorMetrics[vn])vendorMetrics[vn]={count:0,rev:0,units:0,onTime:0};
     vendorMetrics[vn].count++;
     vendorMetrics[vn].rev+=Math.round(p.vel*season.multiplier*p.retail*52);
@@ -6881,7 +6881,7 @@ function renderProductDetail(id) {
  <!-- QUICK ACTIONS -->
  <div style="display:flex;gap:8px;flex-wrap:wrap">
  <button class="btn btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ New PO</button>
- ${vendorId?`<button class="btn" onclick="navigate('vendor-detail','${vendorId}')">${p.vendor.split('(')[0].trim()}</button>`:''}
+ ${vendorId?`<button class="btn" onclick="navigate('vendor-detail','${vendorId}')">${(p.vendor||'').split('(')[0].trim()}</button>`:''}
  ${p.shopifyUrl?`<button class="btn" onclick="window.open('${p.shopifyUrl}','_blank')">Shopify</button>`:''}
  </div>
  </div>`;
@@ -7436,7 +7436,7 @@ function renderPONew(){
  <span style="font-family:var(--display);font-size:14px;font-weight:600">${p.name}</span>
  <span class="badge ${p.flag==='ok'?'b-grn':p.flag==='reorder'?'b-red':'b-amb'}" style="font-size:8px">${p.flag}</span>
  </div>
- <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.code} &middot; ${p.cat} &middot; $${p.fob} FOB &middot; ${p.vendor.split('(')[0].trim()}</div>
+ <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.code} &middot; ${p.cat} &middot; $${p.fob} FOB &middot; ${(p.vendor||'').split('(')[0].trim()}</div>
  </div>
  <span style="font-family:var(--mono);font-size:12px;text-align:right;font-weight:700${stock<50?';color:var(--brick)':''}">${stock}</span>
  <span style="font-family:var(--mono);font-size:10px;text-align:right;color:${cover<8?'var(--brick)':'var(--faded)'}">${cover>100?'∞':cover+'w'}</span>
@@ -9049,7 +9049,7 @@ function renderAnalytics(){
  }).slice(0,5);
  const vendors={};
  prods.forEach(p=>{
- const vn=p.vendor.split('(')[0].trim();
+ const vn=(p.vendor||'').split('(')[0].trim();
  if(!vendors[vn])vendors[vn]={count:0,rev:0,units:0};
  vendors[vn].count++;
  vendors[vn].rev+=Math.round(p.vel*season.multiplier*p.retail*52);
@@ -10578,7 +10578,7 @@ function renderProductionPlanning() {
  <div>
  <span style="font-family:var(--display);font-size:15px;font-weight:600">${p.name}</span>
  ${p.isDead?'<span class="badge b-red" style="margin-left:6px">OUT OF STOCK</span>':p.isUrgent?'<span class="badge b-red" style="margin-left:6px">URGENT</span>':'<span class="badge b-amb" style="margin-left:6px">reorder</span>'}
- <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.code} · ${p.cat} · ${p.vendor.split('(')[0].trim()}</div>
+ <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.code} · ${p.cat} · ${(p.vendor||'').split('(')[0].trim()}</div>
  </div>
  </div>
  </div>
