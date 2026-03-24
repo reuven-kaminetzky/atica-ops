@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="theme-color" content="#1a1a2e">
  <meta name="apple-mobile-web-app-capable" content="yes">
- <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+ <meta name="apple-mobile-wheb-app-status-bar-style" content="black-translucent">
  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Atica Man — Operations</title>
 <!--
@@ -2794,7 +2794,7 @@ function renderFinCashflow(){
    const v=D.inflow[k][mi];
    if(v!==0) inflowHtml+=row(k+(v<0?' (repayment)':''),v<0?'-'+fmt(v):fmt(v),v<0?'var(--brick)':'var(--grn)');
   });
-  inflowHtml+=totalRow('Total Inflow',fmt(D.inflowTotals[mi]),'var(--grn')');
+  inflowHtml+=totalRow('Total Inflow',fmt(D.inflowTotals[mi]),'var(--grn)');
 
   // OpEx section
   let opexHtml='';
