@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atica Inventory Mirror</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --text: #e4e4e7;
+    --muted: #71717a;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --red: #ef4444;
+    --orange: #f97316;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  .status-dot.connected { background: var(--green); }
+  .status-dot.error { background: var(--red); }
+
+  .status-text { font-size: 13px; color: var(--muted); }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+
+  .search-box {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+  .search-box:focus { border-color: var(--accent); }
+  .search-box::placeholder { color: var(--muted); }
+
+  .btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .filter-group { display: flex; gap: 4px; }
+  .filter-btn {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* ── Stats ──────────────────────────────────────────── */
+  .stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    padding: 16px 24px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 24px; font-weight: 600; margin-top: 4px; }
+
+  /* ── Table ──────────────────────────────────────────── */
+  .table-wrap {
+    padding: 0 24px 24px;
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  thead th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  thead th:hover { color: var(--text); }
+  thead th .arrow { font-size: 10px; margin-left: 4px; }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  tbody tr:hover { background: rgba(99, 102, 241, 0.05); }
+
+  td {
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  .product-title { font-weight: 500; }
+  .variant-title { color: var(--muted); font-size: 13px; }
+  .sku { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; color: var(--muted); }
+  .price { text-align: right; }
+
+  .stock-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    min-width: 48px;
+  }
+  .stock-badge.high { background: rgba(34,197,94,0.15); color: var(--green); }
+  .stock-badge.medium { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .stock-badge.low { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .stock-badge.out { background: rgba(239,68,68,0.15); color: var(--red); }
+
+  .img-thumb {
+    width: 36px; height: 36px;
+    border-radius: 4px;
+    object-fit: cover;
+    background: var(--border);
+  }
+
+  /* ── Empty / loading states ─────────────────────────── */
+  .state-msg {
+    text-align: center;
+    padding: 80px 24px;
+    color: var(--muted);
+  }
+  .state-msg h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+
+  .spinner {
+    width: 24px; height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .last-sync { font-size: 12px; color: var(--muted); }
+
+  /* ── Responsive ─────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .header, .toolbar, .stats-bar, .table-wrap { padding-left: 12px; padding-right: 12px; }
+    .stats-bar { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Atica Inventory Mirror</h1>
+  <div class="header-right">
+    <span class="status-dot" id="statusDot"></span>
+    <span class="status-text" id="statusText">Connecting...</span>
+  </div>
+</div>
+
+<div class="toolbar">
+  <input type="text" class="search-box" id="searchBox" placeholder="Search products, SKUs, variants...">
+  <div class="filter-group">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="in-stock">In Stock</button>
+    <button class="filter-btn" data-filter="low">Low Stock</button>
+    <button class="filter-btn" data-filter="out">Out of Stock</button>
+  </div>
+  <button class="btn primary" id="syncBtn">Sync Now</button>
+  <span class="last-sync" id="lastSync"></span>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat-card"><div class="stat-label">Total Products</div><div class="stat-value" id="statProducts">—</div></div>
+  <div class="stat-card"><div class="stat-label">Total Variants</div><div class="stat-value" id="statVariants">—</div></div>
+  <div class="stat-card"><div class="stat-label">Total Units</div><div class="stat-value" id="statUnits">—</div></div>
+  <div class="stat-card"><div class="stat-label">Out of Stock</div><div class="stat-value" id="statOOS">—</div></div>
+  <div class="stat-card"><div class="stat-label">Low Stock (&le;5)</div><div class="stat-value" id="statLow">—</div></div>
+</div>
+
+<div class="table-wrap">
+  <div class="state-msg" id="loadingState">
+    <div class="spinner"></div>
+    <h2>Loading inventory...</h2>
+    <p>Fetching products from Shopify</p>
+  </div>
+
+  <div class="state-msg" id="emptyState" style="display:none">
+    <h2>No products found</h2>
+    <p>Connect your Shopify store to see inventory here.</p>
+  </div>
+
+  <div class="state-msg" id="errorState" style="display:none">
+    <h2>Connection error</h2>
+    <p id="errorMsg">Could not reach Shopify API</p>
+    <button class="btn primary" style="margin-top:16px" onclick="syncAll()">Retry</button>
+  </div>
+
+  <table id="inventoryTable" style="display:none">
+    <thead>
+      <tr>
+        <th data-sort="image" style="width:48px"></th>
+        <th data-sort="product">Product <span class="arrow"></span></th>
+        <th data-sort="variant">Variant <span class="arrow"></span></th>
+        <th data-sort="sku">SKU <span class="arrow"></span></th>
+        <th data-sort="price">Price <span class="arrow"></span></th>
+        <th data-sort="stock">Stock <span class="arrow"></span></th>
+        <th data-sort="status">Status <span class="arrow"></span></th>
+      </tr>
+    </thead>
+    <tbody id="inventoryBody"></tbody>
+  </table>
+</div>
+
+<script>
+// ── State ───────────────────────────────────────────────
+let products = [];
+let rows = [];        // flattened: one row per variant
+let sortCol = 'product';
+let sortAsc = true;
+let activeFilter = 'all';
+let searchQuery = '';
+let autoRefreshTimer = null;
+
+const LOW_STOCK_THRESHOLD = 5;
+const AUTO_REFRESH_MS = 60_000; // 1 minute
+
+// ── API helpers ─────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`/api/shopify/${path}`, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+// ── Check connection ────────────────────────────────────
+async function checkStatus() {
+  try {
+    const data = await api('GET', 'status');
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    if (data.connected) {
+      dot.className = 'status-dot connected';
+      txt.textContent = `Connected: ${data.shop}`;
+    } else {
+      dot.className = 'status-dot error';
+      txt.textContent = 'Not connected';
+    }
+    return data.connected;
+  } catch {
+    document.getElementById('statusDot').className = 'status-dot error';
+    document.getElementById('statusText').textContent = 'Error';
+    return false;
+  }
+}
+
+// ── Sync inventory ──────────────────────────────────────
+async function syncAll() {
+  const btn = document.getElementById('syncBtn');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+
+  showState('loading');
+
+  try {
+    const data = await api('POST', 'sync/products');
+    products = data.products;
+    rows = flattenProducts(products);
+    updateStats();
+    renderTable();
+    showState('table');
+
+    document.getElementById('lastSync').textContent =
+      `Last sync: ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    document.getElementById('errorMsg').textContent = err.message;
+    showState('error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sync Now';
+  }
+}
+
+// ── Flatten products into variant rows ──────────────────
+function flattenProducts(products) {
+  const out = [];
+  for (const p of products) {
+    const img = p.images?.[0]?.src || '';
+    for (const v of p.variants) {
+      out.push({
+        image: img,
+        product: p.title,
+        variant: v.title,
+        sku: v.sku || '—',
+        price: parseFloat(v.price) || 0,
+        stock: v.inventoryQty ?? 0,
+        productType: p.productType,
+        status: p.status,
+        shopifyId: p.shopifyId,
+        variantId: v.variantId,
+      });
+    }
+  }
+  return out;
+}
+
+// ── Stats ───────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('statProducts').textContent = products.length.toLocaleString();
+  document.getElementById('statVariants').textContent = rows.length.toLocaleString();
+
+  const totalUnits = rows.reduce((s, r) => s + r.stock, 0);
+  const oos = rows.filter(r => r.stock <= 0).length;
+  const low = rows.filter(r => r.stock > 0 && r.stock <= LOW_STOCK_THRESHOLD).length;
+
+  document.getElementById('statUnits').textContent = totalUnits.toLocaleString();
+  document.getElementById('statOOS').textContent = oos.toLocaleString();
+  document.getElementById('statLow').textContent = low.toLocaleString();
+}
+
+// ── Filter & search ─────────────────────────────────────
+function getFilteredRows() {
+  let filtered = rows;
+
+  // Stock filter
+  if (activeFilter === 'in-stock') filtered = filtered.filter(r => r.stock > 0);
+  else if (activeFilter === 'low') filtered = filtered.filter(r => r.stock > 0 && r.stock <= LOW_STOCK_THRESHOLD);
+  else if (activeFilter === 'out') filtered = filtered.filter(r => r.stock <= 0);
+
+  // Search
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(r =>
+      r.product.toLowerCase().includes(q) ||
+      r.variant.toLowerCase().includes(q) ||
+      r.sku.toLowerCase().includes(q)
+    );
+  }
+
+  return filtered;
+}
+
+// ── Sort ────────────────────────────────────────────────
+function sortRows(data) {
+  const dir = sortAsc ? 1 : -1;
+  return [...data].sort((a, b) => {
+    const av = a[sortCol], bv = b[sortCol];
+    if (typeof av === 'number') return (av - bv) * dir;
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+}
+
+// ── Render ──────────────────────────────────────────────
+function stockClass(qty) {
+  if (qty <= 0) return 'out';
+  if (qty <= LOW_STOCK_THRESHOLD) return 'low';
+  if (qty <= 20) return 'medium';
+  return 'high';
+}
+
+function renderTable() {
+  const filtered = sortRows(getFilteredRows());
+  const tbody = document.getElementById('inventoryBody');
+
+  if (filtered.length === 0 && rows.length > 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--muted)">No items match your filter</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(r => `
+    <tr>
+      <td>${r.image ? `<img class="img-thumb" src="${escHtml(r.image)}" alt="" loading="lazy">` : '<div class="img-thumb"></div>'}</td>
+      <td class="product-title">${escHtml(r.product)}</td>
+      <td class="variant-title">${escHtml(r.variant)}</td>
+      <td class="sku">${escHtml(r.sku)}</td>
+      <td class="price">$${r.price.toFixed(2)}</td>
+      <td><span class="stock-badge ${stockClass(r.stock)}">${r.stock}</span></td>
+      <td class="variant-title">${r.stock <= 0 ? 'Out of stock' : r.stock <= LOW_STOCK_THRESHOLD ? 'Low stock' : 'In stock'}</td>
+    </tr>
+  `).join('');
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function showState(state) {
+  document.getElementById('loadingState').style.display = state === 'loading' ? '' : 'none';
+  document.getElementById('emptyState').style.display = state === 'empty' ? '' : 'none';
+  document.getElementById('errorState').style.display = state === 'error' ? '' : 'none';
+  document.getElementById('inventoryTable').style.display = state === 'table' ? '' : 'none';
+}
+
+// ── Event wiring ────────────────────────────────────────
+document.getElementById('syncBtn').addEventListener('click', syncAll);
+
+document.getElementById('searchBox').addEventListener('input', (e) => {
+  searchQuery = e.target.value;
+  renderTable();
+});
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelector('.filter-btn.active').classList.remove('active');
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    renderTable();
+  });
+});
+
+document.querySelectorAll('thead th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.sort;
+    if (col === 'image') return;
+    if (sortCol === col) sortAsc = !sortAsc;
+    else { sortCol = col; sortAsc = true; }
+
+    document.querySelectorAll('thead th .arrow').forEach(a => a.textContent = '');
+    th.querySelector('.arrow').textContent = sortAsc ? '\u25B2' : '\u25BC';
+
+    renderTable();
+  });
+});
+
+// ── Init ────────────────────────────────────────────────
+(async () => {
+  const connected = await checkStatus();
+  if (connected) {
+    await syncAll();
+    // Auto-refresh every minute
+    autoRefreshTimer = setInterval(syncAll, AUTO_REFRESH_MS);
+  } else {
+    showState('error');
+    document.getElementById('errorMsg').textContent =
+      'Shopify not connected. Set SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN in Netlify env vars.';
+  }
+})();
+</script>
+</body>
+</html>
