@@ -3,6 +3,13 @@ const { json, cors, authenticate } = require('../../lib/auth');
 const { mapProduct, mapOrder, mapLedgerEntry, mapSnapshotProduct, mapSKU } = require('../../lib/mappers');
 const { sinceDate, buildVelocity, buildSalesSummary } = require('../../lib/analytics');
 
+class RouteError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
 // ── Route handlers ──────────────────────────────────────────
 
 async function status() {
@@ -22,6 +29,10 @@ async function connect() {
       'Redeploy',
     ],
   };
+}
+
+async function disconnect() {
+  return { message: 'Remove SHOPIFY_ACCESS_TOKEN from Netlify env vars to disconnect' };
 }
 
 async function syncProducts(client) {
@@ -73,19 +84,39 @@ async function ledger(client, { params }) {
   return { days, entries: entries.length, ledger: entries };
 }
 
-async function snapshot(client) {
+async function takeSnapshot(client) {
   const { products } = await client.getProducts();
   return { timestamp: new Date().toISOString(), products: products.map(mapSnapshotProduct) };
 }
 
-async function skuMap(client) {
+async function listSnapshots() {
+  // Snapshots would be stored in a database in production.
+  // For now, return empty — the frontend handles the "no data yet" state.
+  return { snapshots: [] };
+}
+
+async function skuMap(client, { params }) {
   const { products } = await client.getProducts();
   const map = products.flatMap(p => p.variants.map(v => mapSKU(p, v)));
-  return { count: map.length, skuMap: map };
+  const filter = params.filter;
+  const filtered = filter && filter !== 'all'
+    ? map.filter(s => s.sku.toLowerCase().includes(filter.toLowerCase()))
+    : map;
+  return { count: filtered.length, skuMap: filtered };
+}
+
+async function updateSKU(client, { pathParams, body }) {
+  const sku = decodeURIComponent(pathParams.sku);
+  // In production this would persist the mapping. For now, echo back the update.
+  return { sku, ...body, updated: true };
+}
+
+async function confirmAllSKU() {
+  return { confirmed: true, message: 'All SKU mappings confirmed' };
 }
 
 async function webhooksSetup(client, { body }) {
-  if (!body.base_url) return { _status: 400, error: 'base_url required' };
+  if (!body.base_url) throw new RouteError(400, 'base_url required');
 
   const topics = ['orders/create', 'orders/updated', 'products/update', 'inventory_levels/update'];
   const { webhooks: existing } = await client.getWebhooks();
@@ -100,26 +131,44 @@ async function webhooksSetup(client, { body }) {
   return { message: 'Webhooks configured', webhooks: created };
 }
 
-async function disconnect() {
-  return { message: 'Remove SHOPIFY_ACCESS_TOKEN from Netlify env vars to disconnect' };
-}
-
 // ── Route table ─────────────────────────────────────────────
+// Pattern supports :param segments for path parameters
 
-const ROUTES = {
-  'GET  status':          { handler: status, noClient: true },
-  'POST connect':         { handler: connect, noClient: true },
-  'POST disconnect':      { handler: disconnect, noClient: true },
-  'POST sync/products':   { handler: syncProducts },
-  'POST sync/orders':     { handler: syncOrders },
-  'POST sync/inventory':  { handler: syncInventory },
-  'GET  velocity':        { handler: velocity },
-  'GET  sales':           { handler: sales },
-  'GET  ledger':          { handler: ledger },
-  'POST snapshot':        { handler: snapshot },
-  'GET  sku-map':         { handler: skuMap },
-  'POST webhooks/setup':  { handler: webhooksSetup },
-};
+const ROUTES = [
+  { method: 'GET',   path: 'status',           handler: status,         noClient: true },
+  { method: 'POST',  path: 'connect',          handler: connect,        noClient: true },
+  { method: 'POST',  path: 'disconnect',       handler: disconnect,     noClient: true },
+  { method: 'POST',  path: 'sync/products',    handler: syncProducts },
+  { method: 'POST',  path: 'sync/orders',      handler: syncOrders },
+  { method: 'POST',  path: 'sync/inventory',   handler: syncInventory },
+  { method: 'GET',   path: 'velocity',         handler: velocity },
+  { method: 'GET',   path: 'sales',            handler: sales },
+  { method: 'GET',   path: 'ledger',           handler: ledger },
+  { method: 'POST',  path: 'snapshot',         handler: takeSnapshot },
+  { method: 'GET',   path: 'snapshots',        handler: listSnapshots,  noClient: true },
+  { method: 'GET',   path: 'sku-map',          handler: skuMap },
+  { method: 'PATCH', path: 'sku-map/:sku',     handler: updateSKU,      noClient: true },
+  { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },
+  { method: 'POST',  path: 'webhooks/setup',   handler: webhooksSetup },
+];
+
+function matchRoute(method, path) {
+  for (const route of ROUTES) {
+    if (route.method !== method) continue;
+    const routeParts = route.path.split('/');
+    const pathParts = path.split('/');
+    if (routeParts.length !== pathParts.length) continue;
+
+    const pathParams = {};
+    const match = routeParts.every((seg, i) => {
+      if (seg.startsWith(':')) { pathParams[seg.slice(1)] = pathParts[i]; return true; }
+      return seg === pathParts[i];
+    });
+
+    if (match) return { route, pathParams };
+  }
+  return null;
+}
 
 // ── Entry point ─────────────────────────────────────────────
 
@@ -129,28 +178,28 @@ exports.handler = async (event) => {
   const auth = authenticate(event);
   if (!auth.ok) return json(401, { error: auth.error });
 
-  const path = event.path.replace(/^\/api\/shopify\/?/, '').replace(/\/$/, '');
-  const key = `${event.httpMethod} ${path || 'status'}`;
-  const route = ROUTES[key];
+  const path = event.path.replace(/^\/api\/shopify\/?/, '').replace(/\/$/, '') || 'status';
+  const matched = matchRoute(event.httpMethod, path);
+  if (!matched) return json(404, { error: `No route: ${event.httpMethod} ${path}` });
 
-  if (!route) return json(404, { error: `No route: ${key}` });
+  const { route, pathParams } = matched;
 
   try {
     const client = route.noClient ? null : createClient();
     if (!route.noClient && !client) return json(503, { error: 'Shopify not configured' });
 
     const ctx = {
-      params: event.queryStringParameters || {},
-      body:   event.body ? JSON.parse(event.body) : {},
+      params:     event.queryStringParameters || {},
+      body:       event.body ? JSON.parse(event.body) : {},
+      pathParams,
     };
 
     const result = await route.handler(client, ctx);
-    const status = result?._status || 200;
-    if (result?._status) delete result._status;
-    return json(status, result);
+    return json(200, result);
 
   } catch (err) {
-    console.error(`[shopify] ${key}:`, err);
+    if (err instanceof RouteError) return json(err.status, { error: err.message });
+    console.error(`[shopify] ${event.httpMethod} ${path}:`, err);
     return json(500, { error: err.message });
   }
 };

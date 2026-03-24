@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 /**
- * Quick test script to verify Shopify connection
+ * Verify Shopify connection and print store summary
  * Usage: SHOPIFY_STORE_URL=xxx SHOPIFY_ACCESS_TOKEN=xxx node scripts/test-shopify.js
  */
 
 const { createClient } = require('../lib/shopify');
+
+async function probe(label, fn) {
+  try {
+    const result = await fn();
+    console.log(`  ${label}: ${result}`);
+  } catch (err) {
+    console.log(`  ${label}: error — ${err.message}`);
+  }
+}
 
 async function main() {
   const client = createClient();
@@ -15,39 +24,17 @@ async function main() {
 
   console.log('Testing Shopify connection...\n');
 
-  try {
-    const { shop } = await client._request('/shop.json');
-    console.log(`  Store: ${shop.name}`);
-    console.log(`  Domain: ${shop.domain}`);
-    console.log(`  Plan: ${shop.plan_name}`);
-    console.log(`  Currency: ${shop.currency}\n`);
-  } catch (err) {
-    console.error('Connection failed:', err.message);
-    process.exit(1);
-  }
+  const { shop } = await client._request('/shop.json');
+  console.log(`  Store:    ${shop.name}`);
+  console.log(`  Domain:   ${shop.domain}`);
+  console.log(`  Plan:     ${shop.plan_name}`);
+  console.log(`  Currency: ${shop.currency}\n`);
 
-  try {
-    const { count } = await client.getProductCount();
-    console.log(`  Products: ${count}`);
-  } catch (err) {
-    console.log(`  Products: error — ${err.message}`);
-  }
+  await probe('Products',  async () => (await client.getProductCount()).count);
+  await probe('Orders',    async () => (await client.getOrderCount()).count);
+  await probe('Locations', async () => (await client.getLocations()).locations.map(l => l.name).join(', '));
 
-  try {
-    const { count } = await client.getOrderCount();
-    console.log(`  Orders: ${count}`);
-  } catch (err) {
-    console.log(`  Orders: error — ${err.message}`);
-  }
-
-  try {
-    const { locations } = await client.getLocations();
-    console.log(`  Locations: ${locations.map(l => l.name).join(', ')}`);
-  } catch (err) {
-    console.log(`  Locations: error — ${err.message}`);
-  }
-
-  console.log('\nShopify connection OK');
+  console.log('\nDone.');
 }
 
-main();
+main().catch(err => { console.error('Connection failed:', err.message); process.exit(1); });
