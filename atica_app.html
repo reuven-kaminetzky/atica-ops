@@ -8931,7 +8931,7 @@ function renderAnalytics(){
  const sortHdr=(key,label,align)=>{
   const active=X.sort===key;
   const arrow=active?(X.sortDir===-1?' &#9660;':' &#9650;'):'';
-  return `<span onclick="if(window._anX.sort==='${key}'){window._anX.sortDir*=-1}else{window._anX.sort='${key}';window._anX.sortDir=-1};navigate('analytics')" style="text-align:${align||'right'};cursor:pointer;user-select:none;${active?'color:var(--grn);':''}">${label}${arrow}</span>`;
+  return `<span onclick="if(window._anX.sort==='${key}'){window._anX.sortDir*=-1}else{window._anX.sort='${key}';window._anX.sortDir=-1};navigate('analytics')" style="text-align:${align||'right'};cursor:pointer;user-select:none;${active?'color:var(--grn)':''}">${label}${arrow}</span>`;
  };
 
  // Measure format helper
@@ -8949,7 +8949,7 @@ function renderAnalytics(){
 
  // === DRILL VIEW (product-level detail) ===
  if(drillProducts){
-  const dKer½drillPath[drillPath.length-1];
+  const dKey=drillPath[drillPath.length-1];
   // Sort drill products
   drillProducts.sort((a,b)=>{
    const mDef=measures[X.sort];
@@ -8979,57 +8979,115 @@ function renderAnalytics(){
   $('page').innerHTML=`
   <div style="max-width:1200px">
    <div class="back-link" onclick="window._anX.drill=[];navigate('analytics')">&larr; All ${dims[X.dim].label}s</div>
-   ]Û\ÜÏHYÙK]]HÙÙ^_OÙ]]Û\ÜÏHYÙK\ÝXÙ[ÙXÝË[ÝHÙXÝÈ	ZYÝÈ	Ö\[ÙH	ZYÝÈ[YÝÛY]ÏÙ]]Ý[OH\Ü^N^ÙØ\ÛX\Ú[XÝÛNMÜ\[ÙßOÙ]]Ý[OHXÚÙÜÝ[\K\Ý\NØÜ\\ÛÛY\KX
-NØÜ\\Y]\Î\K\
-NÛÝ\ÝÎY[ÛX\Ú[XÝÛN]Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎY
-
-
-M\
-M\
-M\
-M\ÜY[ÎLMÙÛ\Ú^NLÙÛ]ÙZYÚÌÝ^][ÙÜN\\Ø\ÙNØÛÛÜ\K]ÊNØÜ\XÝÛNÛÛY\KX\ÊHÜ[ÙXÝÜÜ[	ÜÛÜ	ÜØ[\ÉË	Ô][YIÊ_B	ÜÛÜ	Ý[]ÉË	Õ[]ÉÊ_B	ÜÛÜ	ÜÝØÚÉË	ÔÝØÚÉÊ_B	ÜÛÜ	Ú[ÛÛZ[ÉË	Ò[ÉÊ_B	ÜÛÜ	ÛX\Ú[Ë	ÓX\Ú[Ê_B	ÜÛÜ	Ý[ØÚ]IË	Õ[ÝÚÉÊ_B	ÜÛÜ	Þ]IË	Ö]IÊ_BÙ]	Ù[ÝÜßBÙ]]Ý[OH\Ü^N^ÙØ\ÛX\Ú[]ÜM]ÛÛ\ÜÏHÛÛXÚÏHÚ[ÝËØ[[V×NÛ]YØ]J	Ø[[]XÜÉÊHXÚÈÈÝ[[X\OØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ù\ÚØ\	ÊH\ÚØ\Ø]ÛÙ]Ù]Â]\ÂBËÈOOHÕSSPTHPHOOBÛÛÝÛÛYV[OOOIÜÙXÝ	ÂÖÖÉÜØ[\ÉË	Ô][YIË	Î	×KÉÜÝØÚÉË	ÔÝØÚÉË	Í	×KÉÚ[ÛÛZ[ÉË	Ò[ÉË	ÍM\	×KÉÛX\Ú[Ë	ÓX\Ú[Ë	ÍM\	×KÉÝ[ØÚ]IË	Õ[ÝÚÉË	ÍM\	×KÉÞ]IË	Ö]IË	Í	×WBÖÉÜØ[\ÉË	Ô][YIË	Î	×KÉÝ[]ÉË	Õ[]ÉË	Í	×KÉÜÝØÚÉË	ÔÝØÚÉË	Í\	×KÉÚ[ÛÛZ[ÉË	Ò[ÉË	ÍM\	×KÉÛX\Ú[Ë	ÓX\Ú[Ë	ÍM\	×KÉÝ[ØÚ]IË	Õ[ÝÚÉË	ÍM\	×KÉÞ]IË	Ö]IË	Í	×WNÂÛÛÝÜYÛÛÏIÌY	ÊØÛÛYX\
-ÏOÖÌJKÚ[	È	ÊNÂÛÛÝXY\Ù[ÏXÛÛYX\
-ÏOÛÜÖÌKÖÌWJJKÚ[	ÉÊNÂÛÛÝ]TÝÜÏ\ÝÜËX\
-OÂÛÛÝÙ[ÏXÛÛYX\
-ÏOÂÛÛÝ[\ØYÙÖØÖÌWNÂÛÛÝÛÛÜ[XÛÛ
-ÖÌK[
-NÂÛÛÝ\ÐÛXÖÌOOOIÜØ[\ÉßÖÌOOOIÞ]IÎÂ]\Ü[Ý[OH^X[YÛYÚÙÛY[Z[N\K[[ÛÊNÉÚ\ÐÛÉÙÛ]ÙZYÚÉÎÉßXÛÛÜØÛÛÜNÉØÖÌOOOIÞ]IÏÉØXÚÙÜÝ[ØJML
-NØÜ\\Y]\ÎÜY[Î
-	ÎÉßHÛY]
-ÖÌK[
-_OÜÜ[ÂJKÚ[	ÉÊNÂÛÛÝ[ÛXÚÏV[HOOIÜÙXÝ	ÏØÛÛXÚÏHÚ[ÝËØ[[VÉÉÜÙ^K\XÙJÉËÙË	È_I×NÛ]YØ]J	Ø[[]XÜÉÊHÝ[OHÝ\ÛÜÚ[\È	ÎÂ]\]	Ù[ÛXÚßHÛ\ÜÏHÝËZÝ\Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎÙÜYÛÛßNÜY[ÎLMÙÛ\Ú^NLØÜ\XÝÛN\ÛÛY\KX
-NØ[YÛZ][\ÎÙ[\ÉÖ[HOOIÜÙXÝ	ÏÉØÝ\ÛÜÚ[\ÎÉßH]Ü[Ý[OHÛ]ÙZYÚÜÙ^_OÜÜ[Ü[Ý[OHÛ\Ú^NLØÛÛÜ\K]ÊH	ÜØYÙËÙXÝßH	ÜØYÙËÙXÝÏOOLOÉÚ][IÎÚ][\ÉßJOÜÜ[Ù]	ØÙ[ßBÙ]ÂJKÚ[	ÉÊNÂËÈÝ[ÈÝÂÛÛÝÝ[Ù[ÏXÛÛYX\
-ÏOÂÛÛÝ[]Ý[ÖØÖÌWNÂ]\Ü[Ý[OH^X[YÛYÚÙÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌØÛÛÜÛXÛÛ
-ÖÌK[
-_HÛY]
-ÖÌK[
-_OÜÜ[ÂJKÚ[	ÉÊNÂËÈÝ[[X\HÔHÝ\
-ÛÛ\XÝÝØ\ÊBÛÛÝÝ[]Y[\YYXÙJ
-Ë
-OOÊÜXÙJ\ÌÌÜ[]ÌÌ[]ÎL
-K
-NÂÛÛÝÝ[[]ÏY[\YYXÙJ
-Ë
-OOÊÊ\ÌÌÜ[]ÌÌ[]ÎL
-K
-NÂÛÛÝÝ[ÝÏY[\YYXÙJ
-Ë
-OOÊÜÝØÚË
-NÂÛÛÝ]ÓX\Ú[]Ý[ËX\Ú[ÂÛÛÝÜTÝ\X]Ý[OH\Ü^N^ÙØ\ÜY[ÎLMØXÚÙÜÝ[\K\Ý\NØÜ\\ÛÛY\KX
-NØÜ\\Y]\Î\K\
-NÛX\Ú[XÝÛNMÙÛ\Ú^NLØ[YÛZ][\ÎÙ[\Ù^]Ü\Ü\]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚ][YOÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMØÛÛÜ\KYÜH	ÓX]Ý[
-Ý[]KÓØØ[TÝ[Ê
-_OÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚ[]ÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÝÝ[[]ËÓØØ[TÝ[Ê
-_OÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚÝØÚÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÝÝ[ÝËÓØØ[TÝ[Ê
-_OÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚ]ÈX\Ú[ÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMØ]ÓX\Ú[Ñ^Y
-J_IOÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚÙXÝÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÙ[\Y[ÝOÜÜ[Ù]]Ü[Ý[OHÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÙÛ\Ú^NLÙÛ]ÙZYÚÜÝ\ÏÜÜ[Ü[Ý[OHÛY[Z[N\K[[ÛÊNÙÛ]ÙZYÚÌÙÛ\Ú^NMÜÝÜË[ÝOÜÜ[Ù]Ù]Â	
-	ÜYÙIÊK[\SX]Ý[OHX^]ÚYL]Û\ÜÏHXÚË[[ÈÛÛXÚÏH]YØ]J	Ù\ÚØ\	ÊH\È\ÚØ\Ù]]Û\ÜÏHYÙK]]H[[]XÜÏÙ]]Û\ÜÏHYÙK\ÝXÚÜYH
-ÈYÚÜYY	ZYÝÈ[\XÝ]OÙ]]Ý[OH\Ü^N^Ù^]Ü\Ü\ÙØ\LÛX\Ú[XÝÛNMØ[YÛZ][\ÎÙ[\]Ý[OH\Ü^N^ÙØ\Ø[YÛZ][\ÎÙ[\Ü[Ý[OHÛ\Ú^NLÙÛ]ÙZYÚØÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÛX\Ú[\YÚ\[ÙÜÜ[Ü\[ÙßOÙ]]Ý[OH\Ü^N^ÙØ\Ø[YÛZ][\ÎÙ[\Ü[Ý[OHÛ\Ú^NLÙÛ]ÙZYÚØÛÛÜ\K]ÊNÝ^][ÙÜN\\Ø\ÙNÛX\Ú[\YÚÚ[[ÜÜ[ØÚßOÙ]Ù]	ÚÜTÝ\B]Ý[OH\Ü^N^Ø[YÛZ][\ÎÙ[\ÙØ\LÛX\Ú[XÝÛNL]Û\ÜÏHÙXËZÝ[OHX\Ú[XZÙÝÛÙ]]Ý[OH\Ü^N^ÙØ\Ù[PßOÙ]	Ö[HOOIÜÙXÝ	ÏÉÏÜ[Ý[OHÛ\Ú^NLØÛÛÜ\K]ÊNÛX\Ú[[YÛXÚÈ[HÝÈÈ[ÝÛÜÜ[ÎÉßBÙ]]Ý[OHXÚÙÜÝ[\K\Ý\NØÜ\\ÛÛY\KX
-NØÜ\\Y]\Î\K\
-NÛÝ\ÝÎY[ÛX\Ú[XÝÛN]Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎÙÜYÛÛßNÜY[ÎLMÙÛ\Ú^NLÙÛ]ÙZYÚÌÝ^][ÙÜN\\Ø\ÙNØÛÛÜ\K]ÊNØÜ\XÝÛNÛÛY\KX\ÊHÜ[Ù[\ÖÖ[WKX[OÜÜ[	ÚXY\Ù[ßBÙ]	Ù]TÝÜßB]Ý[OH\Ü^NÜYÙÜY][\]KXÛÛ[[ÎÙÜYÛÛßNÜY[ÎLMÙÛ\Ú^NLØÜ\]ÜÛÛY\KX\ÊNØXÚÙÜÝ[ØJ
-
-HÜ[Ý[OHÛ]ÙZYÚÌÝ[
-	Ù[\Y[ÝHÙXÝÊOÜÜ[	ÝÝ[Ù[ßBÙ]Ù]]Ý[OH\Ü^N^ÙØ\ÛX\Ú[]ÜM]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ø[YÜXØ\Ý	ÊHÜXØ\ÝØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ø[XØ]	ÊHØ]YÛÜH	[\ÓØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ù[XØ\ÚÝÉÊHØ\ÚÝÏØ]Û]ÛÛ\ÜÏHÛÛXÚÏH]YØ]J	Ù\ÚØ\	ÊH\ÚØ\Ø]ÛÙ]Ù]ÂB
+   <div class="page-title">${dKey}</div>
+   <div class="page-sub">${drillProducts.length} products &middot; ${X.period} &middot; Drill-down view</div>
+
+   <div style="display:flex;gap:6px;margin-bottom:16px">${periodBtns}</div>
+
+   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px">
+    <div style="display:grid;grid-template-columns:2.5fr 80px 60px 60px 55px 55px 55px 55px;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
+     <span>Product</span>
+     ${sortHdr('sales','Revenue')}
+     ${sortHdr('units','Units')}
+     ${sortHdr('stock','Stock')}
+     ${sortHdr('incoming','Inc')}
+     ${sortHdr('margin','Margin')}
+     ${sortHdr('velocity','Vel/wk')}
+     ${sortHdr('xrate','X Rate')}
+    </div>
+    ${drillRows}
+   </div>
+   <div style="display:flex;gap:8px;margin-top:16px">
+    <button class="btn" onclick="window._anX.drill=[];navigate('analytics')">Back to Summary</button>
+    <button class="btn" onclick="navigate('dashboard')">Dashboard</button>
+   </div>
+  </div>`;
+  return;
+ }
+
+ // === SUMMARY TABLE ===
+ const colDef=X.dim==='product'
+  ?[['sales','Revenue','80px'],['stock','Stock','60px'],['incoming','Inc','55px'],['margin','Margin','55px'],['velocity','Vel/wk','55px'],['xrate','X Rate','60px']]
+  :[['sales','Revenue','80px'],['units','Units','60px'],['stock','Stock','65px'],['incoming','Inc','55px'],['margin','Margin','55px'],['velocity','Vel/wk','55px'],['xrate','X Rate','60px']];
+
+ const gridCols='2.5fr '+colDef.map(c=>c[2]).join(' ');
+
+ const headerCells=colDef.map(c=>sortHdr(c[0],c[1])).join('');
+
+ const dataRows=rows.map(r=>{
+  const cells=colDef.map(c=>{
+   const val=r._agg[c[0]];
+   const color=mcol(c[0],val);
+   const isBold=c[0]==='sales'||c[0]==='xrate';
+   return `<span style="text-align:right;font-family:var(--mono);${isBold?'font-weight:600;':''}color:${color};${c[0]==='xrate'?'background:rgba(200,150,0,.06);border-radius:4px;padding:2px 6px':''}">${mfmt(c[0],val)}</span>`;
+  }).join('');
+  const drillClick=X.dim!=='product'?`onclick="window._anX.drill=['${r.key.replace(/'/g,"\\'")}'];navigate('analytics')" style="cursor:pointer"`:' ';
+  return `<div ${drillClick} class="row-hover" style="display:grid;grid-template-columns:${gridCols};padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center;${X.dim!=='product'?'cursor:pointer':''}">
+   <div><span style="font-weight:600">${r.key}</span> <span style="font-size:10px;color:var(--txt3)">(${r._agg.products} ${r._agg.products===1?'item':'items'})</span></div>
+   ${cells}
+  </div>`;
+ }).join('');
+
+ // Totals row
+ const totalCells=colDef.map(c=>{
+  const val=totals[c[0]];
+  return `<span style="text-align:right;font-family:var(--mono);font-weight:700;color:${mcol(c[0],val)}">${mfmt(c[0],val)}</span>`;
+ }).join('');
+
+ // Summary KPI strip (compact, not cards)
+ const totalRev=filtered.reduce((s,p)=>s+p.price*(is30?p.units30:p.units90),0);
+ const totalUnits=filtered.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
+ const totalStk=filtered.reduce((s,p)=>s+p.stock,0);
+ const avgMargin=totals.margin;
+
+ const kpiStrip=`<div style="display:flex;gap:24px;padding:12px 16px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);margin-bottom:16px;font-size:12px;align-items:center;flex-wrap:wrap">
+  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Revenue</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px;color:var(--grn)">$${Math.round(totalRev).toLocaleString()}</span></div>
+  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Units</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${totalUnits.toLocaleString()}</span></div>
+  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Stock</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${totalStk.toLocaleString()}</span></div>
+  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Avg Margin</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${avgMargin.toFixed(1)}%</span></div>
+  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Products</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${filtered.length}</span></div>
+  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Groups</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${rows.length}</span></div>
+ </div>`;
+
+ $('page').innerHTML=`
+ <div style="max-width:1200px">
+  <div class="back-link" onclick="navigate('dashboard')">&larr; Dashboard</div>
+  <div class="page-title">Analytics</div>
+  <div class="page-sub">Shopify + Lightspeed &middot; Interactive</div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;align-items:center">
+   <div style="display:flex;gap:4px;align-items:center"><span style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;margin-right:4px">Period</span>${periodBtns}</div>
+   <div style="display:flex;gap:4px;align-items:center"><span style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;margin-right:4px">Channel</span>${chBtns}</div>
+  </div>
+
+  ${kpiStrip}
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+   <div class="sec-hdr" style="margin:0">Breakdown</div>
+   <div style="display:flex;gap:4px">${dimBtns}</div>
+   ${X.dim!=='product'?'<span style="font-size:10px;color:var(--txt3);margin-left:8px">Click any row to drill down</span>':''}
+  </div>
+
+  <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:4px">
+   <div style="display:grid;grid-template-columns:${gridCols};padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
+    <span>${dims[X.dim].label}</span>
+    ${headerCells}
+   </div>
+   ${dataRows}
+   <div style="display:grid;grid-template-columns:${gridCols};padding:10px 16px;font-size:12px;border-top:2px solid var(--brd-s);background:rgba(26,88,48,.04)">
+    <span style="font-weight:700">Total (${filtered.length} products)</span>
+    ${totalCells}
+   </div>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-top:16px">
+   <button class="btn" onclick="navigate('an-forecast')">Forecast</button>
+   <button class="btn" onclick="navigate('an-catpl')">Category P&amp;L</button>
+   <button class="btn" onclick="navigate('fin-cashflow')">Cash Flow</button>
+   <button class="btn" onclick="navigate('dashboard')">Dashboard</button>
+  </div>
+ </div>`;
+}
 function axRenderDimRow() {
  const row = $('ax-dims-row'); if (!row) return;
  row.innerHTML = `<div class="drill-path" style="margin-bottom:0">${_ax.dims.map((d, i) => {
