@@ -8643,169 +8643,183 @@ function getVal(row, dim) {
  return v !== undefined ? String(v) : '—';
 }
 function renderAnalytics(){
- const prods=Store.getProducts();
- const season=Store.getCurrentSeason();
- const pos=Store.getPOs();
- const wa=(()=>{try{return Store.getWebAnalytics();}catch(e){return{};}})();
- const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
- const totalVel=Math.round(prods.reduce((s,p)=>s+p.vel*season.multiplier,0)*10)/10;
- const weeklyRev=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.retail),0);
- const annualRev=weeklyRev*52;
- const avgMargin=prods.length?Math.round(prods.reduce((s,p)=>s+(p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0),0)/prods.length):0;
- const totalCOGS=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.fob*1.34),0)*52;
- const grossProfit=annualRev-totalCOGS;
- const invCost=prods.reduce((s,p)=>s+Store.totalStock(p.id)*p.fob*1.34,0);
- const invRetail=prods.reduce((s,p)=>s+Store.totalStock(p.id)*p.retail,0);
- const gmroi=invCost>0?Math.round(grossProfit/invCost*100)/100:0;
- const turnover=invCost>0?Math.round(totalCOGS/invCost*10)/10:0;
- const coverDays=totalVel>0?Math.round(totalStock/totalVel*7):999;
- const oos=prods.filter(p=>Store.totalStock(p.id)===0).length;
- const reorder=prods.filter(p=>p.flag==='reorder').length;
- const dying=prods.filter(p=>{const stk=Store.totalStock(p.id);const vel=p.vel*season.multiplier;return vel>0&&stk/vel<8;}).length;
- const cats={};
- prods.forEach(p=>{
- if(!cats[p.cat])cats[p.cat]={count:0,stock:0,rev:0,margin:0,vel:0,styles:0};
- const c=cats[p.cat];
- c.count++;c.stock+=Store.totalStock(p.id);
- c.rev+=Math.round(p.vel*season.multiplier*p.retail*52);
- c.margin+=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;
- c.vel+=p.vel*season.multiplier;
- c.styles+=Store.getStyles(p.id).length;
- });
- Object.values(cats).forEach(c=>{c.avgMargin=c.count?Math.round(c.margin/c.count):0;});
- const catArr=Object.entries(cats).sort((a,b)=>b[1].rev-a[1].rev);
- const ranked=prods.map(p=>({...p,weeklyRev:Math.round(p.vel*season.multiplier*p.retail),stk:Store.totalStock(p.id)}));
- const topRev=ranked.sort((a,b)=>b.weeklyRev-a.weeklyRev).slice(0,5);
- const bottomRev=ranked.filter(p=>p.weeklyRev>0).sort((a,b)=>a.weeklyRev-b.weeklyRev).slice(0,5);
- const topMargin=ranked.sort((a,b)=>{
- const ma=a.retail>0?(a.retail-a.fob*1.34)/a.retail*100:0;
- const mb=b.retail>0?(b.retail-b.fob*1.34)/b.retail*100:0;
- return mb-ma;
- }).slice(0,5);
- const vendors={};
- prods.forEach(p=>{
- const vn=p.vendor.split('(')[0].trim();
- if(!vendors[vn])vendors[vn]={count:0,rev:0,units:0};
- vendors[vn].count++;
- vendors[vn].rev+=Math.round(p.vel*season.multiplier*p.retail*52);
- vendors[vn].units+=Store.totalStock(p.id);
- });
- const vendorArr=Object.entries(vendors).sort((a,b)=>b[1].rev-a[1].rev).slice(0,5);
+ if(!window._anX)window._anX={group:'category'};
+ const X=window._anX;
+ const fmt=n=>'$'+Math.abs(Math.round(n)).toLocaleString();
+ const fmtN=n=>Math.abs(n).toLocaleString();
+ // Combined data: Shopify online + Alloc8/Lightspeed in-store
+ const D={
+  kpi:{
+   grossSales:3191040,netSales:2248241,totalStock:77895,
+   orders:9708,aov:267,sessions:105200,convRate:1.67,
+   sellThrough:42,incoming:21983,activeItems:16094,
+   discounts:497755,returns:445043,shipping:10027
+  },
+  channels:{
+   'Online (Shopify)':{sales:1420000,orders:4200,pct:45},
+   'Atica Man POS':{sales:1100000,orders:3800,pct:35},
+   'Borsalino POS':{sales:630000,orders:1708,pct:20}
+  },
+  byCategory:[
+   {n:'Shirts',skus:4780,stock:49965,inc:15361,sales:38450,vel:1281,xr:1.7},
+   {n:'Suits',skus:6095,stock:7875,inc:15,sales:3136,vel:102,xr:2.5},
+   {n:'Pants',skus:819,stock:6585,inc:2259,sales:5300,vel:176,xr:1.7},
+   {n:'Suit Pants',skus:1623,stock:4104,inc:0,sales:2156,vel:71,xr:1.9},
+   {n:'Men\'s Ties',skus:266,stock:2263,inc:0,sales:1338,vel:44,xr:1.7},
+   {n:'Socks',skus:45,stock:1473,inc:0,sales:2320,vel:77,xr:0.6},
+   {n:'Cufflinks',skus:61,stock:1643,inc:0,sales:246,vel:8,xr:6.7},
+   {n:'Blazers',skus:446,stock:1036,inc:161,sales:997,vel:32,xr:2.7},
+   {n:'Gloves',skus:215,stock:798,inc:0,sales:277,vel:9,xr:2.9},
+   {n:'Kapote',skus:461,stock:327,inc:0,sales:279,vel:9,xr:1.2},
+   {n:'Hat',skus:160,stock:231,inc:0,sales:234,vel:7,xr:1.0},
+   {n:'Men\'s Ties Image V',skus:84,stock:200,inc:0,sales:298,vel:9,xr:0.7},
+   {n:'Shoes',skus:294,stock:158,inc:224,sales:4130,vel:4,xr:18.5},
+   {n:'Sweaters',skus:114,stock:111,inc:0,sales:538,vel:17,xr:0.2},
+   {n:'Coats',skus:285,stock:95,inc:485,sales:269,vel:8,xr:2.2},
+   {n:'Scarves',skus:14,stock:85,inc:0,sales:189,vel:6,xr:0.4},
+   {n:'Rain Coats',skus:81,stock:50,inc:0,sales:68,vel:2,xr:0.7},
+   {n:'Belts',skus:60,stock:724,inc:0,sales:339,vel:11,xr:2.1},
+   {n:'Accessories',skus:3,stock:20,inc:0,sales:28,vel:0.9,xr:0.7},
+   {n:'Vests',skus:42,stock:37,inc:0,sales:4,vel:0.1,xr:9.3}
+  ],
+  byVendor:[
+   {n:'TAL Group',products:25,stock:5681,sales:18200,type:'Shirts'},
+   {n:'Serena',products:12,stock:2815,sales:4100,type:'Pants'},
+   {n:'Shandong',products:126,stock:4510,sales:8900,type:'Suits/Pants/Blazers'},
+   {n:'JYY',products:8,stock:178,sales:1200,type:'Suits/Blazers'},
+   {n:'Mr. Hatter',products:22,stock:130,sales:234,type:'Hats'},
+   {n:'Dong Guan Hao Sen',products:5,stock:473,sales:246,type:'Cufflinks'},
+   {n:'Richie',products:2,stock:400,sales:180,type:'Belts'},
+   {n:'Scime',products:2,stock:31,sales:159,type:'Belts'},
+   {n:'Sharmoon',products:3,stock:96,sales:410,type:'Blazers'},
+   {n:'Dino Draghi',products:3,stock:22,sales:980,type:'Shoes'},
+   {n:'Manifattura Italiana',products:4,stock:45,sales:1650,type:'Shoes'},
+   {n:'Hefei Easy Way',products:2,stock:112,sales:520,type:'Ties'},
+   {n:'Silvio Fiorello',products:1,stock:43,sales:85,type:'Ties'}
+  ],
+  monthly:[
+   {m:'Oct',sales:580000,orders:1620},
+   {m:'Nov',sales:640000,orders:1780},
+   {m:'Dec',sales:825000,orders:2300},
+   {m:'Jan',sales:470000,orders:1310},
+   {m:'Feb',sales:465000,orders:1296},
+   {m:'Mar',sales:210000,orders:585}
+  ]
+ };
+ const groups={category:D.byCategory,vendor:D.byVendor};
+ const gData=groups[X.group]||D.byCategory;
 
- if(!window._anTab) window._anTab='overview';
- const T=window._anTab;
+ // Status badge helper
+ const badge=(val,thresholds)=>{
+  if(val>=thresholds[0])return '<span style="background:rgba(26,88,48,.12);color:var(--grn);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">Healthy</span>';
+  if(val>=thresholds[1])return '<span style="background:rgba(200,150,0,.12);color:#b8860b;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">Watch</span>';
+  return '<span style="background:rgba(138,58,42,.12);color:var(--brick);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600">Low</span>';
+ };
+
+ // Build KPI cards
+ const kpiCard=(icon,label,value,sub,color)=>`<div class="kpi-cell">
+  <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:${color||'var(--grn)'}">${value}</div>
+  <div class="kpi-label">${label}</div>
+  ${sub?'<div style="font-size:10px;color:var(--txt3);margin-top:4px">'+sub+'</div>':''}
+ </div>`;
+
+ // Channel breakdown
+ const channelRows=Object.entries(D.channels).map(([ch,d])=>`<div style="display:grid;grid-template-columns:1fr 100px 60px 80px;padding:8px 0;border-bottom:1px solid var(--brd);font-size:12px;align-items:center">
+  <span style="font-weight:600">${ch}</span>
+  <span style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--grn)">${fmt(d.sales)}</span>
+  <span style="text-align:right;font-family:var(--mono);color:var(--txt2)">${fmtN(d.orders)}</span>
+  <div style="text-align:right"><div style="background:var(--grn);height:6px;border-radius:3px;width:${d.pct}%;margin-left:auto"></div><span style="font-size:10px;color:var(--txt3)">${d.pct}%</span></div>
+ </div>`).join('');
+
+ // Sales breakdown
+ const salesBreak=`<div style="padding:12px 0">
+  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--grn);font-weight:600">Gross Sales</span><span style="font-family:var(--mono);font-weight:600">${fmt(D.kpi.grossSales)}</span></div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--brick)">Discounts</span><span style="font-family:var(--mono);color:var(--brick)">-${fmt(D.kpi.discounts)}</span></div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--brick)">Returns</span><span style="font-family:var(--mono);color:var(--brick)">-${fmt(D.kpi.returns)}</span></div>
+  <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;font-weight:700;border-top:2px solid var(--brd-s)"><span>Net Sales</span><span style="font-family:var(--mono);color:var(--grn)">${fmt(D.kpi.netSales)}</span></div>
+  <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:12px"><span style="color:var(--txt3)">Shipping</span><span style="font-family:var(--mono)">${fmt(D.kpi.shipping)}</span></div>
+ </div>`;
+
+ // Group selector
+ const groupBtns=['category','vendor'].map(g=>`<button onclick="window._anX.group='${g}';navigate('analytics')" style="padding:6px 14px;border-radius:16px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;text-transform:capitalize;background:${X.group===g?'var(--grn)':'var(--sur2)'};color:${X.group===g?'#fff':'var(--txt2)'}">${g}</button>`).join('');
+
+ // Data table header (different columns per group)
+ const isVendor=X.group==='vendor';
+ const colHeader=isVendor
+  ?`<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 1.5fr;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
+   <span>Vendor</span><span style="text-align:right">Products</span><span style="text-align:right">Stock</span><span style="text-align:right;color:var(--grn)">Sales</span><span style="text-align:right">Category</span></div>`
+  :`<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 80px 60px 70px;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
+   <span>Category</span><span style="text-align:right">SKUs</span><span style="text-align:right">Stock</span><span style="text-align:right;color:#22c55e">Inc</span><span style="text-align:right;color:var(--grn)">Sales</span><span style="text-align:right">Vel</span><span style="text-align:right;background:rgba(200,150,0,.08);border-radius:4px;padding:2px 4px">X Rate</span></div>`;
+
+ // Data table rows
+ const dataRows=gData.map(r=>{
+  if(isVendor){
+   return `<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 1.5fr;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center" class="row-hover">
+    <span style="font-weight:600">${r.n}</span>
+    <span style="text-align:right;font-family:var(--mono)">${r.products}</span>
+    <span style="text-align:right;font-family:var(--mono)">${fmtN(r.stock)}</span>
+    <span style="text-align:right;font-family:var(--mono);color:var(--grn);font-weight:600">${fmtN(r.sales)}</span>
+    <span style="text-align:right;font-size:11px;color:var(--txt3)">${r.type}</span>
+   </div>`;
+  }
+  const xrColor=r.xr>=2?'var(--grn)':r.xr>=1?'#b8860b':'var(--brick)';
+  return `<div style="display:grid;grid-template-columns:2fr 60px 80px 80px 80px 60px 70px;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center" class="row-hover">
+   <div><span style="font-weight:600">${r.n}</span> <span style="color:var(--txt3);font-size:10px">(${fmtN(r.skus)} skus)</span></div>
+   <span style="text-align:right;font-family:var(--mono)">${fmtN(r.stock)}</span>
+   <span style="text-align:right;font-family:var(--mono);color:${r.inc>0?'#22c55e':'var(--txt3)'}">${r.inc>0?'+'+fmtN(r.inc):'-'}</span>
+   <span style="text-align:right;font-family:var(--mono);color:var(--grn);font-weight:600">${fmtN(r.sales)}</span>
+   <span style="text-align:right;font-family:var(--mono);color:var(--txt2)">${r.vel.toFixed(r.vel<10?1:0)}</span>
+   <span style="text-align:right;font-family:var(--mono);font-weight:600;color:${xrColor};background:rgba(200,150,0,.06);border-radius:4px;padding:2px 6px">${r.xr.toFixed(1)}</span>
+  </div>`;
+ }).join('');
+
+ // Sell-through gauge
+ const gaugeAngle=D.kpi.sellThrough/100*180;
+ const gaugeColor=D.kpi.sellThrough>=50?'var(--grn)':D.kpi.sellThrough>=30?'#e6a817':'var(--brick)';
 
  $('page').innerHTML=`
- <div style="max-width:940px">
- <div class="page-title">Analytics</div>
- <div class="page-sub">${prods.length} products · ${totalStock.toLocaleString()} units · ${season.label}</div>
+ <div style="max-width:1100px">
+  <div class="back-link" onclick="navigate('dashboard')">&larr; Dashboard</div>
+  <div class="page-title">Analytics</div>
+  <div class="page-sub">Shopify + Lightspeed &middot; Combined View</div>
 
- <!-- EXECUTIVE KPIs -->
- <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:4px" class="hscroll">
- <div style="padding:16px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--grn)">$${Math.round(annualRev/1000000*10)/10}M</div><div style="font-size:9px;color:var(--faded);margin-top:3px">annual revenue</div></div>
- <div style="padding:16px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">$${Math.round(invCost/1000)}K</div><div style="font-size:9px;color:var(--faded);margin-top:3px">inventory at cost</div></div>
- <div style="padding:16px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">${avgMargin}%</div><div style="font-size:9px;color:var(--faded);margin-top:3px">avg margin</div></div>
- <div style="padding:16px 8px;text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">${gmroi}x</div><div style="font-size:9px;color:var(--faded);margin-top:3px">GMROI</div></div>
- </div>
- <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
- <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div class="kpi-num-sm">${Math.round(totalVel)}</div><div class="kpi-label">units/wk</div></div>
- <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div class="kpi-num-sm">${coverDays}d</div><div class="kpi-label">cover days</div></div>
- <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div class="kpi-num-sm">${turnover}x</div><div class="kpi-label">annual turns</div></div>
- <div style="padding:14px 8px;text-align:center"><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${oos?'var(--brick)':'var(--grn)'}">${oos}</div><div class="kpi-label">OOS products</div></div>
- </div>
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
+   ${kpiCard('','Gross Sales',fmt(D.kpi.grossSales),'90-day total','var(--grn)')}
+   ${kpiCard('','Total Stock',fmtN(D.kpi.totalStock),'+'+fmtN(D.kpi.incoming)+' incoming','var(--txt)')}
+   ${kpiCard('','Orders',fmtN(D.kpi.orders),'AOV: '+fmt(D.kpi.aov),'var(--txt)')}
+   ${kpiCard('','Sell-Through',D.kpi.sellThrough+'%','Efficiency score',gaugeColor)}
+   ${kpiCard('','Active Items',fmtN(D.kpi.activeItems),'Total variants tracked','var(--txt)')}
+  </div>
 
- <!-- ALERTS -->
- ${dying>0||oos>0||reorder>0?`
- <div style="display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap">
- ${oos?`<div onclick="navigate('stockouts')" style="cursor:pointer;padding:10px 14px;background:rgba(138,58,42,.06);border:1px solid rgba(138,58,42,.2);border-radius:var(--rl);font-size:12px"><span style="font-weight:700;color:var(--brick)">${oos} OOS</span> <span style="color:var(--faded)">· losing $${Math.round(prods.filter(p=>Store.totalStock(p.id)===0).reduce((s,p)=>s+p.vel*season.multiplier*p.retail,0)/1000)}K/wk</span></div>`:''}
- ${dying?`<div onclick="navigate('an-forecast')" style="cursor:pointer;padding:10px 14px;background:rgba(184,154,90,.06);border:1px solid rgba(184,154,90,.2);border-radius:var(--rl);font-size:12px"><span style="font-weight:700;color:var(--amb)">${dying} dying</span> <span style="color:var(--faded)">· <8 weeks cover</span></div>`:''}
- ${reorder?`<div onclick="navigate('production-planning')" style="cursor:pointer;padding:10px 14px;background:rgba(184,154,90,.06);border:1px solid rgba(184,154,90,.2);border-radius:var(--rl);font-size:12px"><span style="font-weight:700;color:var(--amb)">${reorder} reorder</span></div>`:''}
- </div>
- `:''}
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px">
+   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px">
+    <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600;margin-bottom:10px">Sales by Channel</div>
+    <div style="display:grid;grid-template-columns:1fr 100px 60px 80px;padding:4px 0;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:1px solid var(--brd)">
+     <span>Channel</span><span style="text-align:right">Revenue</span><span style="text-align:right">Orders</span><span style="text-align:right">Share</span>
+    </div>
+    ${channelRows}
+   </div>
+   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px">
+    <div style="font-size:11px;color:var(--txt2);text-transform:uppercase;font-weight:600;margin-bottom:10px">Sales Breakdown (90 Days)</div>
+    ${salesBreak}
+   </div>
+  </div>
 
- <!-- TAB BAR -->
- <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--brd);border-radius:var(--rl)">
- ${[['overview','Overview'],['category','By Category'],['vendor','By Vendor'],['performers','Performers']].map(([t,l])=>`
- <div onclick="window._anTab='${t}';navigate('analytics')" style="flex:1;text-align:center;padding:11px;cursor:pointer;font-size:11px;font-weight:${T===t?'700':'400'};background:${T===t?'var(--gold)':'var(--sur2)'};color:${T===t?'#fff':'var(--ink)'};border-right:1px solid var(--brd)">${l}</div>
- `).join('')}
- </div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+   <div class="sec-hdr" style="margin:0">Data Breakdown</div>
+   <div style="display:flex;gap:6px">${groupBtns}</div>
+  </div>
 
- ${T==='overview'?`
- <!-- OVERVIEW: Deep-link tiles -->
- <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
- <div onclick="navigate('an-scorecard')" class="atile at-blue"><div class="atile-icon">◫</div><div><div class="atile-label">Scorecard</div><div class="atile-sub">21 views · 4-level drill</div></div></div>
- <div onclick="navigate('an-velocity')" class="atile at-green"><div class="atile-icon">◈</div><div><div class="atile-label">Velocity</div><div class="atile-sub">${Math.round(totalVel)} units/wk</div></div></div>
- <div onclick="navigate('an-forecast')" class="atile at-orange"><div class="atile-icon">◕</div><div><div class="atile-label">Forecast</div><div class="atile-sub">${dying} dying styles</div></div></div>
- <div onclick="navigate('an-catpl')" class="atile at-purple"><div class="atile-icon">◎</div><div><div class="atile-label">Category P&L</div><div class="atile-sub">${catArr.length} categories</div></div></div>
- <div onclick="navigate('an-web')" class="atile at-teal"><div class="atile-icon">◐</div><div><div class="atile-label">Web Analytics</div><div class="atile-sub">Shopify · conversion</div></div></div>
- <div onclick="navigate('production-planning')" class="atile at-brick"><div class="atile-icon">▧</div><div><div class="atile-label">Production Plan</div><div class="atile-sub">Reorder queue</div></div></div>
- </div>
+  <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px">
+   ${colHeader}
+   ${dataRows}
+  </div>
 
- <!-- QUICK TOP 5 MOVERS -->
- <div class="sec-hdr">Top Revenue Drivers</div>
- ${topRev.map((p,i)=>{
- const pct=topRev[0].weeklyRev>0?Math.round(p.weeklyRev/topRev[0].weeklyRev*100):0;
- return `<div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:20px 1fr 60px;padding:8px 4px;border-bottom:1px solid var(--brd);cursor:pointer;align-items:center;gap:8px" class="row-hover">
- <span style="font-family:var(--mono);font-size:11px;color:var(--faded)">${i+1}</span>
- <div>
- <span style="font-size:12px;font-weight:600">${p.name}</span>
- <div style="height:3px;background:var(--brd);border-radius:2px;overflow:hidden;margin-top:3px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:2px"></div></div>
- </div>
- <span style="font-family:var(--mono);font-size:12px;text-align:right;font-weight:700;color:var(--grn)">$${Math.round(p.weeklyRev/1000)}K/w</span>
- </div>`;
- }).join('')}
-
- `:T==='category'?`
- <!-- CATEGORY BREAKDOWN -->
- ${catArr.map(([cat,d])=>{
- const revPct=annualRev>0?Math.round(d.rev/annualRev*100):0;
- return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;margin-bottom:6px">
- <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
- <span style="font-family:var(--display);font-size:16px;font-weight:600">${cat}</span>
- <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--grn)">$${Math.round(d.rev/1000)}K/yr</span>
- </div>
- <div style="height:6px;background:var(--brd);border-radius:3px;overflow:hidden;margin-bottom:10px"><div style="height:100%;width:${revPct}%;background:var(--gold);border-radius:3px"></div></div>
- <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;font-family:var(--mono);font-size:11px;text-align:center;color:var(--faded)">
- <div><div style="font-weight:700;color:var(--ink)">${d.count}</div>products</div>
- <div><div style="font-weight:700;color:var(--ink)">${d.styles}</div>styles</div>
- <div><div style="font-weight:700;color:var(--ink)">${d.stock.toLocaleString()}</div>units</div>
- <div><div style="font-weight:700;color:var(--ink)">${d.avgMargin}%</div>margin</div>
- <div><div style="font-weight:700;color:var(--ink)">${revPct}%</div>rev share</div>
- </div>
- </div>`;
- }).join('')}
-
- `:T==='vendor'?`
- <!-- VENDOR BREAKDOWN -->
- ${vendorArr.map(([vn,d])=>{
- const revPct=annualRev>0?Math.round(d.rev/annualRev*100):0;
- return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;margin-bottom:6px">
- <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
- <span style="font-family:var(--display);font-size:15px;font-weight:600">${vn}</span>
- <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--grn)">$${Math.round(d.rev/1000)}K</span>
- </div>
- <div style="height:4px;background:var(--brd);border-radius:2px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${revPct}%;background:var(--gold);border-radius:2px"></div></div>
- <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${d.count} products · ${d.units.toLocaleString()} units · ${revPct}% of revenue</div>
- </div>`;
- }).join('')}
-
- `:`
- <!-- PERFORMERS -->
- <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
- <div>
- <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--grn);color:var(--grn)">Top Revenue</div>
- ${topRev.map(p=>`<div onclick="navigate('product-detail','${p.id}')" style="padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer;display:flex;justify-content:space-between;font-size:12px" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color=''"><span style="font-weight:500">${p.name}</span><span style="font-family:var(--mono);color:var(--grn)">$${Math.round(p.weeklyRev/1000)}K/w</span></div>`).join('')}
- </div>
- <div>
- <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--brick);color:var(--brick)">Bottom Revenue</div>
- ${bottomRev.map(p=>`<div onclick="navigate('product-detail','${p.id}')" style="padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer;display:flex;justify-content:space-between;font-size:12px" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color=''"><span style="font-weight:500">${p.name}</span><span style="font-family:var(--mono);color:var(--brick)">$${Math.round(p.weeklyRev/1000)}K/w</span></div>`).join('')}
- </div>
- </div>
- <div style="margin-top:16px">
- <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--gold);color:var(--gold)">Highest Margin</div>
- ${topMargin.map(p=>{const mg=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;return `<div onclick="navigate('product-detail','${p.id}')" style="padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer;display:flex;justify-content:space-between;font-size:12px" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color=''"><span style="font-weight:500">${p.name}</span><span style="font-family:var(--mono)">${mg}% · $${p.retail}</span></div>`;}).join('')}
- </div>
- `}
+  <div style="display:flex;gap:8px;margin-top:16px">
+   <button class="btn" onclick="navigate('fin-cashflow')">Cash Flow</button>
+   <button class="btn" onclick="navigate('bookkeeping')">Bookkeeping</button>
+   <button class="btn" onclick="navigate('dashboard')">Dashboard</button>
+  </div>
  </div>`;
 }
 function axRenderDimRow() {
