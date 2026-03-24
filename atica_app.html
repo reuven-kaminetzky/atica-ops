@@ -1,46 +1,3 @@
-
-     // Auto-create master products for unmatched Shopify products
-     const matchedIds=new Set();
-     for(const arr of Object.values(shopifyBySeedId)) for(const sp of arr) matchedIds.add(sp.shopifyId);
-     const unmatchedGroups={};
-     const _cat=t=>{
-       if(/gift\s+card/i.test(t))return'_gift-cards'; if(/baseball|cap\b/i.test(t))return'_caps';
-       if(/suit\s*(bag|cover)/i.test(t))return'_suit-bags'; if(/shirt/i.test(t))return'_other-shirts';
-       if(/pant|trouser/i.test(t))return'_other-pants'; if(/suit/i.test(t))return'_other-suits';
-       if(/blazer|jacket/i.test(t))return'_other-blazers'; if(/shoe|boot|loafer/i.test(t))return'_other-shoes';
-       return'_misc';
-     };
-     const _labels={'_gift-cards':'Gift Cards','_caps':'Caps & Hats','_suit-bags':'Suit Bags','_other-shirts':'Other Shirts','_other-pants':'Other Pants','_other-suits':'Other Suits','_other-blazers':'Other Blazers','_other-shoes':'Other Shoes','_misc':'Miscellaneous'};
-     for(const sp of prodData.products){
-       if(/^DO NOT USE/i.test(sp.title))continue; if(matchedIds.has(sp.shopifyId))continue;
-       const gid=_cat(sp.title); if(!unmatchedGroups[gid])unmatchedGroups[gid]=[]; unmatchedGroups[gid].push(sp);
-     }
-     let autoCreated=0;
-     for(const [gid,sps] of Object.entries(unmatchedGroups)){
-       const pr=sps[0]; const nm=_labels[gid]||gid;
-       const np={id:gid,code:gid.replace(/^_/,'').toUpperCase().replace(/-/g,''),name:nm,
-         cat:/shirt/i.test(nm)?'Shirts':/pant/i.test(nm)?'Pants':/suit/i.test(nm)?'Suits':/blazer/i.test(nm)?'Blazers':/shoe|boot/i.test(nm)?'Shoes':'Accessories',
-         shopifyId:pr.shopifyId,shopifyHandle:pr.handle,shopifyMatchCount:sps.length,shopifyAutoCreated:true,
-         retail:Math.max(...sps.flatMap(p=>p.variants.map(v=>parseFloat(v.price)||0)))};
-       if(pr.images&&pr.images.length>0){np.heroImg=pr.images[0].src;np.gallery=sps.flatMap(p=>(p.images||[]).map(i=>i.src)).slice(0,12);}
-       products.push(np); autoCreated++;
-       const gs=[];
-       for(const mp of sps) for(const sv of mp.variants){
-         const vel=velBySku[(sv.sku||'').toUpperCase()]||{};
-         gs.push({id:'sv-'+sv.variantId,code:sv.sku||String(sv.variantId),
-           name:(sps.length>1?mp.title+' - ':'')+(sv.title||'Default'),
-           color:'#888888',sku:sv.sku||'',status:'active',shopify:true,shopifyVariantId:sv.variantId,shopifyProductTitle:mp.title,
-           price:parseFloat(sv.price)||0,inventoryQty:sv.inventoryQty||0,inventoryItemId:sv.inventoryItemId,sell:50,
-           vel:vel.unitsPerDay?Math.round(vel.unitsPerDay*30*10)/10:0,grade:'C',colorFamily:'dark'});
-       }
-       styles[gid]=gs;
-       const li={};
-       for(const mp of sps) for(const sv of mp.variants) if(sv.inventoryItemId&&invByItemId[sv.inventoryItemId])
-         for(const [ln,av] of Object.entries(invByItemId[sv.inventoryItemId])) li[ln]=(li[ln]||0)+av;
-       if(Object.keys(li).length>0){inventory[gid]=li; np.inc=Object.values(li).reduce((a,b)=>a+b,0);}
-     }
-     console.log('[Sync] Auto-created',autoCreated,'new product lines');
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2053,80 +2010,371 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
  return Object.values(groups).sort((a, b) => a.projectedStock - b.projectedStock);
  }
 
- const _CODE_TO_ID={};SEED_PRODUCTS.forEach(p=>{_CODE_TO_ID[p.code.toUpperCase()]=p.id;});
+ // ── Shopify Live Sync Bridge ──────────────────────────────────
+ // Fetches real data from Shopify API and merges into app data model.
+ // Preserves business-only fields (FOB, duty, HTS, lead, MOQ) from seed,
+ // while replacing images, variants, inventory, velocity, prices with live data.
 
+ const _CODE_TO_ID = {};
+ SEED_PRODUCTS.forEach(p => { _CODE_TO_ID[p.code.toUpperCase()] = p.id; });
 
+ // ── Title-based matching patterns ──────────────────────────
+ // Maps seed product id → { match(title, price) → boolean }
+ // Each seed product line matches one or more Shopify products by title keywords.
+ // Products starting with "DO NOT USE" are always excluded.
  const _TITLE_MATCHERS = {
-   'londoner':t=>/londoner/i.test(t)&&!/boys/i.test(t),
-   'dress':t=>(/dress\s+(shirt|collar)/i.test(t)||/brooklyner/i.test(t)||/CML\s+MC\s+Shirt/i.test(t))&&!/boys/i.test(t)&&!/performance/i.test(t)&&!/do not use/i.test(t),
-   'knit':t=>/polo/i.test(t)&&!/boys/i.test(t),
-   'milano':t=>/milano/i.test(t),'edinburgh':t=>/edinburgh/i.test(t),'bengal':t=>/bengal/i.test(t),
-   'oxford-bd':t=>/oxford\s+button/i.test(t),'linen-shirt':t=>/linen.*shirt/i.test(t),
-   'perf-shirt':t=>(/performance.*(shirt|polo|tee)/i.test(t)||/buttonless.*polo/i.test(t))&&!/do not use/i.test(t),
-   'tuxedo-shirt':t=>/tuxedo\s+shirt/i.test(t),'band-collar':t=>/band\s+collar/i.test(t),
-   'windowpane':t=>/windowpane/i.test(t),'herringbone':t=>/herringbone/i.test(t),
-   'royal-oxford':t=>/royal\s+oxford/i.test(t),
-   'pinpoint':t=>/pinpoint/i.test(t)||/boston.*shirt/i.test(t),
-   'hc360':(t,p)=>(/half\s+canvas\s+(suit|pant)/i.test(t)||/barberis.*half/i.test(t))&&!/boys/i.test(t)&&!/do not use/i.test(t)&&p<=400,
-   'hc480':(t,p)=>(/half\s+canvas\s+(suit|pant)/i.test(t)||/barberis.*half/i.test(t))&&!/boys/i.test(t)&&!/do not use/i.test(t)&&p>400,
-   'wash-suit':t=>/washable\s+suit/i.test(t)&&!/boys/i.test(t),
-   'summer-suit':t=>/summer.*suit/i.test(t)||/linen.*suit/i.test(t),
-   'wash-blazer':t=>/parkway.*blazer/i.test(t)||(/travel\s+blazer/i.test(t)&&!/cerruti/i.test(t)),
-   'travel-blazer':t=>/cerruti/i.test(t),'maggia':t=>/maggia/i.test(t),
-   '5pkt':t=>/parkway/i.test(t)&&/pant|stretch/i.test(t),
-   'suit-pant':t=>(/suit\s+pant/i.test(t)||/essential.*(stretch\s+)?pant/i.test(t))&&!/boys/i.test(t)&&!/do not use/i.test(t)&&!/parkway/i.test(t)&&!/half\s+canvas/i.test(t),
-   'kapote':t=>/kapote/i.test(t)&&!/silk/i.test(t),'silk-kapote':t=>/silk.*kapote/i.test(t),
-   'raincoat':t=>/overcoat/i.test(t)||/raincoat/i.test(t),
-   'ties':t=>/\btie\b/i.test(t)||/\bties\b/i.test(t),'belts':t=>/\bbelt\b/i.test(t),
-   'dress-shoe':t=>/oxford/i.test(t)||/wholecut/i.test(t)||/dress\s+shoe/i.test(t)||/brogue/i.test(t),
-   'luxury-shoe':t=>/loafer/i.test(t)||/beatle/i.test(t)||/monk/i.test(t)||/chelsea/i.test(t)||/buckle\s+strap/i.test(t)||/brace\s+/i.test(t),
-   'boys-suit':t=>/boys.*(suit|half\s+canvas)/i.test(t)&&!/pant/i.test(t)&&!/do not use/i.test(t),
-   'boys-shirt':t=>/boys.*(shirt|londoner)/i.test(t),
-   'boys-blazer':t=>/boys.*blazer/i.test(t)&&!/do not use/i.test(t),
-   'boys-pant':t=>/boys.*(pant|trouser)/i.test(t)&&!/do not use/i.test(t),
-     const shopifyBySeedId = {};
-     for(const sp of prodData.products){
-       if(/^DO NOT USE/i.test(sp.title)) continue;
-       const maxPrice = Math.max(...(sp.variants||[]).map(v=>parseFloat(v.price)||0),0);
-       for(const [seedId,matcher] of Object.entries(_TITLE_MATCHERS)){
-         try{ if(matcher(sp.title,maxPrice)){ if(!shopifyBySeedId[seedId]) shopifyBySeedId[seedId]=[]; shopifyBySeedId[seedId].push(sp); break; } }catch(e){}
+   // ── Shirts ──
+   'londoner':       t => /londoner/i.test(t) && !/boys/i.test(t),
+   'dress':          t => (/dress\s+(shirt|collar)/i.test(t) || /brooklyner/i.test(t) || /CML\s+MC\s+Shirt/i.test(t)) && !/boys/i.test(t) && !/performance/i.test(t) && !/do not use/i.test(t),
+   'knit':           t => /polo/i.test(t) && !/boys/i.test(t),
+   'milano':         t => /milano/i.test(t),
+   'edinburgh':      t => /edinburgh/i.test(t),
+   'bengal':         t => /bengal/i.test(t),
+   'oxford-bd':      t => /oxford\s+button/i.test(t),
+   'linen-shirt':    t => /linen.*shirt/i.test(t),
+   'perf-shirt':     t => (/performance.*(shirt|polo|tee)/i.test(t) || /buttonless.*polo/i.test(t)) && !/do not use/i.test(t),
+   'tuxedo-shirt':   t => /tuxedo\s+shirt/i.test(t),
+   'band-collar':    t => /band\s+collar/i.test(t),
+   'windowpane':     t => /windowpane/i.test(t),
+   'herringbone':    t => /herringbone/i.test(t),
+   'royal-oxford':   t => /royal\s+oxford/i.test(t),
+   'pinpoint':       t => /pinpoint/i.test(t) || /boston.*shirt/i.test(t),
+   // ── Suits ──
+   'hc360':          (t, p) => (/half\s+canvas\s+(suit|pant)/i.test(t) || /barberis.*half/i.test(t)) && !/boys/i.test(t) && !/do not use/i.test(t) && p <= 400,
+   'hc480':          (t, p) => (/half\s+canvas\s+(suit|pant)/i.test(t) || /barberis.*half/i.test(t)) && !/boys/i.test(t) && !/do not use/i.test(t) && p > 400,
+   'wash-suit':      t => /washable\s+suit/i.test(t) && !/boys/i.test(t),
+   'summer-suit':    t => /summer.*suit/i.test(t) || /linen.*suit/i.test(t),
+   // ── Blazers ──
+   'wash-blazer':    t => /parkway.*blazer/i.test(t) || (/travel\s+blazer/i.test(t) && !/cerruti/i.test(t)),
+   'travel-blazer':  t => /cerruti/i.test(t),
+   'maggia':         t => /maggia/i.test(t),
+   // ── Pants ──
+   '5pkt':           t => /parkway/i.test(t) && /pant|stretch/i.test(t),
+   'suit-pant':      t => (/suit\s+pant/i.test(t) || /essential.*(stretch\s+)?pant/i.test(t)) && !/boys/i.test(t) && !/do not use/i.test(t) && !/parkway/i.test(t) && !/half\s+canvas/i.test(t),
+   // ── Outerwear ──
+   'kapote':         t => /kapote/i.test(t) && !/silk/i.test(t),
+   'silk-kapote':    t => /silk.*kapote/i.test(t),
+   'raincoat':       t => /overcoat/i.test(t) || /raincoat/i.test(t),
+   // ── Accessories ──
+   'ties':           t => /\btie\b/i.test(t) || /\bties\b/i.test(t),
+   'belts':          t => /\bbelt\b/i.test(t),
+   // ── Shoes ──
+   'dress-shoe':     t => /oxford/i.test(t) || /wholecut/i.test(t) || /dress\s+shoe/i.test(t) || /brogue/i.test(t),
+   'luxury-shoe':    t => /loafer/i.test(t) || /beatle/i.test(t) || /monk/i.test(t) || /chelsea/i.test(t) || /buckle\s+strap/i.test(t) || /brace\s+/i.test(t),
+   // ── Boys ──
+   'boys-suit':      t => /boys.*(suit|half\s+canvas)/i.test(t) && !/pant/i.test(t) && !/do not use/i.test(t),
+   'boys-shirt':     t => /boys.*(shirt|londoner)/i.test(t),
+   'boys-blazer':    t => /boys.*blazer/i.test(t) && !/do not use/i.test(t),
+   'boys-pant':      t => /boys.*(pant|trouser)/i.test(t) && !/do not use/i.test(t),
+ };
+
+ async function syncFromShopify() {
+   try {
+     // 1. Check connectivity
+     const statusRes = await fetch('/api/shopify/status');
+     if (!statusRes.ok) return { synced: false, reason: 'API unavailable' };
+     const statusData = await statusRes.json();
+     if (!statusData.connected) return { synced: false, reason: 'Not connected' };
+     console.log('[Sync] Shopify connected:', statusData.shop, statusData.domain);
+
+     // 2. Fetch products, inventory, velocity, sales in parallel
+     const [prodRes, invRes, velRes, salesRes] = await Promise.all([
+       fetch('/api/shopify/sync/products', { method: 'POST' }),
+       fetch('/api/shopify/sync/inventory', { method: 'POST' }),
+       fetch('/api/shopify/velocity?days=30'),
+       fetch('/api/shopify/sales?days=30'),
+     ]);
+     const prodData  = prodRes.ok  ? await prodRes.json()  : null;
+     const invData   = invRes.ok   ? await invRes.json()   : null;
+     const velData   = velRes.ok   ? await velRes.json()   : null;
+     const salesData = salesRes.ok ? await salesRes.json()  : null;
+
+     if (!prodData || !prodData.products) {
+       console.warn('[Sync] No product data returned');
+       return { synced: false, reason: 'No product data' };
+     }
+     console.log('[Sync] Fetched:', prodData.count, 'products,', invData?.locations?.length || 0, 'inv locations');
+
+     // 3. Build lookup indexes
+     // SKU → { shopify product, variant }
+     const skuToShopify = {};
+     for (const sp of prodData.products) {
+       for (const v of sp.variants) {
+         if (v.sku) skuToShopify[v.sku.toUpperCase()] = { product: sp, variant: v };
        }
      }
-     console.log('[Sync] Title-matched:',Object.keys(shopifyBySeedId).length,'seed lines');
 
-     for(const prod of products){
-       const matchedShopify=shopifyBySeedId[prod.id];
-       if(!matchedShopify||matchedShopify.length===0) continue;
-       matchCount++;
-       const sp=matchedShopify[0];
-       prod.shopifyId=sp.shopifyId; prod.shopifyHandle=sp.handle; prod.shopifyStatus=sp.status;
-       prod.shopifyTags=sp.tags; prod.shopifyUpdatedAt=sp.updatedAt; prod.shopifyMatchCount=matchedShopify.length;
-       if(sp.images&&sp.images.length>0){ prod.heroImg=sp.images[0].src; prod.gallery=matchedShopify.flatMap(mp=>(mp.images||[]).map(i=>i.src)).slice(0,12); }
-       if(sp.handle) prod.shopifyUrl='https://aticaman.com/products/'+sp.handle;
-       const seedStyles=styles[prod.id]||[]; const liveStyles=[];
-       for(const mp of matchedShopify){ for(const sv of mp.variants){
-         const skuU=(sv.sku||'').toUpperCase(); const ex=seedStyles.find(s=>s.sku&&s.sku.toUpperCase()===skuU); const vel=velBySku[skuU]||{};
-         liveStyles.push({id:ex?ex.id:'sv-'+sv.variantId, code:ex?ex.code:(sv.sku||String(sv.variantId)),
-           name:(mp.title!==sp.title?mp.title+' - ':'')+(sv.title||(ex?ex.name:'Default')),
-           color:ex?ex.color:'#888888', sku:sv.sku||'', status:'active', shopify:true,
-           shopifyVariantId:sv.variantId, shopifyProductTitle:mp.title,
-           price:parseFloat(sv.price)||0, inventoryQty:sv.inventoryQty||0, inventoryItemId:sv.inventoryItemId,
-           sell:ex?ex.sell:50, vel:vel.unitsPerDay?Math.round(vel.unitsPerDay*30*10)/10:(ex?ex.vel:0),
-           grade:ex?ex.grade:'C', colorFamily:ex?ex.colorFamily:'dark'});
-       }}
-       if(liveStyles.length>0) styles[prod.id]=liveStyles;
-       const totalVel=liveStyles.reduce((s,st)=>s+(st.vel||0),0); if(totalVel>0) prod.vel=Math.round(totalVel*10)/10;
-       const prices=matchedShopify.flatMap(mp=>mp.variants.map(v=>parseFloat(v.price))).filter(p=>p>0);
-       if(prices.length>0) prod.retail=Math.max(...prices);
-       const liveInv={};
-       for(const mp of matchedShopify){ for(const sv of mp.variants){
-         if(sv.inventoryItemId&&invByItemId[sv.inventoryItemId])
-           for(const [ln,av] of Object.entries(invByItemId[sv.inventoryItemId])) liveInv[ln]=(liveInv[ln]||0)+av;
-       }}
-       if(Object.keys(liveInv).length>0){ inventory[prod.id]=liveInv; prod.inc=Object.values(liveInv).reduce((a,b)=>a+b,0); }
+     // Velocity by SKU
+     const velBySku = {};
+     if (velData && velData.velocity) {
+       for (const v of velData.velocity) velBySku[(v.sku || '').toUpperCase()] = v;
      }
- function getShopifySales(){try{const d=localStorage.getItem('am_shopify_sales');return d?JSON.parse(d):null;}catch(e){return null;}}
- function getShopifyVelocity(){try{const d=localStorage.getItem('am_shopify_velocity');return d?JSON.parse(d):null;}catch(e){return null;}}
+
+     // Inventory by inventoryItemId → { locationName: available }
+     const invByItemId = {};
+     if (invData && invData.locations) {
+       for (const loc of invData.locations) {
+         for (const lvl of loc.levels) {
+           if (!invByItemId[lvl.inventoryItemId]) invByItemId[lvl.inventoryItemId] = {};
+           invByItemId[lvl.inventoryItemId][loc.locationName] = lvl.available || 0;
+         }
+       }
+     }
+
+     // 4. Match Shopify products to seed products
+     // Strategy: match by title patterns → seed product id
+     // Each seed product line aggregates ALL matching Shopify products
+     const shopifyBySeedId = {}; // seedId → [shopify product, ...]
+     for (const sp of prodData.products) {
+       if (/^DO NOT USE/i.test(sp.title)) continue; // skip disabled products
+       const maxPrice = Math.max(...(sp.variants || []).map(v => parseFloat(v.price) || 0), 0);
+       for (const [seedId, matcher] of Object.entries(_TITLE_MATCHERS)) {
+         try {
+           if (matcher(sp.title, maxPrice)) {
+             if (!shopifyBySeedId[seedId]) shopifyBySeedId[seedId] = [];
+             shopifyBySeedId[seedId].push(sp);
+             break; // each Shopify product maps to at most one seed product
+           }
+         } catch(e) { /* skip matcher errors */ }
+       }
+     }
+     console.log('[Sync] Title-matched seed products:', Object.keys(shopifyBySeedId).length, 'of', Object.keys(_TITLE_MATCHERS).length);
+
+     // 5. Enrich products, styles, inventory
+     const products  = JSON.parse(JSON.stringify(SEED_PRODUCTS)); // fresh copy from seed
+     const styles    = JSON.parse(JSON.stringify(SEED_STYLES));
+     const inventory = JSON.parse(JSON.stringify(SEED_INV));
+     let matchCount = 0;
+
+     for (const prod of products) {
+       const matchedShopify = shopifyBySeedId[prod.id];
+       if (!matchedShopify || matchedShopify.length === 0) continue;
+       matchCount++;
+
+       // Use the first matching Shopify product as the "primary" for images/handle
+       const sp = matchedShopify[0];
+
+       // ── Enrich product ──
+       prod.shopifyId = sp.shopifyId;
+       prod.shopifyHandle = sp.handle;
+       prod.shopifyStatus = sp.status;
+       prod.shopifyTags = sp.tags;
+       prod.shopifyUpdatedAt = sp.updatedAt;
+       prod.shopifyMatchCount = matchedShopify.length; // how many Shopify products in this line
+       if (sp.images && sp.images.length > 0) {
+         prod.heroImg = sp.images[0].src;
+         // Collect images from all matching products (up to 12)
+         const allImages = matchedShopify.flatMap(mp => (mp.images || []).map(i => i.src));
+         prod.gallery = allImages.slice(0, 12);
+       }
+       if (sp.handle) prod.shopifyUrl = 'https://aticaman.com/products/' + sp.handle;
+
+       // ── Build live styles from ALL matching Shopify product variants ──
+       const seedStyles = styles[prod.id] || [];
+       const liveStyles = [];
+       for (const mp of matchedShopify) {
+         for (const sv of mp.variants) {
+           const skuUpper = (sv.sku || '').toUpperCase();
+           const existing = seedStyles.find(s => s.sku && s.sku.toUpperCase() === skuUpper);
+           const vel = velBySku[skuUpper] || {};
+           liveStyles.push({
+             id: existing ? existing.id : 'sv-' + sv.variantId,
+             code: existing ? existing.code : (sv.sku || String(sv.variantId)),
+             name: (mp.title !== sp.title ? mp.title + ' – ' : '') + (sv.title || (existing ? existing.name : 'Default')),
+             color: existing ? existing.color : '#888888',
+             sku: sv.sku || '',
+             status: 'active',
+             shopify: true,
+             shopifyVariantId: sv.variantId,
+             shopifyProductTitle: mp.title,
+             price: parseFloat(sv.price) || 0,
+             inventoryQty: sv.inventoryQty || 0,
+             inventoryItemId: sv.inventoryItemId,
+             sell: existing ? existing.sell : 50,
+             vel: vel.unitsPerDay ? Math.round(vel.unitsPerDay * 30 * 10) / 10 : (existing ? existing.vel : 0),
+             grade: existing ? existing.grade : 'C',
+             colorFamily: existing ? existing.colorFamily : 'dark',
+           });
+         }
+       }
+       if (liveStyles.length > 0) styles[prod.id] = liveStyles;
+
+       // ── Aggregate product velocity from live styles ──
+       const totalVel = liveStyles.reduce((s, st) => s + (st.vel || 0), 0);
+       if (totalVel > 0) prod.vel = Math.round(totalVel * 10) / 10;
+
+       // ── Update retail price from Shopify (max variant price across all matches) ──
+       const prices = matchedShopify.flatMap(mp => mp.variants.map(v => parseFloat(v.price))).filter(p => p > 0);
+       if (prices.length > 0) prod.retail = Math.max(...prices);
+
+       // ── Build live inventory from ALL matching Shopify products ──
+       const liveInv = {};
+       for (const mp of matchedShopify) {
+         for (const sv of mp.variants) {
+           if (sv.inventoryItemId && invByItemId[sv.inventoryItemId]) {
+             for (const [locName, avail] of Object.entries(invByItemId[sv.inventoryItemId])) {
+               liveInv[locName] = (liveInv[locName] || 0) + avail;
+             }
+           }
+         }
+       }
+       if (Object.keys(liveInv).length > 0) {
+         inventory[prod.id] = liveInv;
+         prod.inc = Object.values(liveInv).reduce((a, b) => a + b, 0);
+       }
+     }
+
+     // 5b. Auto-create master products for unmatched Shopify products
+     // Shopify "products" = our "styles". Group unmatched ones into new master product lines.
+     const matchedShopifyIds = new Set();
+     for (const arr of Object.values(shopifyBySeedId)) {
+       for (const sp of arr) matchedShopifyIds.add(sp.shopifyId);
+     }
+
+     // Group unmatched products by category prefix (first significant word(s) in title)
+     const unmatchedGroups = {};
+     const _categorize = (title) => {
+       const t = title.trim();
+       if (/gift\s+card/i.test(t))              return '_gift-cards';
+       if (/baseball|cap\b/i.test(t))           return '_caps';
+       if (/suit\s*(bag|cover)/i.test(t))       return '_suit-bags';
+       if (/cufflink/i.test(t))                 return '_cufflinks';
+       if (/sock/i.test(t))                     return '_socks';
+       if (/scarf|wrap/i.test(t))               return '_scarves';
+       if (/suspender/i.test(t))                return '_suspenders';
+       if (/pocket\s*square/i.test(t))          return '_pocket-squares';
+       if (/shirt/i.test(t))                    return '_other-shirts';
+       if (/pant|trouser/i.test(t))             return '_other-pants';
+       if (/suit/i.test(t))                     return '_other-suits';
+       if (/blazer|jacket|sport\s*coat/i.test(t)) return '_other-blazers';
+       if (/shoe|boot|loafer|oxford/i.test(t))  return '_other-shoes';
+       return '_misc';
+     };
+
+     const _groupLabels = {
+       '_gift-cards': 'Gift Cards', '_caps': 'Caps & Hats', '_suit-bags': 'Suit Bags',
+       '_cufflinks': 'Cufflinks', '_socks': 'Socks', '_scarves': 'Scarves',
+       '_suspenders': 'Suspenders', '_pocket-squares': 'Pocket Squares',
+       '_other-shirts': 'Other Shirts', '_other-pants': 'Other Pants',
+       '_other-suits': 'Other Suits', '_other-blazers': 'Other Blazers',
+       '_other-shoes': 'Other Shoes', '_misc': 'Miscellaneous',
+     };
+
+     for (const sp of prodData.products) {
+       if (/^DO NOT USE/i.test(sp.title)) continue;
+       if (matchedShopifyIds.has(sp.shopifyId)) continue;
+       const groupId = _categorize(sp.title);
+       if (!unmatchedGroups[groupId]) unmatchedGroups[groupId] = [];
+       unmatchedGroups[groupId].push(sp);
+     }
+
+     let autoCreated = 0;
+     for (const [groupId, shopifyProds] of Object.entries(unmatchedGroups)) {
+       const primary = shopifyProds[0];
+       const groupName = _groupLabels[groupId] || groupId;
+       const newProd = {
+         id: groupId,
+         code: groupId.replace(/^_/, '').toUpperCase().replace(/-/g, ''),
+         name: groupName,
+         cat: /shirt/i.test(groupName) ? 'Shirts' : /pant/i.test(groupName) ? 'Pants' :
+              /suit/i.test(groupName) ? 'Suits' : /blazer/i.test(groupName) ? 'Blazers' :
+              /shoe|boot/i.test(groupName) ? 'Shoes' : 'Accessories',
+         shopifyId: primary.shopifyId,
+         shopifyHandle: primary.handle,
+         shopifyStatus: primary.status,
+         shopifyMatchCount: shopifyProds.length,
+         shopifyAutoCreated: true,
+         retail: Math.max(...shopifyProds.flatMap(p => p.variants.map(v => parseFloat(v.price) || 0))),
+       };
+       if (primary.images && primary.images.length > 0) {
+         newProd.heroImg = primary.images[0].src;
+         newProd.gallery = shopifyProds.flatMap(p => (p.images || []).map(i => i.src)).slice(0, 12);
+       }
+       products.push(newProd);
+       autoCreated++;
+
+       // Build styles from all Shopify products in this group
+       const groupStyles = [];
+       for (const mp of shopifyProds) {
+         for (const sv of mp.variants) {
+           const skuUpper = (sv.sku || '').toUpperCase();
+           const vel = velBySku[skuUpper] || {};
+           groupStyles.push({
+             id: 'sv-' + sv.variantId,
+             code: sv.sku || String(sv.variantId),
+             name: (shopifyProds.length > 1 ? mp.title + ' – ' : '') + (sv.title || 'Default'),
+             color: '#888888',
+             sku: sv.sku || '',
+             status: 'active',
+             shopify: true,
+             shopifyVariantId: sv.variantId,
+             shopifyProductTitle: mp.title,
+             price: parseFloat(sv.price) || 0,
+             inventoryQty: sv.inventoryQty || 0,
+             inventoryItemId: sv.inventoryItemId,
+             sell: 50,
+             vel: vel.unitsPerDay ? Math.round(vel.unitsPerDay * 30 * 10) / 10 : 0,
+             grade: 'C',
+             colorFamily: 'dark',
+           });
+         }
+       }
+       styles[groupId] = groupStyles;
+
+       // Aggregate inventory
+       const liveInv = {};
+       for (const mp of shopifyProds) {
+         for (const sv of mp.variants) {
+           if (sv.inventoryItemId && invByItemId[sv.inventoryItemId]) {
+             for (const [locName, avail] of Object.entries(invByItemId[sv.inventoryItemId])) {
+               liveInv[locName] = (liveInv[locName] || 0) + avail;
+             }
+           }
+         }
+       }
+       if (Object.keys(liveInv).length > 0) {
+         inventory[groupId] = liveInv;
+         newProd.inc = Object.values(liveInv).reduce((a, b) => a + b, 0);
+       }
+     }
+     console.log('[Sync] Auto-created', autoCreated, 'new product lines from', Object.values(unmatchedGroups).reduce((s, g) => s + g.length, 0), 'unmatched Shopify products');
+
+     // 6. Persist enriched data to localStorage
+     save(KEYS.PRODUCTS, products);
+     save(KEYS.STYLES, styles);
+     save(KEYS.INVENTORY, inventory);
+
+     // 7. Persist raw Shopify analytics for dashboard views
+     if (salesData) save('am_shopify_sales', salesData);
+     if (velData)   save('am_shopify_velocity', velData);
+
+     // 8. Update integration status to reflect live sync
+     const intg = getIntegrations();
+     intg.shopify = {
+       connected: true,
+       lastSync: new Date().toISOString(),
+       store: statusData.domain || 'atica-brand.myshopify.com',
+       syncedProducts: prodData.count,
+       syncedOrders: salesData ? salesData.totalOrders : (intg.shopify ? intg.shopify.syncedOrders : 0),
+       syncedInventory: !!invData,
+       matchedProducts: matchCount + autoCreated,
+       webhooks: ['orders/create', 'inventory_levels/update', 'products/update'],
+       status: 'active',
+     };
+     save(KEYS.INTEGRATIONS, intg);
+
+     console.log('[Sync] Complete:', matchCount, 'seed lines matched +', autoCreated, 'auto-created,', products.length, 'total products,', prodData.count, 'Shopify products');
+     return { synced: true, matched: matchCount, autoCreated, totalProducts: products.length, shopifyTotal: prodData.count, locations: invData?.locations?.length || 0 };
+
+   } catch (err) {
+     console.warn('[Sync] Failed:', err.message);
+     return { synced: false, reason: err.message };
+   }
+ }
+
+ function getShopifySales() { try { const d = localStorage.getItem('am_shopify_sales'); return d ? JSON.parse(d) : null; } catch(e) { return null; } }
+ function getShopifyVelocity() { try { const d = localStorage.getItem('am_shopify_velocity'); return d ? JSON.parse(d) : null; } catch(e) { return null; } }
+
  return {getProducts,getProduct,getPOs,getPO,getStyles,getInventory,getInventoryFor,totalStock,updateInventory,getNotifs,addNotif,getUnread,markAllRead,createPO,advanceStage,executeTransfer,reset,LOCS,SIZE_SETS,CORE,getDemandSignals,addDemandSignal,getDemandForProduct,getDemandSummary,getWebAnalytics,getWebAnalyticsFor,getAdjustedVelocity,getIntegrations,updateIntegration,getVendors,getVendor,getVendorByName,getVendorForProduct,getCategoryConfig,CATEGORY_CONFIG,CATEGORY_COMPONENTS,TECH_PACK_FIELDS,MP_LIFECYCLE,PO_MILESTONE_DEFS,getPOMilestones,setPOMilestone,getPOReadiness,LAUNCH_STEPS,getLaunchTrack,setLaunchStep,getLaunchReadiness,getIncomingShipments,LOYALTY_TIERS,getCustomers,getCustomer,getCustomerLTV,getCustomerTier,getCustomersByStore,getCustomersByTag,getCustomerRecommendations,getCustomerSegments,generateEmailCampaign,WS_TIERS,getWSAccounts,getWSAccount,getWSOrders,getWSOrder,getWSOrdersForAccount,getWSAccountAR,getStoreStock,getStoreInventory,JEWISH_SEASONS,getCurrentSeason,getSeasonalForecast,QB_ACCOUNTS,allocateLandedCost,getCashFlowProjection,getRealFinancials,validateSKU,validateProduct,validatePO,runIntegrityCheck,getOverlapScore,getStyleOverlap,getOverlapCoverage,calculateOptimalDistribution,getDistributionPlan,getOverlapReport,STORE_VELOCITY_SHARE,OVERLAP_RULES,FABRIC_MILLS,FABRIC_TYPES,FABRIC_BOM,FABRIC_INVENTORY,getFabricMills,getFabricMill,getFabricTypes,getFabricType,getFabricBOM,getFabricInventory,getFabricAtFactory,getFabricValue,getProductCostBreakdown,getAllCostBreakdowns,getFabricForecast,getShipments,getShipment,updateShipmentStatus,updateShipmentETA,assignContainer,simulateSFUpdate,SF_CONFIG,getProjection,aggregateProjection,syncFromShopify,getShopifySales,getShopifyVelocity};
 })();
 const ROLES={
@@ -8760,332 +9008,169 @@ function getVal(row, dim) {
  return v !== undefined ? String(v) : '—';
 }
 function renderAnalytics(){
- if(!window._anX)window._anX={dim:'category',measure:'sales',sort:'sales',sortDir:-1,period:'90d',channel:'all',drill:[]};
- const X=window._anX;
-
- // === DATA LAYER ===
- const products=[
-  {id:1,name:'Classic White Shirt',sku:'SH-CWS-001',cat:'Shirts',vendor:'TAL Group',ch:'Online (Shopify)',stock:1200,inc:400,cost:28,price:89,sales30:142,sales90:485,units30:58,units90:198,returns:12,disc:2100,created:'2024-06-15'},
-  {id:2,name:'Slim Fit Blue',sku:'SH-SFB-002',cat:'Shirts',vendor:'TAL Group',ch:'Atica Man POS',stock:890,inc:300,cost:32,price:95,sales30:98,sales90:310,units30:42,units90:135,returns:8,disc:1400,created:'2024-07-01'},
-  {id:3,name:'French Cuff Ivory',sku:'SH-FCI-003',cat:'Shirts',vendor:'TAL Group',ch:'Online (Shopify)',stock:650,inc:200,cost:35,price:110,sales30:76,sales90:240,units30:28,units90:89,returns:5,disc:980,created:'2024-08-10'},
-  {id:4,name:'Oxford Button Down',sku:'SH-OBD-004',cat:'Shirts',vendor:'Shandong',ch:'Borsalino POS',stock:420,inc:150,cost:24,price:79,sales30:55,sales90:180,units30:22,units90:74,returns:3,disc:650,created:'2024-09-01'},
-  {id:5,name:'Spread Collar Dress',sku:'SH-SCD-005',cat:'Shirts',vendor:'TAL Group',ch:'Online (Shopify)',stock:380,inc:100,cost:30,price:99,sales30:67,sales90:215,units30:27,units90:88,returns:6,disc:1100,created:'2024-05-20'},
-  {id:6,name:'2-Button Navy Suit',sku:'SU-2BN-001',cat:'Suits',vendor:'Shandong',ch:'Atica Man POS',stock:280,inc:0,cost:180,price:599,sales30:38,sales90:125,units30:8,units90:26,returns:2,disc:4200,created:'2024-03-15'},
-  {id:7,name:'3-Piece Charcoal',sku:'SU-3PC-002',cat:'Suits',vendor:'JYY',ch:'Online (Shopify)',stock:195,inc:15,cost:220,price:749,sales30:24,sales90:78,units30:4,units90:13,returns:1,disc:3100,created:'2024-04-01'},
-  {id:8,name:'Double Breasted Black',sku:'SU-DBB-003',cat:'Suits',vendor:'Shandong',ch:'Borsalino POS',stock:160,inc:0,cost:195,price:649,sales30:18,sales90:62,units30:3,units90:12,returns:1,disc:2800,created:'2024-06-01'},
-  {id:9,name:'Slim Chino Tan',sku:'PA-SCT-001',cat:'Pants',vendor:'Serena',ch:'Online (Shopify)',stock:720,inc:250,cost:22,price:69,sales30:95,sales90:320,units30:45,units90:152,returns:8,disc:1200,created:'2024-07-15'},
-  {id:10,name:'Dress Pant Navy',sku:'PA-DPN-002',cat:'Pants',vendor:'Serena',ch:'Atica Man POS',stock:540,inc:180,cost:28,price:85,sales30:72,sales90:245,units30:32,units90:108,returns:5,disc:900,created:'2024-08-01'},
-  {id:11,name:'Flat Front Grey',sku:'PA-FFG-003',cat:'Pants',vendor:'Shandong',ch:'Borsalino POS',stock:380,inc:120,cost:25,price:75,sales30:48,sales90:165,units30:21,units90:72,returns:4,disc:700,created:'2024-09-10'},
-  {id:12,name:'Suit Pant Charcoal',sku:'SP-SPC-001',cat:'Suit Pants',vendor:'Shandong',ch:'Atica Man POS',stock:450,inc:0,cost:45,price:149,sales30:35,sales90:118,units30:10,units90:32,returns:2,disc:1800,created:'2024-05-01'},
-  {id:13,name:'Suit Pant Navy Slim',sku:'SP-SNS-002',cat:'Suit Pants',vendor:'JYY',ch:'Online (Shopify)',stock:320,inc:0,cost:48,price:159,sales30:28,sales90:95,units30:7,units90:24,returns:1,disc:1500,created:'2024-06-15'},
-  {id:14,name:'Silk Tie Burgundy',sku:'TI-STB-001',cat:'Ties',vendor:'Hefei Easy Way',ch:'Online (Shopify)',stock:280,inc:0,cost:12,price:49,sales30:45,sales90:155,units30:35,units90:120,returns:3,disc:400,created:'2024-04-01'},
-  {id:15,name:'Knit Tie Navy',sku:'TI-KTN-002',cat:'Ties',vendor:'Silvio Fiorello',ch:'Atica Man POS',stock:180,inc:0,cost:15,price:55,sales30:28,sales90:92,units30:18,units90:62,returns:2,disc:350,created:'2024-05-15'},
-  {id:16,name:'Italian Derby Black',sku:'SH-IDB-001',cat:'Shoes',vendor:'Dino Draghi',ch:'Borsalino POS',stock:65,inc:80,cost:95,price:289,sales30:22,sales90:74,units30:3,units90:10,returns:1,disc:1200,created:'2024-03-01'},
-  {id:17,name:'Oxford Cap Toe',sku:'SH-OCT-002',cat:'Shoes',vendor:'Manifattura Italiana',ch:'Online (Shopify)',stock:48,inc:60,cost:110,price:329,sales30:18,sales90:58,units30:2,units90:7,returns:0,disc:980,created:'2024-04-15'},
-  {id:18,name:'Suede Loafer Brown',sku:'SH-SLB-003',cat:'Shoes',vendor:'Manifattura Italiana',ch:'Atica Man POS',stock:35,inc:45,cost:88,price:249,sales30:15,sales90:52,units30:2,units90:8,returns:1,disc:750,created:'2024-06-01'},
-  {id:19,name:'Wool Blazer Navy',sku:'BL-WBN-001',cat:'Blazers',vendor:'Sharmoon',ch:'Online (Shopify)',stock:185,inc:60,cost:85,price:279,sales30:22,sales90:72,units30:4,units90:14,returns:1,disc:1100,created:'2024-07-01'},
-  {id:20,name:'Cotton Crew Socks',sku:'SO-CCS-001',cat:'Socks',vendor:'TAL Group',ch:'Online (Shopify)',stock:1200,inc:0,cost:3,price:12,sales30:180,sales90:620,units30:180,units90:620,returns:5,disc:200,created:'2024-01-15'},
-  {id:21,name:'Leather Belt Black',sku:'BE-LBB-001',cat:'Belts',vendor:'Richie',ch:'Atica Man POS',stock:340,inc:0,cost:18,price:59,sales30:32,sales90:108,units30:18,units90:62,returns:2,disc:450,created:'2024-02-01'},
-  {id:22,name:'Silver Knot Cufflinks',sku:'CU-SKC-001',cat:'Cufflinks',vendor:'Dong Guan Hao Sen',ch:'Borsalino POS',stock:420,inc:0,cost:8,price:39,sales30:18,sales90:62,units30:12,units90:42,returns:1,disc:180,created:'2024-03-15'},
-  {id:23,name:'Leather Gloves Brown',sku:'GL-LGB-001',cat:'Gloves',vendor:'Shandong',ch:'Online (Shopify)',stock:290,inc:0,cost:22,price:69,sales30:12,sales90:42,units30:6,units90:18,returns:1,disc:280,created:'2024-08-01'},
-  {id:24,name:'Wool Overcoat Grey',sku:'CO-WOG-001',cat:'Coats',vendor:'Shandong',ch:'Atica Man POS',stock:45,inc:85,cost:120,price:399,sales30:8,sales90:28,units30:2,units90:7,returns:0,disc:1400,created:'2024-09-01'},
-  {id:25,name:'Kapote Black',sku:'KA-KB-001',cat:'Kapote',vendor:'Shandong',ch:'Atica Man POS',stock:160,inc:0,cost:95,price:349,sales30:10,sales90:35,units30:3,units90:10,returns:0,disc:800,created:'2024-05-01'},
-  {id:26,name:'Fedora Hat Black',sku:'HA-FHB-001',cat:'Hats',vendor:'Mr. Hatter',ch:'Borsalino POS',stock:110,inc:0,cost:35,price:129,sales30:8,sales90:28,units30:3,units90:9,returns:1,disc:350,created:'2024-06-15'},
-  {id:27,name:'Cashmere Sweater V',sku:'SW-CSV-001',cat:'Sweaters',vendor:'Shandong',ch:'Online (Shopify)',stock:65,inc:0,cost:45,price:149,sales30:10,sales90:35,units30:3,units90:9,returns:1,disc:520,created:'2024-07-01'},
-  {id:28,name:'Silk Scarf Navy',sku:'SC-SSN-001',cat:'Scarves',vendor:'TAL Group',ch:'Atica Man POS',stock:45,inc:0,cost:18,price:59,sales30:6,sales90:22,units30:4,units90:14,returns:0,disc:150,created:'2024-08-15'},
-  {id:29,name:'Rain Coat Grey',sku:'RC-RCG-001',cat:'Rain Coats',vendor:'Shandong',ch:'Online (Shopify)',stock:30,inc:0,cost:55,price:179,sales30:4,sales90:14,units30:1,units90:5,returns:0,disc:280,created:'2024-09-01'},
-  {id:30,name:'Vest Charcoal',sku:'VE-VCH-001',cat:'Vests',vendor:'JYY',ch:'Atica Man POS',stock:22,inc:0,cost:38,price:129,sales30:2,sales90:8,units30:1,units90:3,returns:0,disc:120,created:'2024-04-01'}
- ];
-
- // === FILTER ENGINE ===
- const periodDays={7:'7d',30:'30d',90:'90d'};
- const filtered=products.filter(p=>{
-  if(X.channel!=='all' && p.ch!==X.channel) return false;
-  return true;
+ const prods=Store.getProducts();
+ const season=Store.getCurrentSeason();
+ const pos=Store.getPOs();
+ const wa=(()=>{try{return Store.getWebAnalytics();}catch(e){return{};}})();
+ const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
+ const totalVel=Math.round(prods.reduce((s,p)=>s+p.vel*season.multiplier,0)*10)/10;
+ const weeklyRev=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.retail),0);
+ const annualRev=weeklyRev*52;
+ const avgMargin=prods.length?Math.round(prods.reduce((s,p)=>s+(p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0),0)/prods.length):0;
+ const totalCOGS=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.fob*1.34),0)*52;
+ const grossProfit=annualRev-totalCOGS;
+ const invCost=prods.reduce((s,p)=>s+Store.totalStock(p.id)*p.fob*1.34,0);
+ const invRetail=prods.reduce((s,p)=>s+Store.totalStock(p.id)*p.retail,0);
+ const gmroi=invCost>0?Math.round(grossProfit/invCost*100)/100:0;
+ const turnover=invCost>0?Math.round(totalCOGS/invCost*10)/10:0;
+ const coverDays=totalVel>0?Math.round(totalStock/totalVel*7):999;
+ const oos=prods.filter(p=>Store.totalStock(p.id)===0).length;
+ const reorder=prods.filter(p=>p.flag==='reorder').length;
+ const dying=prods.filter(p=>{const stk=Store.totalStock(p.id);const vel=p.vel*season.multiplier;return vel>0&&stk/vel<8;}).length;
+ const cats={};
+ prods.forEach(p=>{
+ if(!cats[p.cat])cats[p.cat]={count:0,stock:0,rev:0,margin:0,vel:0,styles:0};
+ const c=cats[p.cat];
+ c.count++;c.stock+=Store.totalStock(p.id);
+ c.rev+=Math.round(p.vel*season.multiplier*p.retail*52);
+ c.margin+=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;
+ c.vel+=p.vel*season.multiplier;
+ c.styles+=Store.getStyles(p.id).length;
  });
-
- // === MEASURE DEFINITIONS ===
- const is30=X.period==='30d'||X.period==='7d';
- const measures={
-  sales:{label:'Revenue',fn:p=>p.price*(is30?p.units30:p.units90),fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--grn)'},
-  units:{label:'Units Sold',fn:p=>is30?p.units30:p.units90,fmt:v=>Math.round(v).toLocaleString(),color:'var(--grn)'},
-  stock:{label:'Stock',fn:p=>p.stock,fmt:v=>v.toLocaleString(),color:'var(--txt)'},
-  margin:{label:'Margin %',fn:p=>((p.price-p.cost)/p.price*100),fmt:v=>v.toFixed(1)+'%',color:'var(--grn)'},
-  aov:{label:'Avg Price',fn:p=>p.price,fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--txt)'},
-  velocity:{label:'Vel/wk',fn:p=>(is30?p.units30/4.3:p.units90/13),fmt:v=>v.toFixed(1),color:'var(--txt2)'},
-  sellThru:{label:'Sell-Thru %',fn:p=>{const s=is30?p.units30:p.units90;return p.stock>0?(s/(s+p.stock)*100):0;},fmt:v=>v.toFixed(1)+'%',color:null},
-  xrate:{label:'X Rate',fn:p=>{const s=is30?p.units30:p.units90;const vel=is30?s/4.3:s/13;return p.stock>0?(vel*52/p.stock):0;},fmt:v=>v.toFixed(1),color:null},
-  returns:{label:'Returns',fn:p=>p.returns,fmt:v=>v.toLocaleString(),color:'var(--brick)'},
-  discounts:{label:'Discounts',fn:p=>p.disc,fmt:v=>'$'+v.toLocaleString(),color:'var(--brick)'},
-  incoming:{label:'Incoming',fn:p=>p.inc,fmt:v=>v.toLocaleString(),color:'#22c55e'},
-  cost:{label:'Cost',fn:p=>p.cost*(is30?p.units30:p.units90),fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--brick)'},
-  gp:{label:'Gross Profit',fn:p=>(p.price-p.cost)*(is30?p.units30:p.units90),fmt:v=>'$'+Math.round(v).toLocaleString(),color:'var(--grn)'}
- };
-
- // === DIMENSION DEFINITIONS ===
- const dims={
-  category:{label:'Category',key:'cat'},
-  vendor:{label:'Vendor',key:'vendor'},
-  channel:{label:'Channel',key:'ch'},
-  product:{label:'Product',key:'name'}
- };
-
- // === AGGREGATION ===
- const dimKey=dims[X.dim].key;
- const grouped={};
- filtered.forEach(p=>{
-  const k=p[dimKey];
-  if(!grouped[k])grouped[k]={key:k,items:[],_agg:{}};
-  grouped[k].items.push(p);
+ Object.values(cats).forEach(c=>{c.avgMargin=c.count?Math.round(c.margin/c.count):0;});
+ const catArr=Object.entries(cats).sort((a,b)=>b[1].rev-a[1].rev);
+ const ranked=prods.map(p=>({...p,weeklyRev:Math.round(p.vel*season.multiplier*p.retail),stk:Store.totalStock(p.id)}));
+ const topRev=ranked.sort((a,b)=>b.weeklyRev-a.weeklyRev).slice(0,5);
+ const bottomRev=ranked.filter(p=>p.weeklyRev>0).sort((a,b)=>a.weeklyRev-b.weeklyRev).slice(0,5);
+ const topMargin=ranked.sort((a,b)=>{
+ const ma=a.retail>0?(a.retail-a.fob*1.34)/a.retail*100:0;
+ const mb=b.retail>0?(b.retail-b.fob*1.34)/b.retail*100:0;
+ return mb-ma;
+ }).slice(0,5);
+ const vendors={};
+ prods.forEach(p=>{
+ const vn=p.vendor.split('(')[0].trim();
+ if(!vendors[vn])vendors[vn]={count:0,rev:0,units:0};
+ vendors[vn].count++;
+ vendors[vn].rev+=Math.round(p.vel*season.multiplier*p.retail*52);
+ vendors[vn].units+=Store.totalStock(p.id);
  });
+ const vendorArr=Object.entries(vendors).sort((a,b)=>b[1].rev-a[1].rev).slice(0,5);
 
- // Compute all measures for each group
- const activeMeasures=['sales','units','stock','margin','velocity','xrate','incoming'];
- Object.values(grouped).forEach(g=>{
-  activeMeasures.forEach(m=>{
-   const mDef=measures[m];
-   if(m==='margin'){
-    const totalRev=g.items.reduce((s,p)=>s+p.price*(is30?p.units30:p.units90),0);
-    const totalCost=g.items.reduce((s,p)=>s+p.cost*(is30?p.units30:p.units90),0);
-    g._agg[m]=totalRev>0?((totalRev-totalCost)/totalRev*100):0;
-   } else if(m==='velocity'){
-    const totalUnits=g.items.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
-    g._agg[m]=is30?totalUnits/4.3:totalUnits/13;
-   } else if(m==='xrate'){
-    const totalUnits=g.items.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
-    const totalStock=g.items.reduce((s,p)=>s+p.stock,0);
-    const vel=is30?totalUnits/4.3:totalUnits/13;
-    g._agg[m]=totalStock>0?(vel*52/totalStock):0;
-   } else if(m==='aov'){
-    g._agg[m]=g.items.reduce((s,p)=>s+p.price,0)/g.items.length;
-   } else if(m==='sellThru'){
-    const s=g.items.reduce((a,p)=>a+(is30?p.units30:p.units90),0);
-    const st=g.items.reduce((a,p)=>a+p.stock,0);
-    g._agg[m]=st>0?(s/(s+st)*100):0;
-   } else {
-    g._agg[m]=g.items.reduce((s,p)=>s+mDef.fn(p),0);
-   }
-  });
-  g._agg.products=g.items.length;
- });
-
- // Sort
- let rows=Object.values(grouped);
- const sortM=X.sort;
- rows.sort((a,b)=>{
-  const av=a._agg[sortM]||0, bv=b._agg[sortM]||0;
-  return X.sortDir*(av-bv);
- });
-
- // === TOTALS ===
- const totals={};
- activeMeasures.forEach(m=>{
-  if(m==='margin'){
-   const tr=filtered.reduce((s,p)=>s+p.price*(is30?p.units30:p.units90),0);
-   const tc=filtered.reduce((s,p)=>s+p.cost*(is30?p.units30:p.units90),0);
-   totals[m]=tr>0?((tr-tc)/tr*100):0;
-  } else if(m==='velocity'){
-   const tu=filtered.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
-   totals[m]=is30?tu/4.3:tu/13;
-  } else if(m==='xrate'){
-   const tu=filtered.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
-   const ts=filtered.reduce((s,p)=>s+p.stock,0);
-   const vel=is30?tu/4.3:tu/13;
-   totals[m]=ts>0?(vel*52/ts):0;
-  } else {
-   totals[m]=rows.reduce((s,r)=>s+r._agg[m],0);
-  }
- });
- totals.products=filtered.length;
-
- // === XR COLOR ===
- const xrCol=v=>v>=2?'var(--grn)':v>=1?'#b8860b':'var(--brick)';
- const stCol=v=>v>=40?'var(--grn)':v>=20?'#b8860b':'var(--brick)';
-
- // === DRILL STATE ===
- const drillPath=X.drill||[];
- let drillProducts=null;
- if(drillPath.length>0){
-  const drillKey=drillPath[drillPath.length-1];
-  drillProducts=filtered.filter(p=>p[dimKey]===drillKey);
- }
-
- // === BUILD UI ===
- const channels=['all','Online (Shopify)','Atica Man POS','Borsalino POS'];
- const periods=['7d','30d','90d'];
- const dimList=['category','vendor','channel','product'];
-
- // Period pills
- const periodBtns=periods.map(p=>`<button onclick="window._anX.period='${p}';navigate('analytics')" style="padding:4px 12px;border-radius:12px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--mono);background:${X.period===p?'var(--grn)':'var(--sur2)'};color:${X.period===p?'#fff':'var(--txt2)'}">${p}</button>`).join('');
-
- // Channel filter
- const chBtns=channels.map(c=>{
-  const label=c==='all'?'All Channels':c.replace(' (Shopify)','').replace(' POS','');
-  return `<button onclick="window._anX.channel='${c}';navigate('analytics')" style="padding:4px 12px;border-radius:12px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;background:${X.channel===c?'var(--grn)':'var(--sur2)'};color:${X.channel===c?'#fff':'var(--txt2)'}">${label}</button>`;
- }).join('');
-
- // Dimension selector
- const dimBtns=dimList.map(d=>`<button onclick="window._anX.dim='${d}';window._anX.drill=[];navigate('analytics')" style="padding:4px 12px;border-radius:12px;border:1px solid var(--brd);font-size:11px;font-weight:600;cursor:pointer;text-transform:capitalize;background:${X.dim===d?'var(--grn)':'var(--sur2)'};color:${X.dim===d?'#fff':'var(--txt2)'}">${d}</button>`).join('');
-
- // Sort helper
- const sortHdr=(key,label,align)=>{
-  const active=X.sort===key;
-  const arrow=active?(X.sortDir===-1?' &#9660;':' &#9650;'):'';
-  return `<span onclick="if(window._anX.sort==='${key}'){window._anX.sortDir*=-1}else{window._anX.sort='${key}';window._anX.sortDir=-1};navigate('analytics')" style="text-align:${align||'right'};cursor:pointer;user-select:none;${active?'color:var(--grn)':''}">${label}${arrow}</span>`;
- };
-
- // Measure format helper
- const mfmt=(key,val)=>{
-  const m=measures[key];
-  if(!m)return val;
-  return m.fmt(val);
- };
- const mcol=(key,val)=>{
-  if(key==='xrate')return xrCol(val);
-  if(key==='sellThru')return stCol(val);
-  const m=measures[key];
-  return m&&m.color?m.color:'var(--txt)';
- };
-
- // === DRILL VIEW (product-level detail) ===
- if(drillProducts){
-  const dKey=drillPath[drillPath.length-1];
-  // Sort drill products
-  drillProducts.sort((a,b)=>{
-   const mDef=measures[X.sort];
-   if(!mDef)return 0;
-   return X.sortDir*(mDef.fn(a)-mDef.fn(b));
-  });
-
-  const drillRows=drillProducts.map(p=>{
-   const rev=p.price*(is30?p.units30:p.units90);
-   const units=is30?p.units30:p.units90;
-   const vel=is30?units/4.3:units/13;
-   const xr=p.stock>0?(vel*52/p.stock):0;
-   const mg=(p.price-p.cost)/p.price*100;
-   const st=p.stock>0?(units/(units+p.stock)*100):0;
-   return `<div style="display:grid;grid-template-columns:2.5fr 80px 60px 60px 55px 55px 55px 55px;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center" class="row-hover">
-    <div><span style="font-weight:600">${p.name}</span><br><span style="font-size:10px;color:var(--txt3);font-family:var(--mono)">${p.sku}</span></div>
-    <span style="text-align:right;font-family:var(--mono);color:var(--grn);font-weight:600">$${Math.round(rev).toLocaleString()}</span>
-    <span style="text-align:right;font-family:var(--mono)">${units}</span>
-    <span style="text-align:right;font-family:var(--mono)">${p.stock.toLocaleString()}</span>
-    <span style="text-align:right;font-family:var(--mono);color:${p.inc>0?'#22c55e':'var(--txt3)'}">${p.inc>0?'+'+p.inc:'-'}</span>
-    <span style="text-align:right;font-family:var(--mono)">${mg.toFixed(0)}%</span>
-    <span style="text-align:right;font-family:var(--mono)">${vel.toFixed(1)}</span>
-    <span style="text-align:right;font-family:var(--mono);font-weight:600;color:${xrCol(xr)};background:rgba(200,150,0,.06);border-radius:4px;padding:2px 6px">${xr.toFixed(1)}</span>
-   </div>`;
-  }).join('');
-
-  $('page').innerHTML=`
-  <div style="max-width:1200px">
-   <div class="back-link" onclick="window._anX.drill=[];navigate('analytics')">&larr; All ${dims[X.dim].label}s</div>
-   <div class="page-title">${dKey}</div>
-   <div class="page-sub">${drillProducts.length} products &middot; ${X.period} &middot; Drill-down view</div>
-
-   <div style="display:flex;gap:6px;margin-bottom:16px">${periodBtns}</div>
-
-   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px">
-    <div style="display:grid;grid-template-columns:2.5fr 80px 60px 60px 55px 55px 55px 55px;padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
-     <span>Product</span>
-     ${sortHdr('sales','Revenue')}
-     ${sortHdr('units','Units')}
-     ${sortHdr('stock','Stock')}
-     ${sortHdr('incoming','Inc')}
-     ${sortHdr('margin','Margin')}
-     ${sortHdr('velocity','Vel/wk')}
-     ${sortHdr('xrate','X Rate')}
-    </div>
-    ${drillRows}
-   </div>
-   <div style="display:flex;gap:8px;margin-top:16px">
-    <button class="btn" onclick="window._anX.drill=[];navigate('analytics')">Back to Summary</button>
-    <button class="btn" onclick="navigate('dashboard')">Dashboard</button>
-   </div>
-  </div>`;
-  return;
- }
-
- // === SUMMARY TABLE ===
- const colDef=X.dim==='product'
-  ?[['sales','Revenue','80px'],['stock','Stock','60px'],['incoming','Inc','55px'],['margin','Margin','55px'],['velocity','Vel/wk','55px'],['xrate','X Rate','60px']]
-  :[['sales','Revenue','80px'],['units','Units','60px'],['stock','Stock','65px'],['incoming','Inc','55px'],['margin','Margin','55px'],['velocity','Vel/wk','55px'],['xrate','X Rate','60px']];
-
- const gridCols='2.5fr '+colDef.map(c=>c[2]).join(' ');
-
- const headerCells=colDef.map(c=>sortHdr(c[0],c[1])).join('');
-
- const dataRows=rows.map(r=>{
-  const cells=colDef.map(c=>{
-   const val=r._agg[c[0]];
-   const color=mcol(c[0],val);
-   const isBold=c[0]==='sales'||c[0]==='xrate';
-   return `<span style="text-align:right;font-family:var(--mono);${isBold?'font-weight:600;':''}color:${color};${c[0]==='xrate'?'background:rgba(200,150,0,.06);border-radius:4px;padding:2px 6px':''}">${mfmt(c[0],val)}</span>`;
-  }).join('');
-  const drillClick=X.dim!=='product'?`onclick="window._anX.drill=['${r.key.replace(/'/g,"\\'")}'];navigate('analytics')" style="cursor:pointer"`:' ';
-  return `<div ${drillClick} class="row-hover" style="display:grid;grid-template-columns:${gridCols};padding:10px 16px;font-size:12px;border-bottom:1px solid var(--brd);align-items:center;${X.dim!=='product'?'cursor:pointer':''}">
-   <div><span style="font-weight:600">${r.key}</span> <span style="font-size:10px;color:var(--txt3)">(${r._agg.products} ${r._agg.products===1?'item':'items'})</span></div>
-   ${cells}
-  </div>`;
- }).join('');
-
- // Totals row
- const totalCells=colDef.map(c=>{
-  const val=totals[c[0]];
-  return `<span style="text-align:right;font-family:var(--mono);font-weight:700;color:${mcol(c[0],val)}">${mfmt(c[0],val)}</span>`;
- }).join('');
-
- // Summary KPI strip (compact, not cards)
- const totalRev=filtered.reduce((s,p)=>s+p.price*(is30?p.units30:p.units90),0);
- const totalUnits=filtered.reduce((s,p)=>s+(is30?p.units30:p.units90),0);
- const totalStk=filtered.reduce((s,p)=>s+p.stock,0);
- const avgMargin=totals.margin;
-
- const kpiStrip=`<div style="display:flex;gap:24px;padding:12px 16px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);margin-bottom:16px;font-size:12px;align-items:center;flex-wrap:wrap">
-  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Revenue</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px;color:var(--grn)">$${Math.round(totalRev).toLocaleString()}</span></div>
-  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Units</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${totalUnits.toLocaleString()}</span></div>
-  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Stock</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${totalStk.toLocaleString()}</span></div>
-  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Avg Margin</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${avgMargin.toFixed(1)}%</span></div>
-  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Products</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${filtered.length}</span></div>
-  <div><span style="color:var(--txt3);text-transform:uppercase;font-size:10px;font-weight:600">Groups</span><br><span style="font-family:var(--mono);font-weight:700;font-size:16px">${rows.length}</span></div>
- </div>`;
+ if(!window._anTab) window._anTab='overview';
+ const T=window._anTab;
 
  $('page').innerHTML=`
- <div style="max-width:1200px">
-  <div class="back-link" onclick="navigate('dashboard')">&larr; Dashboard</div>
-  <div class="page-title">Analytics</div>
-  <div class="page-sub">Shopify + Lightspeed &middot; Interactive</div>
+ <div style="max-width:940px">
+ <div class="page-title">Analytics</div>
+ <div class="page-sub">${prods.length} products · ${totalStock.toLocaleString()} units · ${season.label}</div>
 
-  <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px;align-items:center">
-   <div style="display:flex;gap:4px;align-items:center"><span style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;margin-right:4px">Period</span>${periodBtns}</div>
-   <div style="display:flex;gap:4px;align-items:center"><span style="font-size:10px;font-weight:600;color:var(--txt3);text-transform:uppercase;margin-right:4px">Channel</span>${chBtns}</div>
-  </div>
+ <!-- EXECUTIVE KPIs -->
+ <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:4px" class="hscroll">
+ <div style="padding:16px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--grn)">$${Math.round(annualRev/1000000*10)/10}M</div><div style="font-size:9px;color:var(--faded);margin-top:3px">annual revenue</div></div>
+ <div style="padding:16px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">$${Math.round(invCost/1000)}K</div><div style="font-size:9px;color:var(--faded);margin-top:3px">inventory at cost</div></div>
+ <div style="padding:16px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">${avgMargin}%</div><div style="font-size:9px;color:var(--faded);margin-top:3px">avg margin</div></div>
+ <div style="padding:16px 8px;text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">${gmroi}x</div><div style="font-size:9px;color:var(--faded);margin-top:3px">GMROI</div></div>
+ </div>
+ <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
+ <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div class="kpi-num-sm">${Math.round(totalVel)}</div><div class="kpi-label">units/wk</div></div>
+ <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div class="kpi-num-sm">${coverDays}d</div><div class="kpi-label">cover days</div></div>
+ <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div class="kpi-num-sm">${turnover}x</div><div class="kpi-label">annual turns</div></div>
+ <div style="padding:14px 8px;text-align:center"><div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${oos?'var(--brick)':'var(--grn)'}">${oos}</div><div class="kpi-label">OOS products</div></div>
+ </div>
 
-  ${kpiStrip}
+ <!-- ALERTS -->
+ ${dying>0||oos>0||reorder>0?`
+ <div style="display:flex;gap:6px;margin-bottom:20px;flex-wrap:wrap">
+ ${oos?`<div onclick="navigate('stockouts')" style="cursor:pointer;padding:10px 14px;background:rgba(138,58,42,.06);border:1px solid rgba(138,58,42,.2);border-radius:var(--rl);font-size:12px"><span style="font-weight:700;color:var(--brick)">${oos} OOS</span> <span style="color:var(--faded)">· losing $${Math.round(prods.filter(p=>Store.totalStock(p.id)===0).reduce((s,p)=>s+p.vel*season.multiplier*p.retail,0)/1000)}K/wk</span></div>`:''}
+ ${dying?`<div onclick="navigate('an-forecast')" style="cursor:pointer;padding:10px 14px;background:rgba(184,154,90,.06);border:1px solid rgba(184,154,90,.2);border-radius:var(--rl);font-size:12px"><span style="font-weight:700;color:var(--amb)">${dying} dying</span> <span style="color:var(--faded)">· <8 weeks cover</span></div>`:''}
+ ${reorder?`<div onclick="navigate('production-planning')" style="cursor:pointer;padding:10px 14px;background:rgba(184,154,90,.06);border:1px solid rgba(184,154,90,.2);border-radius:var(--rl);font-size:12px"><span style="font-weight:700;color:var(--amb)">${reorder} reorder</span></div>`:''}
+ </div>
+ `:''}
 
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-   <div class="sec-hdr" style="margin:0">Breakdown</div>
-   <div style="display:flex;gap:4px">${dimBtns}</div>
-   ${X.dim!=='product'?'<span style="font-size:10px;color:var(--txt3);margin-left:8px">Click any row to drill down</span>':''}
-  </div>
+ <!-- TAB BAR -->
+ <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--brd);border-radius:var(--rl)">
+ ${[['overview','Overview'],['category','By Category'],['vendor','By Vendor'],['performers','Performers']].map(([t,l])=>`
+ <div onclick="window._anTab='${t}';navigate('analytics')" style="flex:1;text-align:center;padding:11px;cursor:pointer;font-size:11px;font-weight:${T===t?'700':'400'};background:${T===t?'var(--gold)':'var(--sur2)'};color:${T===t?'#fff':'var(--ink)'};border-right:1px solid var(--brd)">${l}</div>
+ `).join('')}
+ </div>
 
-  <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:4px">
-   <div style="display:grid;grid-template-columns:${gridCols};padding:10px 16px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--txt3);border-bottom:2px solid var(--brd-s)">
-    <span>${dims[X.dim].label}</span>
-    ${headerCells}
-   </div>
-   ${dataRows}
-   <div style="display:grid;grid-template-columns:${gridCols};padding:10px 16px;font-size:12px;border-top:2px solid var(--brd-s);background:rgba(26,88,48,.04)">
-    <span style="font-weight:700">Total (${filtered.length} products)</span>
-    ${totalCells}
-   </div>
-  </div>
+ ${T==='overview'?`
+ <!-- OVERVIEW: Deep-link tiles -->
+ <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px">
+ <div onclick="navigate('an-scorecard')" class="atile at-blue"><div class="atile-icon">◫</div><div><div class="atile-label">Scorecard</div><div class="atile-sub">21 views · 4-level drill</div></div></div>
+ <div onclick="navigate('an-velocity')" class="atile at-green"><div class="atile-icon">◈</div><div><div class="atile-label">Velocity</div><div class="atile-sub">${Math.round(totalVel)} units/wk</div></div></div>
+ <div onclick="navigate('an-forecast')" class="atile at-orange"><div class="atile-icon">◕</div><div><div class="atile-label">Forecast</div><div class="atile-sub">${dying} dying styles</div></div></div>
+ <div onclick="navigate('an-catpl')" class="atile at-purple"><div class="atile-icon">◎</div><div><div class="atile-label">Category P&L</div><div class="atile-sub">${catArr.length} categories</div></div></div>
+ <div onclick="navigate('an-web')" class="atile at-teal"><div class="atile-icon">◐</div><div><div class="atile-label">Web Analytics</div><div class="atile-sub">Shopify · conversion</div></div></div>
+ <div onclick="navigate('production-planning')" class="atile at-brick"><div class="atile-icon">▧</div><div><div class="atile-label">Production Plan</div><div class="atile-sub">Reorder queue</div></div></div>
+ </div>
 
-  <div style="display:flex;gap:8px;margin-top:16px">
-   <button class="btn" onclick="navigate('an-forecast')">Forecast</button>
-   <button class="btn" onclick="navigate('an-catpl')">Category P&amp;L</button>
-   <button class="btn" onclick="navigate('fin-cashflow')">Cash Flow</button>
-   <button class="btn" onclick="navigate('dashboard')">Dashboard</button>
-  </div>
+ <!-- QUICK TOP 5 MOVERS -->
+ <div class="sec-hdr">Top Revenue Drivers</div>
+ ${topRev.map((p,i)=>{
+ const pct=topRev[0].weeklyRev>0?Math.round(p.weeklyRev/topRev[0].weeklyRev*100):0;
+ return `<div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:20px 1fr 60px;padding:8px 4px;border-bottom:1px solid var(--brd);cursor:pointer;align-items:center;gap:8px" class="row-hover">
+ <span style="font-family:var(--mono);font-size:11px;color:var(--faded)">${i+1}</span>
+ <div>
+ <span style="font-size:12px;font-weight:600">${p.name}</span>
+ <div style="height:3px;background:var(--brd);border-radius:2px;overflow:hidden;margin-top:3px"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:2px"></div></div>
+ </div>
+ <span style="font-family:var(--mono);font-size:12px;text-align:right;font-weight:700;color:var(--grn)">$${Math.round(p.weeklyRev/1000)}K/w</span>
+ </div>`;
+ }).join('')}
+
+ `:T==='category'?`
+ <!-- CATEGORY BREAKDOWN -->
+ ${catArr.map(([cat,d])=>{
+ const revPct=annualRev>0?Math.round(d.rev/annualRev*100):0;
+ return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;margin-bottom:6px">
+ <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+ <span style="font-family:var(--display);font-size:16px;font-weight:600">${cat}</span>
+ <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--grn)">$${Math.round(d.rev/1000)}K/yr</span>
+ </div>
+ <div style="height:6px;background:var(--brd);border-radius:3px;overflow:hidden;margin-bottom:10px"><div style="height:100%;width:${revPct}%;background:var(--gold);border-radius:3px"></div></div>
+ <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:0;font-family:var(--mono);font-size:11px;text-align:center;color:var(--faded)">
+ <div><div style="font-weight:700;color:var(--ink)">${d.count}</div>products</div>
+ <div><div style="font-weight:700;color:var(--ink)">${d.styles}</div>styles</div>
+ <div><div style="font-weight:700;color:var(--ink)">${d.stock.toLocaleString()}</div>units</div>
+ <div><div style="font-weight:700;color:var(--ink)">${d.avgMargin}%</div>margin</div>
+ <div><div style="font-weight:700;color:var(--ink)">${revPct}%</div>rev share</div>
+ </div>
+ </div>`;
+ }).join('')}
+
+ `:T==='vendor'?`
+ <!-- VENDOR BREAKDOWN -->
+ ${vendorArr.map(([vn,d])=>{
+ const revPct=annualRev>0?Math.round(d.rev/annualRev*100):0;
+ return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;margin-bottom:6px">
+ <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+ <span style="font-family:var(--display);font-size:15px;font-weight:600">${vn}</span>
+ <span style="font-family:var(--mono);font-size:14px;font-weight:700;color:var(--grn)">$${Math.round(d.rev/1000)}K</span>
+ </div>
+ <div style="height:4px;background:var(--brd);border-radius:2px;overflow:hidden;margin-bottom:8px"><div style="height:100%;width:${revPct}%;background:var(--gold);border-radius:2px"></div></div>
+ <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${d.count} products · ${d.units.toLocaleString()} units · ${revPct}% of revenue</div>
+ </div>`;
+ }).join('')}
+
+ `:`
+ <!-- PERFORMERS -->
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+ <div>
+ <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--grn);color:var(--grn)">Top Revenue</div>
+ ${topRev.map(p=>`<div onclick="navigate('product-detail','${p.id}')" style="padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer;display:flex;justify-content:space-between;font-size:12px" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color=''"><span style="font-weight:500">${p.name}</span><span style="font-family:var(--mono);color:var(--grn)">$${Math.round(p.weeklyRev/1000)}K/w</span></div>`).join('')}
+ </div>
+ <div>
+ <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--brick);color:var(--brick)">Bottom Revenue</div>
+ ${bottomRev.map(p=>`<div onclick="navigate('product-detail','${p.id}')" style="padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer;display:flex;justify-content:space-between;font-size:12px" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color=''"><span style="font-weight:500">${p.name}</span><span style="font-family:var(--mono);color:var(--brick)">$${Math.round(p.weeklyRev/1000)}K/w</span></div>`).join('')}
+ </div>
+ </div>
+ <div style="margin-top:16px">
+ <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--gold);color:var(--gold)">Highest Margin</div>
+ ${topMargin.map(p=>{const mg=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;return `<div onclick="navigate('product-detail','${p.id}')" style="padding:8px 0;border-bottom:1px solid var(--brd);cursor:pointer;display:flex;justify-content:space-between;font-size:12px" onmouseover="this.style.color='var(--gold)'" onmouseout="this.style.color=''"><span style="font-weight:500">${p.name}</span><span style="font-family:var(--mono)">${mg}% · $${p.retail}</span></div>`;}).join('')}
+ </div>
+ `}
  </div>`;
 }
 function axRenderDimRow() {
@@ -11856,10 +11941,15 @@ function createPOFromDemand(mpId,qty){
  navigate('demand');
 }
 function renderIntegrations(){
-  const intg=Store.getIntegrations();const prods=Store.getProducts();const shopifyInt=intg.shopify||{};const shopifyCount=shopifyInt.matchedProducts||prods.filter(p=>p.shopifyId).length;const shopifySynced=shopifyInt.syncedProducts||0;const lastSync=shopifyInt.lastSync?new Date(shopifyInt.lastSync).toLocaleString():'Never';
+  const intg=Store.getIntegrations();
+  const prods=Store.getProducts();
+  const shopifyInt=intg.shopify||{};
+  const shopifyCount=shopifyInt.matchedProducts||prods.filter(p=>p.shopifyId).length;
+  const shopifySynced=shopifyInt.syncedProducts||0;
+  const lastSync=shopifyInt.lastSync?new Date(shopifyInt.lastSync).toLocaleString():'Never';
 
   const connections=[
-    {id:'shopify',name:'Shopify',desc:'E-commerce — '+(shopifyInt.store||'atica-brand.myshopify.com'),status:shopifyInt.connected?'connected':'disconnected',icon:'🛒',stats:`${shopifyCount}/${prods.length} matched · ${shopifySynced} Shopify products · Last: ${lastSync}`,color:shopifyInt.connected?'var(--grn)':'var(--red)'},
+    {id:'shopify',name:'Shopify',desc:'E-commerce platform — '+( shopifyInt.store||'atica-brand.myshopify.com'),status:shopifyInt.connected?'connected':'disconnected',icon:'🛒',stats:`${shopifyCount}/${prods.length} matched · ${shopifySynced} Shopify products · Last: ${lastSync}`,color:shopifyInt.connected?'var(--grn)':'var(--red)'},
     {id:'quickbooks',name:'QuickBooks',desc:'Accounting & invoicing',status:'ready',icon:'📊',stats:'Awaiting API key',color:'var(--amb)'},
     {id:'lightspeed',name:'Lightspeed POS',desc:'Retail point of sale',status:'ready',icon:'⚡',stats:'4 store locations',color:'var(--amb)'},
     {id:'klaviyo',name:'Klaviyo',desc:'Email marketing & SMS',status:'planned',icon:'📧',stats:'Customer sync',color:'var(--faded)'},
@@ -11904,7 +11994,21 @@ function renderIntegrations(){
 }
 
 function igTab(i){[0,1,2,3].forEach(j=>{$('ig-t'+j)?.classList.toggle('on',j===i);$('ig-p'+j)?.classList.toggle('on',j===i);});}
-function syncShopify(){const btn=document.querySelector('[onclick*="syncShopify"]');if(btn){btn.textContent='Syncing...';btn.disabled=true;}Store.syncFromShopify().then(result=>{if(result.synced){Store.addNotif('success','Integrations',`Sync done: ${result.matched} matched, ${result.shopifyTotal} products, ${result.locations} locations.`,'integrations');}else{Store.addNotif('warning','Integrations','Sync failed: '+(result.reason||'Unknown'),'integrations');}navigate('integrations');}).catch(e=>{Store.addNotif('warning','Integrations','Sync error: '+e.message,'integrations');navigate('integrations');});}
+function syncShopify(){
+ const btn=document.querySelector('[onclick*="syncShopify"]');
+ if(btn){btn.textContent='Syncing...';btn.disabled=true;}
+ Store.syncFromShopify().then(result=>{
+   if(result.synced){
+     Store.addNotif('success','Integrations',`Shopify sync complete. ${result.matched} products matched, ${result.shopifyTotal} Shopify products, ${result.locations} inventory locations.`,'integrations');
+   } else {
+     Store.addNotif('warning','Integrations','Shopify sync failed: '+(result.reason||'Unknown error'),'integrations');
+   }
+   navigate('integrations');
+ }).catch(e=>{
+   Store.addNotif('warning','Integrations','Shopify sync error: '+e.message,'integrations');
+   navigate('integrations');
+ });
+}
 function syncQB(){
  Store.updateIntegration('quickbooks',{lastSync:new Date().toISOString()});
  Store.addNotif('success','Integrations','QuickBooks sync complete. 8 accounts reconciled.','integrations');
@@ -11946,7 +12050,20 @@ window.onload=()=>{
  if(!sbUser||!sbUser.contains(e.target)){_rolePickerOpen=false;renderRolePicker();}
  }
  });
- Store.syncFromShopify().then(result=>{if(result.synced){console.log('[Boot] Shopify sync complete',result.matched,'matched');const hash=window.location.hash.replace('#','');if(hash){const parts=hash.split('/');navigate(parts[0],parts[1]);}else navigate(ROLES[_currentRole]?.defaultRoute||'home');}else{console.log('[Boot] Sync skipped:',result.reason);}}).catch(e=>console.warn('[Boot] Sync error:',e.message));
+
+ // ── Auto-sync from Shopify on startup ──
+ Store.syncFromShopify().then(result => {
+   if (result.synced) {
+     console.log('[Boot] Shopify sync complete —', result.matched, 'products matched');
+     // Re-render current view with fresh Shopify data
+     const hash = window.location.hash.replace('#', '');
+     if (hash) { const parts = hash.split('/'); navigate(parts[0], parts[1]); }
+     else navigate(ROLES[_currentRole]?.defaultRoute || 'home');
+   } else {
+     console.log('[Boot] Shopify sync skipped:', result.reason);
+   }
+ }).catch(e => console.warn('[Boot] Sync error:', e.message));
+
  }catch(e){
  document.getElementById('page').innerHTML='<div style="padding:40px;color:red;font-family:monospace;white-space:pre-wrap">STARTUP ERROR:\n'+e.message+'\n\n'+e.stack+'</div>';
  }

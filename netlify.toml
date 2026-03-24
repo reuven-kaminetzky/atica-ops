@@ -19,11 +19,12 @@
   to = "/.netlify/functions/webhooks-shopify"
   status = 200
 
-# Inventory mirror app
+# OAuth callback (temporary)
 [[redirects]]
-  from = "/inventory"
-  to = "/inventory.html"
+  from = "/auth/callback"
+  to = "/.netlify/functions/oauth-callback"
   status = 200
+  force = true
 
 # SPA fallback (must be last)
 [[redirects]]
