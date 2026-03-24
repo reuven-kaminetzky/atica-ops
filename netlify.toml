@@ -19,6 +19,12 @@
   to = "/.netlify/functions/webhooks-shopify"
   status = 200
 
+# OAuth callback (temporary - remove after token generation)
+[[redirects]]
+  from = "/auth/callback"
+  to = "/.netlify/functions/oauth-callback"
+  status = 200
+
 # SPA fallback (must be last)
 [[redirects]]
   from = "/*"
