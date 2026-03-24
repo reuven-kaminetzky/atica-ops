@@ -2077,17 +2077,19 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
      if (!statusData.connected) return { synced: false, reason: 'Not connected' };
      console.log('[Sync] Shopify connected:', statusData.shop, statusData.domain);
 
-     // 2. Fetch products, inventory, velocity, sales in parallel
-     const [prodRes, invRes, velRes, salesRes] = await Promise.all([
+     // 2. Fetch products, inventory, velocity, sales, and orders in parallel
+     const [prodRes, invRes, velRes, salesRes, ordersRes] = await Promise.all([
        fetch('/api/shopify/sync/products', { method: 'POST' }),
        fetch('/api/shopify/sync/inventory', { method: 'POST' }),
        fetch('/api/shopify/velocity?days=30'),
        fetch('/api/shopify/sales?days=30'),
+       fetch('/api/shopify/sync/orders', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
      ]);
      const prodData  = prodRes.ok  ? await prodRes.json()  : null;
      const invData   = invRes.ok   ? await invRes.json()   : null;
      const velData   = velRes.ok   ? await velRes.json()   : null;
      const salesData = salesRes.ok ? await salesRes.json()  : null;
+     const ordersData = ordersRes.ok ? await ordersRes.json() : null;
 
      if (!prodData || !prodData.products) {
        console.warn('[Sync] No product data returned');
@@ -2348,6 +2350,56 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
      if (salesData) save('am_shopify_sales', salesData);
      if (velData)   save('am_shopify_velocity', velData);
 
+     // 7b. Bridge Shopify orders → am_sales (Retail page format)
+     if (ordersData && ordersData.orders && ordersData.orders.length > 0) {
+       try {
+         const shopifyIdToSeed = {};
+         for (const [seedId, spList] of Object.entries(shopifyBySeedId)) {
+           for (const sp of spList) {
+             shopifyIdToSeed[sp.shopifyId] = seedId;
+             for (const v of sp.variants) { shopifyIdToSeed['v_' + v.variantId] = seedId; }
+           }
+         }
+         const variantToStyle = {};
+         for (const st of styles) {
+           if (st.shopifyVariantId) variantToStyle[st.shopifyVariantId] = st.id;
+         }
+         const bridgedSales = [];
+         for (const order of ordersData.orders) {
+           const items = [];
+           for (const li of order.lineItems) {
+             items.push({
+               mpId: shopifyIdToSeed[li.productId] || shopifyIdToSeed['v_' + li.variantId] || null,
+               styleId: variantToStyle[li.variantId] || null,
+               size: li.variantTitle || 'OS', qty: li.quantity,
+               price: parseFloat(li.price) || 0, title: li.title, sku: li.sku
+             });
+           }
+           bridgedSales.push({
+             id: 'shp_' + order.shopifyId,
+             date: (order.createdAt || '').slice(0, 10),
+             store: 'Shopify',
+             custId: order.customer ? ('shp_cust_' + order.customer.id) : null,
+             custName: order.customer ? (order.customer.firstName + ' ' + order.customer.lastName).trim() : 'Guest',
+             orderName: order.name,
+             items: items,
+             subtotal: parseFloat(order.subtotalPrice) || 0,
+             discount: parseFloat(order.totalDiscount) || 0,
+             total: parseFloat(order.totalPrice) || 0,
+             financialStatus: order.financialStatus,
+             fulfillmentStatus: order.fulfillmentStatus,
+             source: 'shopify'
+           });
+         }
+         const existingSales = (()=>{ try { return JSON.parse(localStorage.getItem('am_sales')||'[]'); } catch(e) { return []; } })();
+         const manualSales = existingSales.filter(s => !s.source || s.source !== 'shopify');
+         const merged = [...manualSales, ...bridgedSales];
+         merged.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+         try { localStorage.setItem('am_sales', JSON.stringify(merged)); } catch(e) {}
+         console.log('[Sync] Bridged', bridgedSales.length, 'Shopify orders to am_sales (' + manualSales.length + ' manual +', bridgedSales.length, 'Shopify)');
+       } catch (bridgeErr) { console.warn('[Sync] Sales bridge error:', bridgeErr.message); }
+     }
+
      // 8. Update integration status to reflect live sync
      const intg = getIntegrations();
      intg.shopify = {
@@ -2355,7 +2407,8 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
        lastSync: new Date().toISOString(),
        store: statusData.domain || 'atica-brand.myshopify.com',
        syncedProducts: prodData.count,
-       syncedOrders: salesData ? salesData.totalOrders : (intg.shopify ? intg.shopify.syncedOrders : 0),
+       syncedOrders: ordersData ? ordersData.count : (salesData ? salesData.totalOrders : (intg.shopify ? intg.shopify.syncedOrders : 0)),
+       bridgedSales: ordersData ? ordersData.count : 0,
        syncedInventory: !!invData,
        matchedProducts: matchCount + autoCreated,
        webhooks: ['orders/create', 'inventory_levels/update', 'products/update'],
