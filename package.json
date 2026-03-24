@@ -1,0 +1,14 @@
+{
+  "name": "atica-ops",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Atica Man Operations Platform",
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'Static site — no build step'",
+    "test:shopify": "node scripts/test-shopify.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

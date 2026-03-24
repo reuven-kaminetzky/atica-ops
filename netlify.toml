@@ -1,7 +1,26 @@
 [build]
   publish = "."
+  functions = "netlify/functions"
 
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["lib/**"]
+
+# ── API routing ──────────────────────────────────────────────
+# Shopify endpoints
+[[redirects]]
+  from = "/api/shopify/*"
+  to = "/.netlify/functions/shopify/:splat"
+  status = 200
+
+# Webhook receiver
+[[redirects]]
+  from = "/api/webhooks/shopify"
+  to = "/.netlify/functions/webhooks-shopify"
+  status = 200
+
+# SPA fallback (must be last)
 [[redirects]]
   from = "/*"
-  to = "/index.html"
+  to = "/atica_app.html"
   status = 200
