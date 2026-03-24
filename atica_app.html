@@ -2712,7 +2712,7 @@ function showSearchResults(query) {
 }
 function renderFinCashflow(){
  if(!window._cfX)window._cfX={};
- window._cfToggle=function(k){window._cfX[k]=!window._cfX[k];navigate('fin-cashflow');};
+ window._cfToggle=function(k){window._cfX[k]=!window._cfX[k];const _s=window.scrollY;navigate('fin-cashflow');requestAnimationFrame(()=>window.scrollTo(0,_s));};
  const X=window._cfX;
  const fmt=n=>'$'+Math.abs(Math.round(n)).toLocaleString();
  const D={
