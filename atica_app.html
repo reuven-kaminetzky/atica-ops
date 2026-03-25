@@ -3106,7 +3106,7 @@ function renderVendorDetail(vendorId){
 
  <!-- TAB BAR -->
  <div style="display:flex;gap:0;margin-bottom:20px;border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
-  ${(()=>{const _cr=typeof currentRoute!=='undefined'?currentRoute:'vendor-detail';return[['vendor-detail','Overview'],['vd-pos','POs ('+pos.length+')'],['vd-ap','AP ($'+Math.round(unpaidTotal/1000)+'K)'],['vd-products','Products ('+prods.length+')'],['vd-profile','Profile'],['vd-history','History']].map(([r,l])=>'<div onclick="navigate(''+r+'',''+v.id+'')" style="flex:1;text-align:center;padding:10px 4px;font-size:11px;cursor:pointer;background:'+(_cr===r?'var(--gold)':'var(--sur2)')+';color:'+(_cr===r?'#fff':'var(--ink)')+';border-right:1px solid var(--brd)">'+l+'</div>').join('');})()}
+  ${(()=>{const _cr=typeof currentRoute!=='undefined'?currentRoute:'vendor-detail';return[['vendor-detail','Overview'],['vd-pos','POs ('+pos.length+')'],['vd-ap','AP ($'+Math.round(unpaidTotal/1000)+'K)'],['vd-products','Products ('+prods.length+')'],['vd-profile','Profile'],['vd-history','History']].map(([r,l])=>`<div onclick="navigate('${r}','${v.id}')" style="flex:1;text-align:center;padding:10px 4px;font-size:11px;cursor:pointer;background:${_cr===r?'var(--gold)':'var(--sur2)'};color:${_cr===r?'#fff':'var(--ink)'};border-right:1px solid var(--brd)">${l}</div>`).join('');})()}
  </div>
 
  <!-- HERO -->
@@ -3796,7 +3796,7 @@ function renderFinAP(){
    }
   });
   if(!recon.length) return '<div style="background:rgba(26,120,56,.06);border:1px solid rgba(26,120,56,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--grn)">✓ All AP invoices matched to POs — no reconciliation issues</div>';
-  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate('pos')">View POs</button><button class="btn btn-sm" onclick="navigate('fin-cashflow')">Cash Flow</button></div></div>';
+  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate(&#39;pos&#39;)">View POs</button><button class="btn btn-sm" onclick="navigate(&#39;fin-cashflow&#39;)">Cash Flow</button></div></div>';
  })()}
 
  ${sortedVendors.map(([vendor,data],vi)=>{
@@ -6421,10 +6421,10 @@ function renderPOStages(poId){
       ${stage===2||stage===4||stage===8?`
       <div style="margin-bottom:12px">
        <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faded);display:flex;align-items:center;gap:4px;margin-bottom:4px">
-        <span>📷</span><span>${{2:'Sample photos',4:'Cutting / PP sample photos',8:'Receiving photos'}[stage]}</span>
-        ${getPhotos({{2:'sample',4:'sample',8:'recv'}[stage]+'_${poId}').length>0?'<span style="color:var(--grn);font-size:10px">✓</span>':'<span style="color:var(--brick);font-size:10px">Required</span>'}
+        <span>📷</span><span>${({2:'Sample photos',4:'Cutting / PP sample photos',8:'Receiving photos'})[stage]}</span>
+        ${getPhotos(({2:'sample',4:'sample',8:'recv'})[stage]+'_'+poId).length>0?'<span style="color:var(--grn);font-size:10px">✓</span>':'<span style="color:var(--brick);font-size:10px">Required</span>'}
        </label>
-       ${renderPhotoSlots({{2:'sample',4:'sample',8:'recv'}[stage]+'_${poId}',1)}
+       ${renderPhotoSlots(({2:'sample',4:'sample',8:'recv'})[stage]+'_'+poId,1)}
       </div>`:``}
 
       ${stage===5?`
