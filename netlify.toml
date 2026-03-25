@@ -1,18 +1,11 @@
-# ═══════════════════════════════════════════════════════════════
-# Atica Man — Netlify Configuration
-# Architecture: Static HTML + Netlify Functions (no build step)
-# ═══════════════════════════════════════════════════════════════
-
 [build]
   publish = "."
-  # No build command — static site served as-is
 
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# ── API routing ────────────────────────────────────────────────
-# /api/shopify/* → netlify/functions/shopify.js
+# API routing
 [[redirects]]
   from = "/api/shopify/*"
   to = "/.netlify/functions/shopify/:splat"
@@ -23,37 +16,6 @@
   to = "/.netlify/functions/webhooks-shopify"
   status = 200
 
-# ── SPA fallback ──────────────────────────────────────────────
-[[redirects]]
-  from = "/*"
-  to = "/atica_app.html"
-  status = 200
-  conditions = {Role = ["admin"]}
-
-# ── Headers: cache static assets, no-cache for API ────────────
-[[headers]]
-  for = "/api/*"
-  [headers.values]
-    Cache-Control = "no-store, no-cache, must-revalidate"
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Headers = "Content-Type, Authorization, X-API-Key"
-
-[[headers]]
-  for = "/*.html"
-  [headers.values]
-    Cache-Control = "no-cache"
-
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# ── Environment ────────────────────────────────────────────────
 [context.production.environment]
   SKIP_AUTH = "true"
   NODE_VERSION = "18"
-
-[dev]
-  command = "echo 'Open atica_app.html directly or use netlify dev'"
-  publish = "."
-  autoLaunch = false
