@@ -2525,7 +2525,7 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
  function getShopifySales() { try { const d = localStorage.getItem('am_shopify_sales'); return d ? JSON.parse(d) : null; } catch(e) { return null; } }
  function getShopifyVelocity() { try { const d = localStorage.getItem('am_shopify_velocity'); return d ? JSON.parse(d) : null; } catch(e) { return null; } }
 
- return {getProducts,getProduct,getPOs,getPO,getStyles,getInventory,getInventoryFor,totalStock,updateInventory,getNotifs,addNotif,getUnread,markAllRead,createPO,advanceStage,executeTransfer,reset,LOCS,SIZE_SETS,CORE,getDemandSignals,addDemandSignal,getDemandForProduct,getDemandSummary,getWebAnalytics,getWebAnalyticsFor,getAdjustedVelocity,getIntegrations,updateIntegration,getVendors,getVendor,getVendorByName,getVendorForProduct,getCategoryConfig,CATEGORY_CONFIG,CATEGORY_COMPONENTS,TECH_PACK_FIELDS,MP_LIFECYCLE,PO_MILESTONE_DEFS,getPOMilestones,setPOMilestone,getPOReadiness,LAUNCH_STEPS,getLaunchTrack,setLaunchStep,getLaunchReadiness,getIncomingShipments,LOYALTY_TIERS,getCustomers,getCustomer,getCustomerLTV,getCustomerTier,getCustomersByStore,getCustomersByTag,getCustomerRecommendations,getCustomerSegments,generateEmailCampaign,WS_TIERS,getWSAccounts,getWSAccount,getWSOrders,getWSOrder,getWSOrdersForAccount,getWSAccountAR,getStoreStock,getStoreInventory,JEWISH_SEASONS,getCurrentSeason,getSeasonalForecast,QB_ACCOUNTS,allocateLandedCost,getCashFlowProjection,getRealFinancials,validateSKU,validateProduct,validatePO,runIntegrityCheck,getOverlapScore,getStyleOverlap,getOverlapCoverage,calculateOptimalDistribution,getDistributionPlan,getOverlapReport,STORE_VELOCITY_SHARE,OVERLAP_RULES,FABRIC_MILLS,FABRIC_TYPES,FABRIC_BOM,FABRIC_INVENTORY,getFabricMills,getFabricMill,getFabricTypes,getFabricType,getFabricBOM,getFabricInventory,getFabricAtFactory,getFabricValue,getProductCostBreakdown,getAllCostBreakdowns,getFabricForecast,getShipments,getShipment,updateShipmentStatus,updateShipmentETA,assignContainer,simulateSFUpdate,SF_CONFIG,getProjection,aggregateProjection,syncFromShopify,getShopifySales,getShopifyVelocity};
+ return {getProducts,getProduct,getPOs,getPO,getStyles,getInventory,getInventoryFor,totalStock,updateInventory,getNotifs,addNotif,getUnread,markAllRead,createPO,advanceStage,executeTransfer,reset,LOCS,SIZE_SETS,CORE,getDemandSignals,addDemandSignal,getDemandForProduct,getDemandSummary,getWebAnalytics,getWebAnalyticsFor,getAdjustedVelocity,getIntegrations,updateIntegration,getVendors,getVendor,getVendorByName,getVendorForProduct,getCategoryConfig,CATEGORY_CONFIG,CATEGORY_COMPONENTS,TECH_PACK_FIELDS,MP_LIFECYCLE,PO_MILESTONE_DEFS,getPOMilestones,setPOMilestone,getPOReadiness,LAUNCH_STEPS,getLaunchTrack,setLaunchStep,getLaunchReadiness,getIncomingShipments,LOYALTY_TIERS,getCustomers,getCustomer,getCustomerLTV,getCustomerTier,getCustomersByStore,getCustomersByTag,getCustomerRecommendations,getCustomerSegments,generateEmailCampaign,WS_TIERS,getWSAccounts,getWSAccount,getWSOrders,getWSOrder,getWSOrdersForAccount,getWSAccountAR,getStoreStock,getStoreInventory,JEWISH_SEASONS,getCurrentSeason,getSeasonalForecast,QB_ACCOUNTS,allocateLandedCost,getCashFlowProjection,getRealFinancials,validateSKU,validateProduct,validatePO,runIntegrityCheck,getOverlapScore,getStyleOverlap,getOverlapCoverage,calculateOptimalDistribution,getDistributionPlan,getOverlapReport,STORE_VELOCITY_SHARE,OVERLAP_RULES,FABRIC_MILLS,FABRIC_TYPES,FABRIC_BOM,FABRIC_INVENTORY,getFabricMills,getFabricMill,getFabricTypes,getFabricType,getFabricBOM,getFabricInventory,getFabricAtFactory,getFabricValue,getProductCostBreakdown,getAllCostBreakdowns,getFabricForecast,getShipments,getShipment,updateShipmentStatus,updateShipmentETA,assignContainer,simulateSFUpdate,SF_CONFIG,getProjection,aggregateProjection,syncFromShopify,getShopifySales,getShopifyVelocity,_checkStageGate};
 })();
 const ROLES={
  admin:{label:'Admin',desc:'All departments',color:'#c9a96e',initials:'AM',home:'home',defaultRoute:'home'},
@@ -6033,6 +6033,13 @@ function renderPOStages(poId){
  <button class="btn btn-sm" onclick="navigate('po-pl-compare','${poId}')">Compare PL to order</button>
  </div>`:''}
 
+ ${stage===4?`
+    <div style="margin-top:12px">
+     <div style="font-size:11px;font-weight:600;color:var(--brick);margin-bottom:6px">⚠ Required to advance: pre-production sample photo + bin location</div>
+     <div>${renderPhotoSlots('sample_${poId}',1)}</div>
+     <label style="font-size:11px;color:var(--faded);display:block;margin-top:8px">Warehouse bin location</label>
+     <input id="bin-${poId}" type="text" value="${po.sampleBin||po.binLocation||''}" placeholder="e.g. Reserve Rack B-12" style="margin-top:4px;width:100%;border:1px solid var(--brd);border-radius:6px;padding:7px 10px;font-size:12px;font-family:var(--mono)" onblur="(()=>{const _all=Store.getPOs();const _i=_all.findIndex(x=>x.id==='${poId}');if(_i>=0){_all[_i].sampleBin=this.value;try{localStorage.setItem('am_pos',JSON.stringify(_all));}catch(e){}}toast('Bin saved','success');})()"/>
+    </div>`:''}
  ${stage===8?`
  <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
  <button class="btn btn-sm" onclick="navigate('po-receiving','${poId}')">Receiving worksheet</button>
@@ -6323,6 +6330,15 @@ function renderPOReceiving(poId){
  </div>
  </div>`;
  }).join('')}
+
+ <!-- PHOTO UPLOAD -->
+ <div class="card2 mb16">
+  <div class="sec-h"><span style="font-size:12px;font-weight:600">📷 Receiving Photos</span><span style="font-size:10px;color:var(--txt3)">Required to close PO</span></div>
+  <div style="padding:12px 16px">
+   ${renderPhotoSlots('recv_${poId}',1)}
+   <div style="font-size:10px;color:var(--txt3);margin-top:6px">Photograph received cartons/units. Required before PO can be marked complete.</div>
+  </div>
+ </div>
 
  <!-- TOTALS + COMPLETE -->
  <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0">
@@ -7611,7 +7627,72 @@ function renderPODetail(poId){
  ${po.status!=='complete'?`<div style="margin-top:10px"><button class="btn btn-sm btn-p" onclick="advanceStageUI('${poId}')">Advance to ${stages[po.stage]||'next'}</button></div>`:''}
  </div>
 
- 
+ <!-- ═══ FINANCIAL SUMMARY ═══ -->
+ <div onclick="E['fin']=!E['fin'];navigate('po-detail','${poId}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--sur2);border:1px solid var(--brd);border-radius:${E['fin']?'var(--rl) var(--rl) 0 0':'var(--rl)'};cursor:pointer;margin-bottom:${E['fin']?'0':'4'}px">
+  <div>
+   <span style="font-size:13px;font-weight:600">Financials</span>
+   <span style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-left:8px">FOB · Landed · Margin · Payments</span>
+  </div>
+  <span style="font-size:10px;color:var(--faded)">${E['fin']?'▾':'▸'}</span>
+ </div>
+ ${E['fin']?`
+ <div style="background:var(--sur2);border:1px solid var(--brd);border-top:none;border-radius:0 0 var(--rl) var(--rl);padding:0;margin-bottom:4px">
+  <!-- Cost waterfall -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--brd)">
+   ${(()=>{
+    const fob=po.fob||0;
+    const units=po.units||0;
+    const fobT=po.fobTotal||Math.round(fob*units);
+    const duty=p?Math.round(fob*(p.duty||17.5)/100*100)/100:Math.round(fob*0.175*100)/100;
+    const freight=Math.round(fob*0.12*100)/100;
+    const landed=Math.round((fob+duty+freight)*100)/100;
+    const landedT=Math.round(landed*units);
+    const retail=p?p.retail:0;
+    const margin=retail>0?Math.round((retail-landed)/retail*100):0;
+    return [
+     {l:'FOB/unit',v:'$'+fob,c:''},
+     {l:'Landed/unit',v:'$'+landed,c:''},
+     {l:'FOB total',v:'$'+fobT.toLocaleString(),c:'var(--grn)'},
+     {l:'Landed total',v:'$'+landedT.toLocaleString(),c:'var(--grn)'},
+     {l:'Margin',v:margin+'%',c:margin>=65?'var(--grn)':margin>=50?'var(--amb)':'var(--brick)'},
+    ].map((d,i)=>'<div style="padding:12px 6px;border-right:'+(i<4?'1px solid var(--brd)':'none')+';text-align:center"><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:'+(d.c||'var(--ink)')+'">'+d.v+'</div><div style="font-size:8px;color:var(--faded);margin-top:2px">'+d.l+'</div></div>').join('');
+   })()}
+  </div>
+  <!-- Payment schedule inline -->
+  <div style="padding:12px 16px;border-bottom:1px solid var(--brd)">
+   <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:8px">Payment schedule</div>
+   ${payments.length?`
+   <div style="height:4px;background:var(--brd);border-radius:2px;overflow:hidden;margin-bottom:10px">
+    <div style="height:100%;width:${totalAmt>0?Math.round(paidAmt/totalAmt*100):0}%;background:var(--grn);border-radius:2px"></div>
+   </div>
+   ${payments.map((pm,pi)=>`
+    <div style="display:grid;grid-template-columns:1fr 80px 60px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.04);font-size:12px;align-items:center">
+     <div>
+      <span style="font-weight:500;color:${pm.status==='paid'?'var(--faded)':'var(--ink)'}${pm.status==='paid'?';text-decoration:line-through':''}">${pm.desc}</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-left:6px">${pm.due||'—'}</span>
+      ${pm.status==='overdue'?'<span style="color:var(--brick);font-size:9px;margin-left:4px">OVERDUE</span>':''}
+     </div>
+     <span style="font-family:var(--mono);font-size:13px;text-align:right;font-weight:700;color:${pm.status==='paid'?'var(--grn)':pm.status==='overdue'?'var(--brick)':''}">$${(pm.amount||0).toLocaleString()}</span>
+     ${pm.status!=='paid'?`<button class="btn btn-sm" style="font-size:9px;padding:3px 8px" onclick="recordPOPayment('${poId}',${pi});navigate('po-detail','${poId}')">Pay</button>`:'<span style="font-family:var(--mono);font-size:9px;color:var(--grn);text-align:center">✓ paid</span>'}
+    </div>`).join('')}
+   `:'<div style="font-size:12px;color:var(--faded)">No payment schedule defined</div>'}
+   <div style="margin-top:8px;display:flex;gap:6px">
+    <button class="btn btn-sm" onclick="navigate('po-payments','${poId}')">Full payment tracker</button>
+    <button class="btn btn-sm" onclick="navigate('fin-cashflow')">Cash flow</button>
+   </div>
+  </div>
+  <!-- Gate status -->
+  <div style="padding:10px 16px">
+   <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:6px">Stage gate status</div>
+   ${po.stage<9?(()=>{
+    const gate=Store._checkStageGate(po,po.stage,po.stage+1);
+    return gate.ok
+     ? '<div style="font-size:11px;color:var(--grn)">✓ Ready to advance to stage '+(po.stage+1)+'</div>'
+     : '<div style="font-size:11px;color:var(--brick)">⛔ '+gate.reason+'</div>';
+   })():'<div style="font-size:11px;color:var(--grn)">✓ PO complete</div>'}
+  </div>
+ </div>
+ `:''}
 
  <!-- ═══ INLINE: PRODUCT CONTEXT ═══ -->
  <div onclick="E['prod']=!E['prod'];navigate('po-detail','${poId}')" style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;background:var(--sur2);border:1px solid var(--brd);border-radius:${E['prod']?'var(--rl) var(--rl) 0 0':'var(--rl)'};cursor:pointer;margin-bottom:${E['prod']?'0':'4'}px">
