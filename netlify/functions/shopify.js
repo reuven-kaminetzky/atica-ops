@@ -10,7 +10,7 @@ class RouteError extends Error {
 // ── Route handlers ──────────────────────────────────────────
 
 async function status() {
-  const client = createClient();
+  const client = await createClient();
   if (!client) return { connected: false, message: 'Set SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN' };
   try {
     const { shop } = await client._request('/shop.json');
@@ -178,7 +178,7 @@ exports.handler = async (event) => {
   const { route, pathParams } = matched;
 
   try {
-    const client = route.noClient ? null : createClient();
+    const client = route.noClient ? null : await createClient();
     if (!route.noClient && !client) return json(503, { error: 'Shopify not configured — set SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN' });
 
     const ctx = {
