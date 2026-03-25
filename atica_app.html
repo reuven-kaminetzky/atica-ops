@@ -3601,40 +3601,11 @@ function renderFinCashflow(){
   </div>`;
  }).join('');
 
-
-  // ── Build live actuals bar to inject into page ──────────────────
-  const liveActualsHtml = hasLive ? `
-  <div style="background:rgba(26,88,48,.04);border:1px solid rgba(26,88,48,.2);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px">
-   <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--grn);margin-bottom:10px">Live Shopify Revenue</div>
-   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0">
-    <div style="padding:0 12px 0 0;border-right:1px solid var(--brd)">
-     <div style="font-size:9px;color:var(--faded);margin-bottom:3px">Last 7 days</div>
-     <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(rev7)}</div>
-    </div>
-    <div style="padding:0 12px;border-right:1px solid var(--brd)">
-     <div style="font-size:9px;color:var(--faded);margin-bottom:3px">Last 30 days</div>
-     <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(rev30)}</div>
-     <div style="font-size:9px;color:var(--faded);margin-top:2px">${sales30.length} orders · AOV ${fmt(aov30)}</div>
-    </div>
-    <div style="padding:0 12px;border-right:1px solid var(--brd)">
-     <div style="font-size:9px;color:var(--faded);margin-bottom:3px">Last 90 days</div>
-     <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(rev90)}</div>
-     <div style="font-size:9px;color:var(--faded);margin-top:2px">${ord90} orders</div>
-    </div>
-    <div style="padding:0 0 0 12px">
-     <div style="font-size:9px;color:var(--faded);margin-bottom:3px">Run rate/mo</div>
-     <div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--ink)">${fmt(Math.round(rev30))}</div>
-     <div style="font-size:9px;color:var(--faded);margin-top:2px">based on 30d</div>
-    </div>
-   </div>
-  </div>` : `<div style="font-size:11px;color:var(--faded);padding:10px 0;margin-bottom:8px">No live order data — <span onclick="(async()=>{const r=await Store.syncFromShopify();navigate('fin-cashflow');toast(r.synced?'Synced':'Error','info');})()" style="cursor:pointer;color:var(--gold);text-decoration:underline">sync Shopify</span></div>`;
-
  $('page').innerHTML=`
  <div style="max-width:1000px">
   <div class="back-link" onclick="navigate('bookkeeping')">&larr; Finance</div>
   <div class="page-title">Cash Flow</div>
   <div class="page-sub">March - December &middot; Real Data</div>
-  ${liveActualsHtml}
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
    <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(avail)}</div><div class="kpi-label">Available Cash</div></div>
    <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(annIn)}</div><div class="kpi-label">Annual Inflow</div></div>
@@ -7149,209 +7120,315 @@ const SIZE_SPECS = {
 function renderProductDetail(id) {
  const p = Store.getProduct(id);
  if (!p) { $('page').innerHTML='<div style="padding:40px;color:var(--faded)">Product not found.</div>'; return; }
-
- const styles    = Store.getStyles(id);
- const stock     = Store.totalStock(id);
- const inv       = Store.getInventoryFor(id) || {};
- const pos       = Store.getPOs().filter(po => po.mpId === id);
- const openPOs   = pos.filter(po => po.status !== 'complete');
- const incoming  = openPOs.reduce((s,po) => s + (po.units||0), 0);
- const season    = Store.getCurrentSeason();
- const realVel   = getRealVelocity(id, 30);
- const vel       = realVel > 0 ? realVel : Math.round((p.vel||0) * season.multiplier * 10) / 10;
- const cover     = vel > 0 ? Math.round(stock / vel) : 999;
- const lnd       = p.fob ? Math.round(p.fob * 1.34 * 100) / 100 : 0;
- const mg        = p.retail && lnd ? Math.round((p.retail - lnd) / p.retail * 100) : 0;
- const sales30   = getSalesSince(30);
- const byProd    = getSalesByProduct(sales30);
- const sold30    = (byProd[id] || {}).units || 0;
- const rev30     = (byProd[id] || {}).revenue || 0;
- const leadWks   = Math.ceil((p.lead||90) / 7);
- const needsReorder = vel > 0 && cover <= (leadWks + 4);
- const isUrgent  = vel > 0 && cover <= leadWks;
- const vendorId  = (() => { const vs = Store.getVendors(); const f = vs.find(v => (p.vendor||'').includes(v.short||v.name)); return f ? f.id : null; })();
- const locBreak  = Store.LOCS.map(l => ({ loc: l, qty: inv[l] || 0 })).filter(x => x.qty > 0);
- const maxLoc    = Math.max(1, ...locBreak.map(x => x.qty));
-
- // lifecycle stack
- const hasFob = p.fob > 0, hasVendor = !!(p.vendor && p.vendor !== '—');
- const hasHts = !!(p.hts && p.hts.length >= 4), hasDesc = !!(p.description && p.description.length >= 20);
- const phases = [
-  { label:'Brief',   done: !!(p.name && p.code && p.cat !== 'Uncategorized') },
-  { label:'Sourcing',done: hasVendor && hasFob },
-  { label:'Dev',     done: hasHts && styles.length > 0 },
-  { label:'Costing', done: hasFob && p.retail > 0 },
-  { label:'Content', done: !!(p.heroImg && hasDesc) },
-  { label:'Launch',  done: stock > 0 && p.status === 'active' },
- ];
- const stackDone = phases.filter(ph => ph.done).length;
- const stackPct  = Math.round(stackDone / phases.length * 100);
-
+ const styles = Store.getStyles(id);
+ const stock = Store.totalStock(id);
+ const season = Store.getCurrentSeason();
+ const adjVel = Math.round(p.vel * season.multiplier * 10) / 10;
+ const cv = adjVel > 0 ? Math.round(stock / adjVel) : 999;
+ const lnd = Math.round(p.fob * 1.34 * 100) / 100;
+ const mg = p.retail > 0 ? Math.round((p.retail - lnd) / p.retail * 100) : 0;
+ const pos = Store.getPOs().filter(po => po.mpId === id);
+ const incoming = pos.filter(po=>po.status!=='complete').reduce((s,po)=>s+po.units,0);
+ const vendorId = (()=>{const vs=Store.getVendors();const f=vs.find(v=>p.vendor.includes(v.short||v.name));return f?f.id:null;})();
  window._pdId = id;
 
  $('page').innerHTML = `
- <div style="max-width:880px">
+ <div style="max-width:860px">
+ <div class="back-link" onclick="navigate('products')">← The Ledger</div>
 
-  <!-- BACK -->
-  <div class="back-link" onclick="navigate('products')">← Products</div>
+ <!-- HERO -->
+ <div style="display:grid;grid-template-columns:${p.heroImg?'120px ':''}1fr;gap:20px;margin-bottom:20px;align-items:start">
+ ${p.heroImg?`<img src="${p.heroImg}" style="width:120px;height:155px;object-fit:cover;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,.1)" alt="product"/>`:''}
+ <div>
+ <div style="font-family:var(--mono);font-size:11px;color:var(--faded)">${p.code} &middot; ${p.cat}</div>
+ <div style="font-family:var(--display);font-size:30px;font-weight:600;letter-spacing:-.5px;line-height:1.1;margin:4px 0 8px">${p.name}</div>
+ <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+ <span class="badge ${p.flag==='ok'?'b-grn':p.flag==='reorder'?'b-red':'b-amb'}">${p.flag}</span>
+ ${styles.map(s=>`<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px"><span style="width:10px;height:10px;border-radius:50%;background:${s.color};border:1px solid rgba(0,0,0,.1)"></span>${s.name.split(' ')[0]}</span>`).join('')}
+ </div>
+ </div>
+ </div>
 
-  <!-- HERO ROW -->
-  <div style="display:grid;grid-template-columns:${p.heroImg ? '140px ' : ''}1fr;gap:20px;margin-bottom:20px;align-items:start">
-   ${p.heroImg ? `<img src="${p.heroImg}" style="width:140px;height:180px;object-fit:cover;border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.12);border:1px solid var(--brd)" alt=""/>` : ''}
-   <div>
-    <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-bottom:4px">${p.code||'—'} · ${p.cat||'—'} · ${p.status||'active'}</div>
-    <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.5px;line-height:1.1;margin-bottom:8px">${p.name}</div>
-
-    <!-- QUICK STATS -->
-    <div style="display:flex;gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:10px">
-     ${[
-       ['Stock', stock.toLocaleString(), stock < 20 ? 'var(--brick)' : stock < 50 ? 'var(--amb)' : 'var(--ink)'],
-       ['Vel/wk', vel > 0 ? vel : '—', vel > 0 ? 'var(--ink)' : 'var(--faded)'],
-       ['Cover', cover > 99 ? '∞' : cover + 'w', cover < 6 ? 'var(--brick)' : cover < 12 ? 'var(--amb)' : 'var(--ink)'],
-       ['Margin', mg > 0 ? mg + '%' : '—', mg >= 70 ? 'var(--grn)' : mg > 0 ? 'var(--ink)' : 'var(--brick)'],
-       ['Sold/30d', sold30 > 0 ? sold30 + 'u' : '—', sold30 > 0 ? 'var(--grn)' : 'var(--faded)'],
-       ['FOB', p.fob ? '$' + p.fob : '—', 'var(--ink)'],
-       ['Retail', p.retail ? '$' + p.retail : '—', 'var(--ink)'],
-     ].map(([l,v,c]) => `<div style="flex:1;padding:10px 8px;text-align:center;border-right:1px solid var(--brd)">
-      <div style="font-size:8px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${l}</div>
-      <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${c}">${v}</div>
-     </div>`).join('')}
-     <div style="flex:1;padding:10px 8px;text-align:center">
-      <div style="font-size:8px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">Inc</div>
-      <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${incoming > 0 ? 'var(--grn)' : 'var(--faded)'}">${incoming > 0 ? incoming : '—'}</div>
-     </div>
+ <!-- PRODUCT INFO -->
+    <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;font-family:var(--mono);font-size:12px">
+      <span><span style="color:var(--faded)">Stock</span> <span style="font-weight:700">${stock.toLocaleString()}</span></span>
+      <span><span style="color:var(--faded)">Vel</span> <span style="font-weight:700">${adjVel}/wk</span></span>
+      <span><span style="color:var(--faded)">Cover</span> <span style="font-weight:700;color:${cv<8?'var(--brick)':cv<16?'var(--amb)':''}">${cv>100?'∞':cv+'w'}</span></span>
+      <span><span style="color:var(--faded)">FOB</span> $${p.fob}</span>
+      <span><span style="color:var(--faded)">Retail</span> $${p.retail}</span>
+      <span><span style="color:var(--faded)">Margin</span> <span style="color:${mg>=65?'var(--grn)':mg>=50?'':'var(--brick)'}">${mg}%</span></span>
+      ${incoming?`<span><span style="color:var(--grn)">Incoming</span> ${incoming.toLocaleString()}</span>`:''}
     </div>
+    <!-- STACK PROGRESS -->
+ <div onclick="navigate('product-stack','${id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px 18px;margin-bottom:20px;cursor:pointer" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
+ ${(()=>{
+ const stk=Store.totalStock(id);const stls=Store.getStyles(id);
+ const hasFob=p.fob>0;const hasVendor=p.vendor&&p.vendor!=='—';const hasHts=p.hts&&p.hts.length>=4;
+ const hasStyles=stls.length>0;const hasDesc=p.description&&p.description.length>=20;
+ const done=[p.name,p.code,p.cat!=='Uncategorized',hasDesc,p.retail>0,hasVendor,hasFob,hasHts,hasStyles,stk>0].filter(Boolean).length;
+ const total=10;const totalPct=Math.round(done/total*100);const totalDone=done;const totalReqs=total;
+ const phases=[{label:'Brief',complete:done>=3,pct:Math.min(100,Math.round(done/3*100))},{label:'Sourcing',complete:hasVendor&&hasFob,pct:hasVendor&&hasFob?100:hasVendor||hasFob?50:0},{label:'Dev',complete:hasHts&&hasStyles,pct:hasHts&&hasStyles?100:hasHts||hasStyles?50:0},{label:'Costing',complete:hasFob&&p.retail>0,pct:hasFob&&p.retail>0?100:50},{label:'Content',complete:!!p.heroImg&&hasDesc,pct:p.heroImg&&hasDesc?100:p.heroImg||hasDesc?50:0},{label:'Launch',complete:stk>0,pct:stk>0?100:0}];
+ return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+ <span style="font-family:var(--display);font-size:13px;font-weight:600">Product Stack</span>
+ <span style="font-family:var(--mono);font-size:13px;font-weight:700;color:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'}">${totalDone}/${totalReqs}</span>
+ </div>
+ <div style="height:6px;background:var(--brd);border-radius:3px;overflow:hidden;margin-bottom:10px">
+ <div style="height:100%;width:${totalPct}%;background:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'};border-radius:3px"></div>
+ </div>
+ <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:2px">
+ ${phases.map(ph=>`<div style="text-align:center"><div style="height:3px;background:${ph.complete?'var(--grn)':ph.pct>0?'var(--amb)':'var(--brd)'};border-radius:2px;margin-bottom:2px"></div><div style="font-size:7px;color:${ph.complete?'var(--grn)':'var(--faded)'};;letter-spacing:.03em">${ph.label}</div></div>`).join('')}
+ </div>`;
+ })()}
+ </div>
 
-    <!-- ACTIONS -->
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-     <button class="btn btn-sm" onclick="navigate('product-stack','${id}')">Stack</button>
-     <button class="btn btn-sm" onclick="navigate('pd-dna','${id}')">Tech Pack</button>
-     <button class="btn btn-sm" onclick="navigate('pd-inv','${id}')">Inventory</button>
-     <button class="btn btn-sm" onclick="navigate('pd-pos','${id}')">POs (${pos.length})</button>
-     ${vendorId ? `<button class="btn btn-sm" onclick="navigate('vendor-detail','${vendorId}')">Vendor</button>` : ''}
-     ${p.shopifyUrl ? `<a href="${p.shopifyUrl}" target="_blank" rel="noopener" class="btn btn-sm" style="text-decoration:none">Shopify ↗</a>` : ''}
-     <button class="btn btn-sm btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ PO</button>
-    </div>
-   </div>
-  </div>
+ <!-- STYLE TILES -->
+ <div style="font-family:var(--display);font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--ink)">Styles</div>
+ <div style="display:grid;grid-template-columns:repeat(${Math.min(styles.length,3)},1fr);gap:10px;margin-bottom:28px">
+ ${styles.map(s=>{
+ const styleFrac = s.vel / Math.max(1, styles.reduce((sum,x)=>sum+x.vel,0));
+ const styleStock = Math.round(stock * styleFrac);
+ return `<div onclick="navigate('style-detail','${id}__${s.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;cursor:pointer;transition:transform .12s,box-shadow .12s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,.12)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.06)'">
+ <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+ <div style="width:36px;height:36px;border-radius:50%;background:${s.color};border:2px solid rgba(0,0,0,.1);flex-shrink:0"></div>
+ <div>
+ <div style="font-family:var(--display);font-size:15px;font-weight:600">${s.name}</div>
+ <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${s.sku}</div>
+ </div>
+ </div>
+ <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-family:var(--mono);font-size:12px">
+ <div><div style="font-size:8px;color:var(--faded)">STOCK</div><span style="font-weight:700">${styleStock}</span></div>
+ <div><div style="font-size:8px;color:var(--faded)">VEL</div>${s.vel}/w</div>
+ <div><div style="font-size:8px;color:var(--faded)">SELL</div>${s.sell}%</div>
+ </div>
+ <div style="margin-top:8px"><span class="badge ${s.grade==='A'?'b-grn':s.grade==='B'?'b-amb':'b-gry'}">${s.grade}</span></div>
+ </div>`;
+ }).join('')}
+ </div>
 
-  <!-- STACK PROGRESS -->
-  <div onclick="navigate('product-stack','${id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px 18px;margin-bottom:16px;cursor:pointer;transition:border-color .1s" onmouseover="this.style.borderColor='var(--brd-s)'" onmouseout="this.style.borderColor='var(--brd)'">
-   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-    <span style="font-size:12px;font-weight:600">Product Stack</span>
-    <span style="font-family:var(--mono);font-size:12px;font-weight:700;color:${stackPct===100?'var(--grn)':stackPct>60?'var(--amb)':'var(--brick)'}">${stackDone}/${phases.length} · ${stackPct}%</span>
-   </div>
-   <div style="height:5px;background:var(--brd);border-radius:3px;overflow:hidden;margin-bottom:8px">
-    <div style="height:100%;width:${stackPct}%;background:${stackPct===100?'var(--grn)':stackPct>60?'var(--gold)':'var(--brick)'};border-radius:3px;transition:width .3s"></div>
-   </div>
-   <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:3px">
-    ${phases.map(ph=>`<div style="text-align:center">
-     <div style="height:3px;background:${ph.done?'var(--grn)':'var(--brd)'};border-radius:2px;margin-bottom:2px"></div>
-     <div style="font-size:8px;color:${ph.done?'var(--grn)':'var(--faded)'}">${ph.label}</div>
-    </div>`).join('')}
-   </div>
-  </div>
+ <!-- INLINE: STOCK BY LOCATION -->
+ <div style="font-family:var(--display);font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid var(--ink)">Stock by Location</div>
+ <div style="display:grid;grid-template-columns:repeat(${Store.LOCS.length},1fr);gap:2px;margin-bottom:12px">
+ ${Store.LOCS.map(loc=>{
+ const q=(Store.getInventoryFor(id)||{})[loc]||0;
+ const maxQ=Math.max(1,...Store.LOCS.map(l=>(Store.getInventoryFor(id)||{})[l]||0));
+ const h=Math.max(8,Math.round(q/maxQ*40));
+ return `<div style="text-align:center">
+ <div style="height:40px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:4px"><div style="width:80%;height:${h}px;background:${q>0?'var(--gold)':'var(--brd)'};border-radius:3px 3px 0 0;opacity:.7"></div></div>
+ <div style="font-family:var(--mono);font-size:12px;font-weight:700;color:${q>0?'var(--ink)':'var(--faded)'}">${q}</div>
+ <div style="font-size:7px;color:var(--faded);margin-top:1px">${loc.length>6?loc.substring(0,5)+'…':loc}</div>
+ </div>`;
+ }).join('')}
+ </div>
 
-  <!-- REORDER ALERT -->
-  ${(needsReorder || stock === 0) ? `
-  <div onclick="navigate('production-planning')" style="cursor:pointer;background:${isUrgent||stock===0?'rgba(138,58,42,.06)':'rgba(138,78,8,.06)'};border:1px solid ${isUrgent||stock===0?'rgba(138,58,42,.25)':'rgba(138,78,8,.25)'};border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
-   <div>
-    <div style="font-size:12px;font-weight:700;color:${isUrgent||stock===0?'var(--brick)':'var(--amb)'}">${stock===0?'OUT OF STOCK':isUrgent?'URGENT — within lead time':'Reorder window'}</div>
-    <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">Cover ${cover>99?'∞':cover+'w'} · Lead ${leadWks}w · Suggest ${Math.max(p.moq||50, Math.round(vel*16)-stock-incoming)}u</div>
-   </div>
-   <span style="font-size:11px;color:var(--faded)">Plan →</span>
-  </div>` : ''}
+ <!-- INLINE: PRODUCTION STATUS -->
+ ${(()=>{
+ const ppItem = (()=>{
+ const adjV=adjVel;const cov=adjV>0?Math.round(stock/adjV):999;
+ const leadWk=Math.ceil(p.lead/7);const needsReorder=cov<=(leadWk+4)&&adjV>0;
+ const isUrgent=cov<=leadWk&&adjV>0;const isDead=stock<=0&&adjV>0;
+ const sugQty=Math.max(p.moq||50,Math.round(adjV*16)-stock-incoming);
+ return{coverWeeks:cov,needsReorder,isUrgent,isDead,suggestedQty:sugQty,suggestedFOB:Math.round(sugQty*p.fob),incoming};
+ })();
+ if(!ppItem) return '';
+ const needsAction = ppItem.needsReorder || ppItem.isDead || ppItem.isUrgent;
+ return needsAction ? `
+ <div onclick="navigate('production-planning')" style="cursor:pointer;background:${ppItem.isDead?'rgba(138,58,42,.06)':'rgba(184,154,90,.06)'};border:1px solid ${ppItem.isDead?'rgba(138,58,42,.2)':'rgba(184,154,90,.2)'};border-radius:var(--rl);padding:12px 16px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
+ <div>
+ <span style="font-size:12px;font-weight:600;color:${ppItem.isDead?'var(--brick)':ppItem.isUrgent?'var(--brick)':'var(--amb)'}">${ppItem.isDead?'OUT OF STOCK':ppItem.isUrgent?'URGENT — past lead time':'Reorder needed'}</span>
+ <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">Cover: ${ppItem.coverWeeks>100?'∞':ppItem.coverWeeks+'w'} · Suggest: ${ppItem.suggestedQty.toLocaleString()}u · $${ppItem.suggestedFOB.toLocaleString()} FOB</div>
+ </div>
+ <span style="font-size:10px;color:var(--faded)">Plan →</span>
+ </div>` : `
+ <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;font-family:var(--mono);font-size:10px;color:var(--grn)">✓ Stock healthy · ${ppItem.coverWeeks>100?'∞':ppItem.coverWeeks+'w'} cover · ${ppItem.incoming?ppItem.incoming+' incoming':'no incoming'}</div>`;
+ })()}
 
-  <!-- STYLES -->
-  <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:12px">${styles.length} Styles</div>
-  <div style="display:grid;grid-template-columns:repeat(${Math.min(styles.length,3)},1fr);gap:8px;margin-bottom:24px">
-   ${styles.map(s => {
-    // use real inventoryQty if synced from Shopify, else estimate
-    const sStock = s.inventoryQty != null ? s.inventoryQty : Math.round(stock * (s.vel||0) / Math.max(1, styles.reduce((a,x)=>a+(x.vel||0),0)));
-    const sStockColor = sStock < 3 ? 'var(--brick)' : sStock < 10 ? 'var(--amb)' : 'var(--ink)';
-    return `<div onclick="navigate('style-detail','${id}__${s.id}')"
-      style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px;cursor:pointer;transition:transform .1s,box-shadow .1s"
-      onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,.1)'"
-      onmouseout="this.style.transform='';this.style.boxShadow=''">
-     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <div style="width:34px;height:34px;border-radius:50%;background:${s.color||'#888'};border:2px solid rgba(0,0,0,.1);flex-shrink:0"></div>
-      <div style="min-width:0">
-       <div style="font-family:var(--display);font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
-       <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${s.sku||s.skus?.[0]||'—'}</div>
-      </div>
-      ${s.grade ? `<span class="badge ${s.grade==='A'?'b-grn':s.grade==='B'?'b-amb':'b-gry'}" style="margin-left:auto;flex-shrink:0">${s.grade}</span>` : ''}
-     </div>
-     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;font-family:var(--mono);font-size:11px">
-      <div><div style="font-size:8px;color:var(--faded)">STOCK</div><span style="font-weight:700;color:${sStockColor}">${sStock}</span></div>
-      <div><div style="font-size:8px;color:var(--faded)">VEL</div>${s.vel > 0 ? s.vel + '/w' : '—'}</div>
-      <div><div style="font-size:8px;color:var(--faded)">SELL</div>${s.sell > 0 ? s.sell + '%' : '—'}</div>
-     </div>
-    </div>`;
-   }).join('')}
-  </div>
+ <!-- ACTION TILES -->
+ <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:28px">
+ <div onclick="navigate('pd-dna','${id}')" class="atile at-blue"><div class="atile-icon">▤</div><div><div class="atile-label">Product DNA</div><div class="atile-sub">Vendor &middot; specs &middot; sizes</div></div></div>
+ <div onclick="navigate('pd-cost','${id}')" class="atile at-green"><div class="atile-icon">◎</div><div><div class="atile-label">Cost Build</div><div class="atile-sub">Fabric &middot; CMT &middot; landed</div></div></div>
+ <div onclick="navigate('pd-inv','${id}')" class="atile at-teal"><div class="atile-icon">◫</div><div><div class="atile-label">Locations</div><div class="atile-sub">${stock} units &middot; adjust</div></div></div>
+ <div onclick="navigate('pd-pos','${id}')" class="atile at-purple"><div class="atile-icon">◈</div><div><div class="atile-label">Purchase Orders</div><div class="atile-sub">${pos.length} POs &middot; ${incoming} incoming</div></div></div>
+ <div onclick="navigate('pd-web','${id}')" class="atile at-orange"><div class="atile-icon">◕</div><div><div class="atile-label">Web &amp; Demand</div><div class="atile-sub">Analytics &middot; signals</div></div></div>
+ <div onclick="navigate('product-stack','${id}')" class="atile at-brick"><div class="atile-icon">▧</div><div><div class="atile-label">Product Stack</div><div class="atile-sub">Build pipeline · requirements</div></div></div>
+ <div onclick="navigate('pd-edit','${id}')" class="atile at-slate"><div class="atile-icon">⚙</div><div><div class="atile-label">Edit</div><div class="atile-sub">Change product data</div></div></div>
+ </div>
 
-  <!-- INVENTORY BY LOCATION (bar chart) -->
-  <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:12px">Stock by Location</div>
-  ${locBreak.length === 0 ? `<div style="color:var(--faded);font-size:12px;margin-bottom:20px">No inventory data</div>` : `
-  <div style="display:grid;grid-template-columns:repeat(${Store.LOCS.length},1fr);gap:4px;margin-bottom:20px">
-   ${Store.LOCS.map(loc => {
-    const q = inv[loc] || 0;
-    const h = Math.max(6, Math.round((q / maxLoc) * 48));
-    return `<div style="text-align:center">
-     <div style="height:48px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:4px">
-      <div style="width:75%;height:${h}px;background:${q>0?'var(--gold)':'var(--brd)'};border-radius:3px 3px 0 0;opacity:${q>0?.8:.4}"></div>
-     </div>
-     <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:${q>0?(q<5?'var(--brick)':'var(--ink)'):'var(--faded)'}">${q}</div>
-     <div style="font-size:8px;color:var(--faded);margin-top:1px">${loc.length>7?loc.slice(0,6)+'…':loc}</div>
-    </div>`;
-   }).join('')}
-  </div>`}
-
-  <!-- OPEN POs -->
-  ${openPOs.length ? `
-  <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:12px">Open POs (${openPOs.length})</div>
-  <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:24px">
-   ${openPOs.map(po=>`
-   <div onclick="navigate('po-detail','${po.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:10px 14px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:border-color .1s" onmouseover="this.style.borderColor='var(--brd-s)'" onmouseout="this.style.borderColor='var(--brd)'">
-    <div>
-     <div style="font-size:12px;font-weight:600">${po.id}</div>
-     <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${po.vendor||'—'} · ${po.units||0}u · Stage: ${(po.status||'concept').replace(/-/g,' ')}</div>
-    </div>
-    <div style="text-align:right">
-     <div style="font-family:var(--mono);font-size:12px;font-weight:700">$${((po.fobTotal||0)).toLocaleString()}</div>
-     <div style="font-size:9px;color:var(--faded)">${po.eta||'ETD TBD'}</div>
-    </div>
-   </div>`).join('')}
-  </div>` : ''}
-
-  <!-- 30-DAY SALES -->
-  ${rev30 > 0 ? `
-  <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:12px">30-Day Performance</div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:24px">
-   <div style="padding:14px;border-right:1px solid var(--brd)">
-    <div style="font-size:9px;color:var(--faded);text-transform:uppercase;margin-bottom:4px">Revenue</div>
-    <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--grn)">$${Math.round(rev30).toLocaleString()}</div>
-   </div>
-   <div style="padding:14px;border-right:1px solid var(--brd)">
-    <div style="font-size:9px;color:var(--faded);text-transform:uppercase;margin-bottom:4px">Units sold</div>
-    <div style="font-family:var(--mono);font-size:18px;font-weight:700">${sold30}</div>
-   </div>
-   <div style="padding:14px">
-    <div style="font-size:9px;color:var(--faded);text-transform:uppercase;margin-bottom:4px">Avg / unit</div>
-    <div style="font-family:var(--mono);font-size:18px;font-weight:700">$${sold30 > 0 ? Math.round(rev30/sold30) : '—'}</div>
-   </div>
-  </div>` : ''}
-
-  <!-- DESCRIPTION / NOTES -->
-  ${p.description ? `
-  <div style="font-family:var(--display);font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-bottom:2px solid var(--ink);padding-bottom:6px;margin-bottom:10px">Description</div>
-  <div style="font-size:13px;color:var(--txt2);line-height:1.65;margin-bottom:24px">${p.description}</div>` : ''}
-
-  <!-- TAGS / META -->
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-   ${p.shopifyTags ? p.shopifyTags.split(',').filter(Boolean).map(t=>`<span style="padding:3px 8px;border-radius:10px;background:var(--bg);border:1px solid var(--brd);font-size:10px;color:var(--txt3)">${t.trim()}</span>`).join('') : ''}
-  </div>
-
+ <!-- QUICK ACTIONS -->
+ <div style="display:flex;gap:8px;flex-wrap:wrap">
+ <button class="btn btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ New PO</button>
+ ${vendorId?`<button class="btn" onclick="navigate('vendor-detail','${vendorId}')">${(p.vendor||'').split('(')[0].trim()}</button>`:''}
+ ${p.shopifyUrl?`<button class="btn" onclick="window.open('${p.shopifyUrl}','_blank')">Shopify</button>`:''}
+ </div>
+ </div>`;
+}
+function editCompModal(compId, type, mpId) {
+ const comps = compsLoad();
+ const c = comps[type]?.find(x=>x.id===compId); if(!c)return;
+ openModal(`Edit — ${c.name}`, `
+ <div class="form-row">
+ <div class="fl"><label>Name</label><input id="ec-n" value="${c.name.replace(/"/g,'&quot;')}"/></div>
+ <div class="fl"><label>Status</label><select id="ec-s"><option ${c.status==='approved'?'selected':''}>approved</option><option ${c.status==='pending'?'selected':''}>pending</option><option ${c.status==='archived'?'selected':''}>archived</option></select></div>
+ </div>
+ <div class="fl" style="margin-bottom:8px"><label>Specification</label><textarea id="ec-sub" rows="2">${c.sub||''}</textarea></div>
+ <div class="form-row">
+ <div class="fl"><label>Vendor / source</label><input id="ec-v" value="${(c.vendor||'').replace(/"/g,'&quot;')}"/></div>
+ <div class="fl"><label>Unit cost</label><input id="ec-c" value="${c.cost||''}"/></div>
+ </div>
+ <div class="form-row">
+ <div class="fl"><label>Lead time (days)</label><input type="number" id="ec-l" value="${c.leadDays||0}"/></div>
+ <div class="fl"><label>MOQ</label><input id="ec-m" value="${c.moq||'—'}"/></div>
+ </div>
+ <div class="form-row">
+ <div class="fl"><label>Origin</label><input id="ec-o" value="${c.origin||''}"/></div>
+ <div class="fl"><label>HTS code</label><input id="ec-h" value="${c.hts||''}"/></div>
+ </div>
+ <div class="fl" style="margin-bottom:8px"><label>Properties (key characteristics)</label><textarea id="ec-p" rows="2">${c.properties||''}</textarea></div>
+ <div class="fl"><label>Internal notes</label><textarea id="ec-notes" rows="2">${c.notes||''}</textarea></div>`,
+ () => {
+ const idx = comps[type]?.findIndex(x=>x.id===compId); if(idx<0)return;
+ comps[type][idx] = {...comps[type][idx],
+ name:$('ec-n')?.value||c.name,
+ status:$('ec-s')?.value||'approved',
+ sub:$('ec-sub')?.value||c.sub,
+ vendor:$('ec-v')?.value||c.vendor,
+ cost:$('ec-c')?.value||c.cost,
+ leadDays:parseInt($('ec-l')?.value)||c.leadDays,
+ moq:$('ec-m')?.value||c.moq,
+ origin:$('ec-o')?.value||c.origin,
+ hts:$('ec-h')?.value||c.hts,
+ properties:$('ec-p')?.value||c.properties,
+ notes:$('ec-notes')?.value||c.notes};
+ compsSave(comps);
+ closeModal(); navigate('product-detail',mpId);
+ }
+ );
+}
+function addComponentModal(mpId) {
+ const TYPES = ['fabric','construction','lining','trim','weave','vendor'];
+ openModal('Add component', `
+ <div class="form-row">
+ <div class="fl"><label>Type *</label><select id="ac-t">${TYPES.map(t=>`<option value="${t}">${t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select></div>
+ <div class="fl"><label>Name *</label><input id="ac-n" placeholder="e.g. 100% merino wool 280g"/></div>
+ </div>
+ <div class="fl" style="margin-bottom:8px"><label>Specification</label><textarea id="ac-sub" rows="2" placeholder="Weight · width · key properties"></textarea></div>
+ <div class="form-row">
+ <div class="fl"><label>Vendor / source</label><input id="ac-v" placeholder="Tal Group sourced"/></div>
+ <div class="fl"><label>Unit cost</label><input id="ac-c" placeholder="$6.20/yd"/></div>
+ </div>
+ <div class="form-row">
+ <div class="fl"><label>Lead time (days)</label><input type="number" id="ac-l" value="14"/></div>
+ <div class="fl"><label>MOQ</label><input id="ac-m" placeholder="100yd"/></div>
+ </div>
+ <div class="form-row">
+ <div class="fl"><label>Origin</label><input id="ac-o" placeholder="China"/></div>
+ <div class="fl"><label>HTS code</label><input id="ac-h" placeholder="5111.11"/></div>
+ </div>
+ <div class="fl"><label>Properties / characteristics</label><input id="ac-p" placeholder="Breathable · anti-crease · 3-season"/></div>`,
+ () => {
+ const nm=$('ac-n')?.value?.trim(); if(!nm){alert('Name required');return;}
+ const comps=compsLoad(), type=$('ac-t')?.value||'fabric';
+ if(!comps[type]) comps[type]=[];
+ comps[type].push({id:'c'+Date.now(),name:nm,sub:$('ac-sub')?.value||'',vendor:$('ac-v')?.value||'',cost:$('ac-c')?.value||'—',leadDays:parseInt($('ac-l')?.value)||14,moq:$('ac-m')?.value||'—',origin:$('ac-o')?.value||'',hts:$('ac-h')?.value||'',properties:$('ac-p')?.value||'',certifications:[],colors:[],cats:[mpId],status:'approved'});
+ compsSave(comps);
+ closeModal(); navigate('product-detail',mpId);
+ }
+ );
+}
+let _dnaChanged=false;
+function onDNAEdit(){
+ if(!_dnaChanged){
+ _dnaChanged=true;
+ const sr=$('dna-save-row');if(sr)sr.style.display='flex';
+ }
+ const retail=parseFloat($('dna-retail')?.value)||0;
+ const fob=parseFloat($('dna-fob')?.value)||0;
+ const mg=retail>0?((retail-fob*1.34)/retail*100):0;
+ const bar=$('dna-mg-bar'),num=$('dna-mg-num');
+ const c=mg>65?'var(--grn)':mg>50?'var(--amb)':'var(--red)';
+ if(bar){bar.style.width=Math.min(100,mg)+'%';bar.style.background=c;}
+ if(num){num.textContent=mg.toFixed(1)+'%';num.style.color=c;}
+}
+function cancelDNAEdit(){
+ _dnaChanged=false;
+ navigate('product-detail',window._pdId);
+}
+function saveDNAInline(){
+ const id=window._pdId;const p=Store.getProduct(id);if(!p)return;
+ const prods=Store.getProducts();const idx=prods.findIndex(x=>x.id===id);
+ if(idx>=0){
+ const v=f=>$('dna-'+f)?.value;
+ const n=f=>parseFloat(v(f));
+ const i=f=>parseInt(v(f));
+ prods[idx]={...prods[idx],
+ name:v('name')||p.name,
+ tagline:v('tagline')||p.tagline||'',
+ retail:n('retail')||p.retail,
+ fob:n('fob')||p.fob,
+ lead:i('lead')||p.lead,
+ moq:i('moq')||p.moq,
+ vendor:v('vendor')||p.vendor,
+ hts:v('hts')||p.hts,
+ duty:n('duty')||p.duty,
+ qbCode:v('qbCode')||p.qbCode,
+ status:v('status')||p.status||'active',
+ vel:n('vel')||p.vel,
+ sell:n('sell')||p.sell,
+ description:$('dna-description')?.value||p.description||'',
+ notes:$('dna-notes')?.value||p.notes||''};
+ }
+ try{localStorage.setItem('am_products',JSON.stringify(prods));}catch(e){}
+ _dnaChanged=false;
+ Store.addNotif('success','Products',p.name+' updated.','products');
+ toast('Saved '+p.name,'success');
+ navigate('product-detail',id);
+}
+function updateBkdTotal(id){
+ const p=Store.getProduct(id);if(!p)return;
+ const sizes=Store.SIZE_SETS[p.sizes]||Store.SIZE_SETS.suits;
+ let t=0;
+ sizes.forEach(sz=>{
+ const inp=$('bkd-'+sz.replace('.','_'));
+ if(inp)t+=parseInt(inp.value)||0;
+ });
+ const el=$('bkd-total');if(el)el.textContent=t;
+}
+function openTransferModal(mpId, defaultFrom){
+ const p=Store.getProduct(mpId),inv=Store.getInventoryFor(mpId);
+ openModal(`Transfer stock — ${p?.name}`,`
+ <div class="t11 dim" style="margin-bottom:10px">Available: ${Store.LOCS.map(l=>`${l}: ${inv[l]||0}`).join(' · ')}</div>
+ <div class="form-row">
+ <div class="fl"><label>From</label><select id="tf-f">${Store.LOCS.map(l=>`<option ${l===defaultFrom?'selected':''}>${l}</option>`).join('')}</select></div>
+ <div class="fl"><label>To</label><select id="tf-t">${Store.LOCS.map(l=>`<option>${l}</option>`).join('')}</select></div>
+ </div>
+ <div class="fl"><label>Quantity</label><input type="number" id="tf-q" value="4" min="1"/></div>`,
+ ()=>{
+ const from=$('tf-f')?.value,to=$('tf-t')?.value,qty=parseInt($('tf-q')?.value)||0;
+ if(!from||!to||from===to||qty<1){alert('Invalid transfer');return;}
+ if(qty>(inv[from]||0)){alert(`Only ${inv[from]||0} units at ${from}`);return;}
+ Store.executeTransfer(mpId,from,to,qty);
+ closeModal();navigate('product-detail',mpId);
+ }
+ );
+}
+function runROPCalc(id){
+ const p=Store.getProduct(id);if(!p)return;
+ const s=Store.totalStock(id);
+ const lead=parseFloat($('rc-l')?.value)||p.lead;
+ const safety=parseFloat($('rc-s')?.value)||2;
+ const target=parseFloat($('rc-t')?.value)||14;
+ const growth=parseFloat($('rc-g')?.value)||0;
+ const va=p.vel*(1+growth/100);
+ const rop=Math.ceil(va*(lead/7)+va*safety);
+ const oq=Math.ceil(va*target);
+ const fe=Math.round(oq*p.fob);
+ const isLate=s<=rop,isCrit=s<=va*safety;
+ const el=$('rop-out');if(!el)return;
+ el.innerHTML=`
+ <div class="grid-2" style="gap:8px;margin-bottom:8px">
+ ${[['Reorder point',rop,'var(--amb)'],['Rec. order qty',oq,''],['Est. FOB','$'+fe.toLocaleString(),'var(--grn)'],['Days cover',va>0?Math.round(s/va*7)+'d':'—',va>0&&Math.round(s/va*7)<60?'var(--red)':'']].map(([l,v,c])=>`<div style="padding:8px 10px;background:var(--sur);border-radius:var(--r)"><div class="t10 dim">${l}</div><div class="w6" style="font-size:16px;${c?'color:'+c:''}">${v}</div></div>`).join('')}
+ </div>
+ <div class="t11" style="padding:9px 10px;${isCrit?'background:var(--red-bg);color:var(--red)':isLate?'background:var(--amb-bg);color:var(--amb)':'background:var(--grn-bg);color:var(--grn)'};border-radius:var(--r)">
+ ${isCrit?'⚠ CRITICAL — below safety stock. Order immediately.':isLate?`⚠ Past ROP. Start PO now. Est. FOB $${fe.toLocaleString()}.`:`✓ Above ROP. Plan PO within ${Math.max(0,Math.round((s-rop)/va*7-7))} days.`}
  </div>`;
 }
 function renderPOs(){
@@ -9691,64 +9768,20 @@ function shipmentDetail(shipId){
  </div>`,null);
 }
 function renderBookkeeping(){
-  const pos = Store.getPOs();
-  const overdue = pos.flatMap(po => (po.payments||[]).filter(pm => pm.status === 'overdue'));
-  const unpaid  = pos.flatMap(po => (po.payments||[]).filter(pm => pm.status !== 'paid')).reduce((s,pm) => s+(pm.amount||0), 0);
-  const sales30 = getSalesSince(30);
-  const rev30   = getSalesRevenue(sales30);
-  const sales7  = getSalesSince(7);
-  const rev7    = getSalesRevenue(sales7);
-  const intg    = Store.getIntegrations();
-  const shopify = intg.shopify || {};
-  const lastSync = shopify.lastSync ? new Date(shopify.lastSync) : null;
-  const hasLiveData = sales30.length > 0;
-  const fmt = n => '$' + Math.abs(Math.round(n)).toLocaleString();
-
-  // PO pipeline cost (open POs)
-  const openPOs = pos.filter(po => po.status !== 'complete');
-  const poCost  = openPOs.reduce((s,po) => s + (po.fobTotal||0), 0);
+  const pos=Store.getPOs();
+  const overdue=pos.flatMap(po=>(po.payments||[]).filter(pm=>pm.status==='overdue'));
+  const unpaid=pos.flatMap(po=>(po.payments||[]).filter(pm=>pm.status!=='paid')).reduce((s,pm)=>s+(pm.amount||0),0);
 
   $('page').innerHTML=`
-  <div style="max-width:960px">
+  <div style="max-width:940px">
     <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Finance</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:20px">Cash flow · AP · AR · margins · ${lastSync ? 'synced '+lastSync.toLocaleDateString() : 'not synced'}</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:20px">Cash flow · AP · AR · margins</div>
 
-    ${overdue.length ? `<div onclick="navigate('fin-ap')" style="cursor:pointer;background:rgba(138,58,42,.06);border:1px solid rgba(138,58,42,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:12px;font-size:12px;display:flex;justify-content:space-between;align-items:center">
-     <span><span style="font-weight:700;color:var(--brick)">${overdue.length} overdue payments</span> · ${fmt(overdue.reduce((s,pm)=>s+(pm.amount||0),0))}</span>
-     <span style="font-size:11px;color:var(--faded)">View AP →</span>
-    </div>` : ''}
-
-    <!-- LIVE REVENUE STRIP -->
-    ${hasLiveData ? `
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px">
-     <div style="padding:14px 16px;border-right:1px solid var(--brd)">
-      <div style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Last 7 days</div>
-      <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--grn)">${fmt(rev7)}</div>
-      <div style="font-size:10px;color:var(--faded);margin-top:2px">${sales7.length} orders</div>
-     </div>
-     <div style="padding:14px 16px;border-right:1px solid var(--brd)">
-      <div style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Last 30 days</div>
-      <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--grn)">${fmt(rev30)}</div>
-      <div style="font-size:10px;color:var(--faded);margin-top:2px">${sales30.length} orders</div>
-     </div>
-     <div style="padding:14px 16px;border-right:1px solid var(--brd)">
-      <div style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">PO pipeline</div>
-      <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--brick)">${fmt(poCost)}</div>
-      <div style="font-size:10px;color:var(--faded);margin-top:2px">${openPOs.length} open POs</div>
-     </div>
-     <div style="padding:14px 16px">
-      <div style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Unpaid AP</div>
-      <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:${unpaid>0?'var(--brick)':'var(--faded)'}">${unpaid > 0 ? fmt(unpaid) : '—'}</div>
-      <div style="font-size:10px;color:var(--faded);margin-top:2px">${pos.flatMap(po=>(po.payments||[]).filter(pm=>pm.status!=='paid')).length} invoices</div>
-     </div>
-    </div>` : `
-    <div style="background:var(--bg);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;font-size:11px;color:var(--faded)">
-     No Shopify order data yet. <span onclick="(async()=>{const r=await Store.syncFromShopify();navigate('bookkeeping');toast(r.synced?'Synced':'Error','info');})()" style="cursor:pointer;color:var(--gold);text-decoration:underline">Sync now</span>
-    </div>`}
+    ${overdue.length?`<div onclick="navigate('fin-ap')" style="cursor:pointer;background:rgba(138,58,42,.06);border:1px solid rgba(138,58,42,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:12px;font-size:12px"><span style="font-weight:700;color:var(--brick)">${overdue.length} overdue payments</span> · $${overdue.reduce((s,pm)=>s+(pm.amount||0),0).toLocaleString()}</div>`:''}
 
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:8px">
-      <div onclick="navigate('fin-cashflow')" class="atile at-green"><div class="atile-icon">◈</div><div><div class="atile-label">Cash Flow</div><div class="atile-sub">10-month plan</div></div></div>
-      <div onclick="navigate('fin-ap')" class="atile at-red"><div class="atile-icon">◎</div><div><div class="atile-label">AP</div><div class="atile-sub">${unpaid>0?fmt(unpaid)+' unpaid':'Current'}</div></div></div>
+      <div onclick="navigate('fin-cashflow')" class="atile at-green"><div class="atile-icon">◈</div><div><div class="atile-label">Cash Flow</div><div class="atile-sub">12-week projection</div></div></div>
+      <div onclick="navigate('fin-ap')" class="atile at-red"><div class="atile-icon">◎</div><div><div class="atile-label">AP</div><div class="atile-sub">${unpaid>0?'$'+Math.round(unpaid/1000)+'K unpaid':'Current'}</div></div></div>
       <div onclick="navigate('fin-ar')" class="atile at-blue"><div class="atile-icon">◕</div><div><div class="atile-label">AR</div><div class="atile-sub">Wholesale receivables</div></div></div>
       <div onclick="navigate('fin-margins')" class="atile at-gold"><div class="atile-icon">◫</div><div><div class="atile-label">Margins</div><div class="atile-sub">Product profitability</div></div></div>
       <div onclick="navigate('fin-catrev')" class="atile at-purple"><div class="atile-icon">▦</div><div><div class="atile-label">Category Revenue</div><div class="atile-sub">By category</div></div></div>
@@ -9756,6 +9789,11 @@ function renderBookkeeping(){
     </div>
   </div>`;
 }
+
+const MKT_KEY = 'am_campaigns';
+const MKT_ASSETS_KEY = 'am_assets';
+const MKT_COPY_KEY = 'am_copy';
+const MKT_PROMOS_KEY = 'am_promos';
 function mktLoad() {
  let c = []; try { c = JSON.parse(localStorage.getItem(MKT_KEY)||'[]'); } catch(e){}
  if (!c.length) {
@@ -12445,155 +12483,568 @@ function createPOFromDemand(mpId,qty){
  distribution:null});
  navigate('demand');
 }
-function renderIntegrations(){
-  const intg=Store.getIntegrations();
-  const prods=Store.getProducts();
-  const shopifyInt=intg.shopify||{};
-  const shopifyCount=prods.filter(p=>p.shopifyId).length;
-  const lastSync=shopifyInt.lastSync?new Date(shopifyInt.lastSync).toLocaleString():'Never';
-  const isConnected=shopifyInt.connected||false;
+// ═══════════════════════════════════════════════════════════════════
+// STALLON — API & Integrations Command Center
+// Handles all Shopify communication: status, sync, webhooks, SKU map,
+// endpoint explorer, live data preview
+// ═══════════════════════════════════════════════════════════════════
 
-  $('page').innerHTML=`
-  <div style="max-width:860px">
-    <div style="margin-bottom:16px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--faded);padding:8px 0;min-height:44px" onclick="navigate('operations')">← Operations</div>
-    <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Integrations</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:24px">Live data connections</div>
+let _stallonTab = 0;
+let _stallonLog = [];
+let _stallonConnData = null;
+let _stallonEndpointResults = {};
 
-    <!-- SHOPIFY -->
-    <div id="shopify-card" style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid ${isConnected?'var(--grn)':'var(--brd-s)'};border-radius:var(--rl);padding:20px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:22px">🛒</span>
-          <div>
-            <div style="font-size:15px;font-weight:600">Shopify</div>
-            <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">atica-brand.myshopify.com</div>
+function stallonAddLog(type, msg) {
+  _stallonLog.unshift({ time: new Date(), type, msg });
+  if (_stallonLog.length > 100) _stallonLog.length = 100;
+  const el = document.getElementById('stallon-log-body');
+  if (el) {
+    el.innerHTML = _stallonLog.map(l =>
+      `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--brd);font-family:var(--mono);font-size:10px">
+        <span style="color:var(--txt4);flex-shrink:0;width:60px">${l.time.toLocaleTimeString()}</span>
+        <span style="flex-shrink:0;width:14px;color:${l.type==='ok'?'var(--grn)':l.type==='err'?'var(--red)':l.type==='warn'?'var(--amb)':'var(--blu)'}">
+          ${l.type==='ok'?'✓':l.type==='err'?'✗':l.type==='warn'?'⚠':'→'}</span>
+        <span style="color:var(--txt2);word-break:break-all">${l.msg}</span>
+      </div>`
+    ).join('');
+  }
+}
+
+function stallonTab(i) {
+  _stallonTab = i;
+  [0,1,2,3,4,5].forEach(j => {
+    const t = document.getElementById('st-t'+j);
+    const p = document.getElementById('st-p'+j);
+    if(t) t.classList.toggle('on', j===i);
+    if(p) p.classList.toggle('on', j===i);
+  });
+}
+
+function renderIntegrations() {
+  const intg = Store.getIntegrations();
+  const prods = Store.getProducts();
+  const shopifyInt = intg.shopify || {};
+  const shopifyCount = prods.filter(p => p.shopifyId).length;
+  const totalProds = prods.length;
+  const lastSync = shopifyInt.lastSync ? new Date(shopifyInt.lastSync).toLocaleString() : 'Never';
+  const isConnected = shopifyInt.connected || false;
+
+  $('page').innerHTML = `
+  <div style="max-width:940px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:2px">Stallon</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--faded)">API & Integrations · Shopify Communication Layer</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div id="stallon-live-dot" style="width:8px;height:8px;border-radius:50%;background:var(--brd-s)"></div>
+        <span id="stallon-live-label" style="font-family:var(--mono);font-size:10px;color:var(--faded)">CHECKING...</span>
+      </div>
+    </div>
+
+    <!-- STATUS STRIP -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:20px">
+      <div class="mbox">
+        <div class="mbox-l">Connection</div>
+        <div id="stallon-conn-status" class="mbox-v" style="font-size:14px;color:var(--faded)">...</div>
+      </div>
+      <div class="mbox">
+        <div class="mbox-l">Matched</div>
+        <div class="mbox-v">${shopifyCount}<span style="font-size:11px;color:var(--txt3)">/${totalProds}</span></div>
+      </div>
+      <div class="mbox">
+        <div class="mbox-l">Last Sync</div>
+        <div class="mbox-v" style="font-size:12px">${lastSync}</div>
+      </div>
+      <div class="mbox">
+        <div class="mbox-l">Webhooks</div>
+        <div class="mbox-v" style="font-size:14px">${(shopifyInt.webhooks||[]).length}</div>
+        <div class="mbox-s">${(shopifyInt.webhooks||[]).join(', ')||'none'}</div>
+      </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tab-bar" style="margin-bottom:0">
+      <div class="stab on" id="st-t0" onclick="stallonTab(0)">Connection</div>
+      <div class="stab" id="st-t1" onclick="stallonTab(1)">Sync</div>
+      <div class="stab" id="st-t2" onclick="stallonTab(2)">Endpoints</div>
+      <div class="stab" id="st-t3" onclick="stallonTab(3)">SKU Map</div>
+      <div class="stab" id="st-t4" onclick="stallonTab(4)">Webhooks</div>
+      <div class="stab" id="st-t5" onclick="stallonTab(5)">Log</div>
+    </div>
+
+    <!-- TAB 0: CONNECTION -->
+    <div class="tp on" id="st-p0" style="padding-top:16px">
+      <div id="shopify-card" style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid ${isConnected?'var(--grn)':'var(--brd-s)'};border-radius:var(--rl);padding:20px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:22px">🛒</span>
+            <div>
+              <div style="font-size:15px;font-weight:600">Shopify</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">aticaman.myshopify.com</div>
+            </div>
+          </div>
+          <span id="shopify-badge" class="badge ${isConnected?'b-grn':'b-gry'}">${isConnected?'CONNECTED':'CHECKING...'}</span>
+        </div>
+        <div id="shopify-status-box" style="background:var(--bg);border:1px solid var(--brd);border-radius:var(--r);padding:12px;margin-bottom:12px;font-family:var(--mono);font-size:11px;color:var(--faded)">
+          ${isConnected?`✓ ${shopifyCount} products matched · Last sync: ${lastSync}`:'Testing connection...'}
+        </div>
+        <div id="stallon-conn-detail" style="display:none;background:var(--bg);border:1px solid var(--brd);border-radius:var(--r);padding:12px;margin-bottom:12px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-p" onclick="testShopifyConnection()">Test Connection</button>
+          <button class="btn" onclick="stallonQuickPing()">Ping All Endpoints</button>
+        </div>
+      </div>
+
+      <!-- Other Integrations -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid var(--amb);border-radius:var(--rl);padding:16px;opacity:.7">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:18px">📊</span>
+            <div><div style="font-size:13px;font-weight:600">QuickBooks</div><div style="font-size:10px;color:var(--faded)">Accounting</div></div>
+            <span class="badge b-amb" style="margin-left:auto">READY</span>
           </div>
         </div>
-        <span id="shopify-badge" class="badge ${isConnected?'b-grn':'b-gry'}">${isConnected?'CONNECTED':'CHECKING...'}</span>
-      </div>
-
-      <div id="shopify-status-box" style="background:var(--bg);border:1px solid var(--brd);border-radius:var(--r);padding:12px;margin-bottom:12px;font-family:var(--mono);font-size:11px;color:var(--faded)">
-        ${isConnected?`✓ ${shopifyCount} products matched · Last sync: ${lastSync}`:'Testing connection...'}
-      </div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-p" onclick="testShopifyConnection()">Test Connection</button>
-        <button class="btn" onclick="runShopifySync()">Sync Now</button>
-        <button class="btn" onclick="navigate('integrations')">Refresh</button>
-      </div>
-
-      <div id="shopify-log" style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--faded);max-height:120px;overflow-y:auto;display:none"></div>
-    </div>
-
-    <!-- QUICKBOOKS -->
-    <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid var(--amb);border-radius:var(--rl);padding:20px;margin-bottom:8px;opacity:.7">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:22px">📊</span>
-          <div><div style="font-size:15px;font-weight:600">QuickBooks</div><div style="font-size:11px;color:var(--faded)">Accounting & invoicing</div></div>
+        <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid var(--amb);border-radius:var(--rl);padding:16px;opacity:.7">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:18px">⚡</span>
+            <div><div style="font-size:13px;font-weight:600">Lightspeed POS</div><div style="font-size:10px;color:var(--faded)">4 stores</div></div>
+            <span class="badge b-amb" style="margin-left:auto">READY</span>
+          </div>
         </div>
-        <span class="badge b-amb">READY</span>
-      </div>
-    </div>
-
-    <!-- LIGHTSPEED -->
-    <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid var(--amb);border-radius:var(--rl);padding:20px;margin-bottom:8px;opacity:.7">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:22px">⚡</span>
-          <div><div style="font-size:15px;font-weight:600">Lightspeed POS</div><div style="font-size:11px;color:var(--faded)">Retail point of sale · 4 stores</div></div>
+        <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;opacity:.5">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:18px">📧</span>
+            <div><div style="font-size:13px;font-weight:600">Klaviyo</div><div style="font-size:10px;color:var(--faded)">Email marketing</div></div>
+            <span class="badge b-gry" style="margin-left:auto">PLANNED</span>
+          </div>
         </div>
-        <span class="badge b-amb">READY</span>
-      </div>
-    </div>
-
-    <!-- KLAVIYO -->
-    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:20px;margin-bottom:8px;opacity:.5">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:22px">📧</span>
-          <div><div style="font-size:15px;font-weight:600">Klaviyo</div><div style="font-size:11px;color:var(--faded)">Email marketing</div></div>
+        <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;opacity:.5">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:18px">📦</span>
+            <div><div style="font-size:13px;font-weight:600">ShipStation</div><div style="font-size:10px;color:var(--faded)">Fulfillment</div></div>
+            <span class="badge b-gry" style="margin-left:auto">PLANNED</span>
+          </div>
         </div>
-        <span class="badge b-gry">PLANNED</span>
       </div>
     </div>
 
+    <!-- TAB 1: SYNC -->
+    <div class="tp" id="st-p1" style="padding-top:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+        <button class="btn btn-p" onclick="stallonSyncAll()" id="stallon-sync-all-btn" style="padding:14px">
+          <div style="font-size:13px;font-weight:600">Full Sync</div>
+          <div style="font-size:9px;opacity:.7;margin-top:2px">Products + Inventory + Orders</div>
+        </button>
+        <button class="btn" onclick="stallonSyncOne('products')" style="padding:14px">
+          <div style="font-size:12px;font-weight:600">Sync Products</div>
+        </button>
+        <button class="btn" onclick="stallonSyncOne('inventory')" style="padding:14px">
+          <div style="font-size:12px;font-weight:600">Sync Inventory</div>
+        </button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
+        <button class="btn" onclick="stallonSyncOne('orders')" style="padding:14px">
+          <div style="font-size:12px;font-weight:600">Sync Orders</div>
+          <div style="font-size:9px;color:var(--txt3);margin-top:2px">Last 90 days</div>
+        </button>
+        <button class="btn" onclick="stallonSyncOne('velocity')" style="padding:14px">
+          <div style="font-size:12px;font-weight:600">Velocity</div>
+          <div style="font-size:9px;color:var(--txt3);margin-top:2px">30-day calc</div>
+        </button>
+        <button class="btn" onclick="stallonSyncOne('sales')" style="padding:14px">
+          <div style="font-size:12px;font-weight:600">Sales Summary</div>
+          <div style="font-size:9px;color:var(--txt3);margin-top:2px">Revenue rollup</div>
+        </button>
+      </div>
+
+      <div id="stallon-sync-status" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;min-height:80px">
+        <div style="font-family:var(--mono);font-size:11px;color:var(--faded)">Ready to sync. Click any button above.</div>
+      </div>
+    </div>
+
+    <!-- TAB 2: ENDPOINTS -->
+    <div class="tp" id="st-p2" style="padding-top:16px">
+      <div style="font-size:12px;color:var(--txt3);margin-bottom:12px">Live endpoint explorer — call any Shopify proxy route and see results</div>
+      <div id="stallon-endpoints">
+        ${stallonRenderEndpoints()}
+      </div>
+      <div id="stallon-endpoint-result" style="margin-top:12px"></div>
+    </div>
+
+    <!-- TAB 3: SKU MAP -->
+    <div class="tp" id="st-p3" style="padding-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600">SKU Map <span style="color:var(--txt3);font-weight:400">— Shopify variants → Internal products</span></div>
+        <button class="btn btn-sm" onclick="stallonLoadSKUMap()">Load from Shopify</button>
+      </div>
+      <div id="stallon-sku-body" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;font-family:var(--mono);font-size:11px;color:var(--faded)">
+        Click "Load from Shopify" to fetch live SKU mapping
+      </div>
+    </div>
+
+    <!-- TAB 4: WEBHOOKS -->
+    <div class="tp" id="st-p4" style="padding-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600">Webhook Management</div>
+        <button class="btn btn-sm btn-grn" onclick="stallonSetupWebhooks()">Setup Webhooks</button>
+      </div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:12px">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--brd);background:var(--sur)">
+          <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3)">Active Webhooks</div>
+        </div>
+        <div id="stallon-webhook-list" style="padding:12px 16px;font-family:var(--mono);font-size:11px;color:var(--faded)">
+          ${(shopifyInt.webhooks||[]).length > 0
+            ? (shopifyInt.webhooks||[]).map(w => `
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--brd)">
+                <span style="width:6px;height:6px;border-radius:50%;background:var(--grn);flex-shrink:0"></span>
+                <span style="color:var(--txt)">${w}</span>
+                <span style="color:var(--txt4);margin-left:auto">→ /api/webhooks/shopify</span>
+              </div>`).join('')
+            : '<div style="padding:8px 0;color:var(--txt3)">No webhooks configured</div>'
+          }
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--txt3);line-height:1.6">
+        Webhooks push real-time updates from Shopify to your app. Topics: <span style="font-family:var(--mono);font-size:10px">orders/create</span>, 
+        <span style="font-family:var(--mono);font-size:10px">orders/updated</span>, 
+        <span style="font-family:var(--mono);font-size:10px">products/update</span>, 
+        <span style="font-family:var(--mono);font-size:10px">inventory_levels/update</span>
+      </div>
+    </div>
+
+    <!-- TAB 5: LOG -->
+    <div class="tp" id="st-p5" style="padding-top:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:13px;font-weight:600">API Log</div>
+        <button class="btn btn-sm" onclick="_stallonLog=[];stallonTab(5)">Clear</button>
+      </div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 16px;max-height:400px;overflow-y:auto" id="stallon-log-body">
+        ${_stallonLog.length === 0
+          ? '<div style="font-family:var(--mono);font-size:11px;color:var(--faded);padding:8px 0">No API calls logged yet. Interact with endpoints to see activity.</div>'
+          : _stallonLog.map(l =>
+            `<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--brd);font-family:var(--mono);font-size:10px">
+              <span style="color:var(--txt4);flex-shrink:0;width:60px">${l.time.toLocaleTimeString()}</span>
+              <span style="flex-shrink:0;width:14px;color:${l.type==='ok'?'var(--grn)':l.type==='err'?'var(--red)':l.type==='warn'?'var(--amb)':'var(--blu)'}">
+                ${l.type==='ok'?'✓':l.type==='err'?'✗':l.type==='warn'?'⚠':'→'}</span>
+              <span style="color:var(--txt2);word-break:break-all">${l.msg}</span>
+            </div>`
+          ).join('')
+        }
+      </div>
+    </div>
   </div>`;
 
-  // Auto-test on load
+  // Restore tab
+  if (_stallonTab > 0) stallonTab(_stallonTab);
+  // Auto-test
   testShopifyConnection();
+}
+
+function stallonRenderEndpoints() {
+  const endpoints = [
+    { method:'GET', path:'status', desc:'Connection status', noAuth:true },
+    { method:'POST', path:'sync/products', desc:'Pull all products' },
+    { method:'POST', path:'sync/inventory', desc:'Pull inventory by location' },
+    { method:'POST', path:'sync/orders', desc:'Pull orders (body: {since})' },
+    { method:'GET', path:'velocity?days=30', desc:'Velocity by SKU' },
+    { method:'GET', path:'sales?days=30', desc:'Sales summary' },
+    { method:'GET', path:'ledger?days=30', desc:'Financial ledger entries' },
+    { method:'GET', path:'sku-map', desc:'Full SKU → product map' },
+    { method:'GET', path:'titles', desc:'List all product titles' },
+    { method:'POST', path:'snapshot', desc:'Take inventory snapshot' },
+  ];
+  return endpoints.map((ep, i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--r);margin-bottom:4px;cursor:pointer;transition:background .1s"
+         onclick="stallonCallEndpoint(${i},'${ep.method}','${ep.path}')"
+         onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background='var(--sur2)'">
+      <span style="font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;min-width:36px;text-align:center;
+        background:${ep.method==='GET'?'var(--blu-m)':'var(--grn-m)'};color:${ep.method==='GET'?'var(--blu)':'var(--grn)'}">${ep.method}</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--txt);flex:1">/api/shopify/${ep.path}</span>
+      <span style="font-size:10px;color:var(--txt3)">${ep.desc}</span>
+      <span id="ep-status-${i}" style="font-family:var(--mono);font-size:9px;color:var(--txt4)"></span>
+    </div>
+  `).join('');
+}
+
+async function stallonCallEndpoint(idx, method, path) {
+  const statusEl = document.getElementById('ep-status-'+idx);
+  const resultEl = document.getElementById('stallon-endpoint-result');
+  if(statusEl) statusEl.textContent = '...';
+  stallonAddLog('info', `${method} /api/shopify/${path}`);
+
+  try {
+    const t0 = performance.now();
+    const opts = { method };
+    if (method === 'POST') {
+      opts.headers = { 'Content-Type': 'application/json' };
+      if (path.includes('orders')) opts.body = JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() });
+    }
+    const res = await fetch('/api/shopify/' + path, opts);
+    const ms = Math.round(performance.now() - t0);
+    const data = await res.json();
+
+    if(statusEl) statusEl.innerHTML = `<span style="color:${res.ok?'var(--grn)':'var(--red)'}">${res.status} · ${ms}ms</span>`;
+    stallonAddLog(res.ok ? 'ok' : 'err', `${method} ${path} → ${res.status} (${ms}ms)`);
+
+    if(resultEl) {
+      const preview = JSON.stringify(data, null, 2);
+      const truncated = preview.length > 3000 ? preview.slice(0, 3000) + '\n... (truncated)' : preview;
+      resultEl.innerHTML = `
+        <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+          <div style="padding:8px 14px;background:var(--sur);border-bottom:1px solid var(--brd);display:flex;align-items:center;justify-content:space-between">
+            <span style="font-family:var(--mono);font-size:10px;font-weight:600;color:var(--txt3)">${method} /api/shopify/${path}</span>
+            <span class="badge ${res.ok?'b-grn':'b-red'}">${res.status} · ${ms}ms</span>
+          </div>
+          <pre style="padding:12px 14px;margin:0;font-family:var(--mono);font-size:10px;color:var(--txt2);overflow-x:auto;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all">${truncated.replace(/</g,'&lt;')}</pre>
+        </div>`;
+    }
+  } catch(err) {
+    if(statusEl) statusEl.innerHTML = `<span style="color:var(--red)">ERR</span>`;
+    stallonAddLog('err', `${method} ${path} → ${err.message}`);
+    if(resultEl) resultEl.innerHTML = `<div class="alert a-red">${err.message}</div>`;
+  }
+}
+
+async function stallonQuickPing() {
+  const paths = ['status','titles','velocity?days=7'];
+  stallonAddLog('info','Pinging all endpoints...');
+  for (const p of paths) {
+    try {
+      const t0 = performance.now();
+      const res = await fetch('/api/shopify/' + p);
+      const ms = Math.round(performance.now() - t0);
+      stallonAddLog(res.ok?'ok':'err', `GET ${p} → ${res.status} (${ms}ms)`);
+    } catch(e) {
+      stallonAddLog('err', `GET ${p} → ${e.message}`);
+    }
+  }
+  toast('Ping complete — check Log tab','info');
+}
+
+async function stallonSyncAll() {
+  const btn = document.getElementById('stallon-sync-all-btn');
+  const box = document.getElementById('stallon-sync-status');
+  if(btn){btn.textContent='Syncing...';btn.disabled=true;}
+  if(box) box.innerHTML = '<div style="font-family:var(--mono);font-size:11px;color:var(--amb)">⏳ Running full sync...</div>';
+  stallonAddLog('info','Full sync started');
+
+  try {
+    const result = await Store.syncFromShopify();
+    if(result.synced){
+      stallonAddLog('ok', `Sync complete: ${result.matched} matched, ${result.shopifyTotal} Shopify products, ${result.locations} locations`);
+      Store.addNotif('success','Stallon',`Shopify sync complete. ${result.matched} products matched, ${result.shopifyTotal} Shopify products, ${result.locations} inventory locations.`,'integrations');
+      if(box) box.innerHTML = `
+        <div style="border-left:3px solid var(--grn);padding:12px 16px;background:var(--grn-m);border-radius:var(--r)">
+          <div style="font-size:13px;font-weight:600;color:var(--grn);margin-bottom:6px">✓ Sync Complete</div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--txt2);line-height:1.8">
+            Products matched: ${result.matched}<br>
+            Shopify products: ${result.shopifyTotal}<br>
+            Inventory locations: ${result.locations}<br>
+            Timestamp: ${new Date().toLocaleString()}
+          </div>
+        </div>`;
+    } else {
+      stallonAddLog('warn', `Sync skipped: ${result.reason}`);
+      if(box) box.innerHTML = `<div class="alert a-amb">${result.reason}</div>`;
+    }
+    toast(result.synced?'Full sync complete':'Sync skipped: '+result.reason, result.synced?'success':'warning');
+  } catch(err) {
+    stallonAddLog('err', `Sync error: ${err.message}`);
+    if(box) box.innerHTML = `<div class="alert a-red">Sync error: ${err.message}</div>`;
+    toast('Sync error: ' + err.message, 'error');
+  }
+  if(btn){btn.textContent='Full Sync';btn.disabled=false;}
+}
+
+async function stallonSyncOne(type) {
+  const box = document.getElementById('stallon-sync-status');
+  if(box) box.innerHTML = `<div style="font-family:var(--mono);font-size:11px;color:var(--amb)">⏳ Syncing ${type}...</div>`;
+  stallonAddLog('info', `Single sync: ${type}`);
+
+  const pathMap = {
+    products: { method:'POST', path:'sync/products' },
+    inventory: { method:'POST', path:'sync/inventory' },
+    orders: { method:'POST', path:'sync/orders', body:{ since: new Date(Date.now()-90*86400000).toISOString() } },
+    velocity: { method:'GET', path:'velocity?days=30' },
+    sales: { method:'GET', path:'sales?days=30' },
+  };
+  const cfg = pathMap[type];
+  if(!cfg) return;
+
+  try {
+    const t0 = performance.now();
+    const opts = { method: cfg.method };
+    if(cfg.body) { opts.headers={'Content-Type':'application/json'}; opts.body=JSON.stringify(cfg.body); }
+    const res = await fetch('/api/shopify/' + cfg.path, opts);
+    const ms = Math.round(performance.now() - t0);
+    const data = await res.json();
+
+    stallonAddLog(res.ok?'ok':'err', `${type} → ${res.status} (${ms}ms)`);
+
+    if(box) {
+      const preview = JSON.stringify(data, null, 2);
+      const truncated = preview.length > 2000 ? preview.slice(0,2000)+'...' : preview;
+      box.innerHTML = `
+        <div style="border-left:3px solid ${res.ok?'var(--grn)':'var(--red)'};padding:12px 16px;border-radius:var(--r)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span style="font-size:12px;font-weight:600">${type}</span>
+            <span class="badge ${res.ok?'b-grn':'b-red'}">${res.status} · ${ms}ms</span>
+          </div>
+          <pre style="font-family:var(--mono);font-size:10px;color:var(--txt2);max-height:250px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:0">${truncated.replace(/</g,'&lt;')}</pre>
+        </div>`;
+    }
+    toast(`${type} sync: ${res.status} (${ms}ms)`, res.ok?'success':'error');
+  } catch(err) {
+    stallonAddLog('err', `${type} error: ${err.message}`);
+    if(box) box.innerHTML = `<div class="alert a-red">${type} error: ${err.message}</div>`;
+  }
+}
+
+async function stallonLoadSKUMap() {
+  const body = document.getElementById('stallon-sku-body');
+  if(body) body.innerHTML = '<div style="color:var(--amb)">⏳ Loading SKU map from Shopify...</div>';
+  stallonAddLog('info','Loading SKU map');
+
+  try {
+    const res = await fetch('/api/shopify/sku-map');
+    const data = await res.json();
+    stallonAddLog('ok', `SKU map: ${data.count} variants`);
+
+    if(body && data.skuMap) {
+      body.innerHTML = `
+        <div style="margin-bottom:8px;font-size:12px;font-weight:600;color:var(--txt)">${data.count} SKU variants mapped</div>
+        <div style="max-height:400px;overflow-y:auto">
+          <table class="tbl" style="font-size:11px">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Product</th>
+                <th>Variant</th>
+                <th>Price</th>
+                <th>Inventory</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${data.skuMap.slice(0,100).map(s => `
+                <tr>
+                  <td style="font-family:var(--mono);font-size:10px">${s.sku||'—'}</td>
+                  <td>${s.productTitle||'—'}</td>
+                  <td style="color:var(--txt3)">${s.variantTitle||'Default'}</td>
+                  <td style="font-family:var(--mono)">$${s.price||'0'}</td>
+                  <td style="font-family:var(--mono);color:${(s.inventoryQty||0)<5?'var(--red)':'var(--txt)'}">${s.inventoryQty||'—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+          ${data.count > 100 ? `<div style="padding:8px;text-align:center;font-size:10px;color:var(--txt3)">Showing first 100 of ${data.count}</div>` : ''}
+        </div>`;
+    }
+  } catch(err) {
+    stallonAddLog('err', `SKU map error: ${err.message}`);
+    if(body) body.innerHTML = `<div class="alert a-red">${err.message}</div>`;
+  }
+}
+
+async function stallonSetupWebhooks() {
+  if (!confirm('This will remove existing webhooks and create new ones. Continue?')) return;
+  stallonAddLog('info','Setting up webhooks...');
+  try {
+    const base = window.location.origin;
+    const res = await fetch('/api/shopify/webhooks/setup', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ base_url: base })
+    });
+    const data = await res.json();
+    stallonAddLog(res.ok?'ok':'err', `Webhooks: ${JSON.stringify(data)}`);
+    if(data.webhooks) {
+      Store.updateIntegration('shopify', { webhooks: data.webhooks.map(w=>w.topic) });
+      toast('Webhooks configured: ' + data.webhooks.length + ' topics','success');
+    } else {
+      toast(data.error || 'Webhook setup failed','error');
+    }
+    navigate('integrations');
+    stallonTab(4);
+  } catch(err) {
+    stallonAddLog('err', `Webhook error: ${err.message}`);
+    toast('Webhook error: '+err.message,'error');
+  }
 }
 
 async function testShopifyConnection() {
   const badge = document.getElementById('shopify-badge');
   const box = document.getElementById('shopify-status-box');
-  const log = document.getElementById('shopify-log');
   const card = document.getElementById('shopify-card');
+  const liveDot = document.getElementById('stallon-live-dot');
+  const liveLabel = document.getElementById('stallon-live-label');
+  const connStatus = document.getElementById('stallon-conn-status');
+  const connDetail = document.getElementById('stallon-conn-detail');
   if (!badge||!box) return;
 
-  badge.textContent = 'TESTING...';
-  badge.className = 'badge b-gry';
+  badge.textContent = 'TESTING...'; badge.className = 'badge b-gry';
   box.textContent = 'Calling /api/shopify/status...';
-  if(log) { log.style.display='block'; log.textContent=''; }
-
-  const addLog = (msg) => { if(log){ log.textContent += '\n' + msg; log.scrollTop=log.scrollHeight; } };
+  stallonAddLog('info','GET /api/shopify/status');
 
   try {
-    addLog('→ GET /api/shopify/status');
+    const t0 = performance.now();
     const res = await fetch('/api/shopify/status');
-    addLog('← HTTP ' + res.status);
+    const ms = Math.round(performance.now() - t0);
+    stallonAddLog(res.ok?'ok':'err', `status → ${res.status} (${ms}ms)`);
 
     if (!res.ok) {
       const text = await res.text();
-      addLog('Error body: ' + text.slice(0,200));
-      badge.textContent = 'ERROR ' + res.status;
-      badge.className = 'badge b-red';
+      badge.textContent = 'ERROR ' + res.status; badge.className = 'badge b-red';
       box.textContent = 'HTTP ' + res.status + ': ' + text.slice(0,100);
+      if(liveDot) liveDot.style.background = 'var(--red)';
+      if(liveLabel) { liveLabel.textContent = 'ERROR'; liveLabel.style.color = 'var(--red)'; }
+      if(connStatus) { connStatus.textContent = 'Error'; connStatus.style.color = 'var(--red)'; }
       return;
     }
 
     const data = await res.json();
-    addLog('Response: ' + JSON.stringify(data));
+    _stallonConnData = data;
 
     if (data.connected) {
-      badge.textContent = 'CONNECTED';
-      badge.className = 'badge b-grn';
-      card.style.borderLeftColor = 'var(--grn)';
-      box.innerHTML = '<span style="color:var(--grn)">✓ Connected</span> · Shop: ' + data.shop + ' · ' + data.plan + ' · ' + data.currency;
+      badge.textContent = 'CONNECTED'; badge.className = 'badge b-grn';
+      if(card) card.style.borderLeftColor = 'var(--grn)';
+      box.innerHTML = `<span style="color:var(--grn)">✓ Connected</span> · ${data.shop} · ${data.plan} · ${data.currency} · <span style="color:var(--txt4)">${ms}ms</span>`;
+      if(liveDot) { liveDot.style.background = 'var(--grn)'; liveDot.style.boxShadow = '0 0 6px var(--grn)'; }
+      if(liveLabel) { liveLabel.textContent = 'LIVE'; liveLabel.style.color = 'var(--grn)'; }
+      if(connStatus) { connStatus.textContent = '● Live'; connStatus.style.color = 'var(--grn)'; }
+      if(connDetail) {
+        connDetail.style.display = 'block';
+        connDetail.innerHTML = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">
+            <div><span style="color:var(--txt3)">Shop:</span> <strong>${data.shop}</strong></div>
+            <div><span style="color:var(--txt3)">Domain:</span> <strong>${data.domain}</strong></div>
+            <div><span style="color:var(--txt3)">Plan:</span> <strong>${data.plan}</strong></div>
+            <div><span style="color:var(--txt3)">Currency:</span> <strong>${data.currency}</strong></div>
+            <div><span style="color:var(--txt3)">Latency:</span> <strong>${ms}ms</strong></div>
+            <div><span style="color:var(--txt3)">Proxy:</span> <strong>Netlify Functions</strong></div>
+          </div>`;
+      }
       Store.updateIntegration('shopify', { connected: true, store: data.shop, lastSync: new Date().toISOString() });
     } else {
-      badge.textContent = 'NOT CONNECTED';
-      badge.className = 'badge b-red';
-      card.style.borderLeftColor = 'var(--red)';
-      box.innerHTML = '<span style="color:var(--red)">✗ ' + (data.message||'Not connected') + '</span>';
+      badge.textContent = 'NOT CONNECTED'; badge.className = 'badge b-red';
+      if(card) card.style.borderLeftColor = 'var(--red)';
+      box.innerHTML = `<span style="color:var(--red)">✗ ${data.message||'Not connected'}</span>`;
+      if(liveDot) liveDot.style.background = 'var(--red)';
+      if(liveLabel) { liveLabel.textContent = 'DISCONNECTED'; liveLabel.style.color = 'var(--red)'; }
+      if(connStatus) { connStatus.textContent = 'Offline'; connStatus.style.color = 'var(--red)'; }
     }
   } catch(err) {
-    addLog('Exception: ' + err.message);
-    badge.textContent = 'NETWORK ERROR';
-    badge.className = 'badge b-red';
+    stallonAddLog('err', `status → ${err.message}`);
+    badge.textContent = 'NETWORK ERROR'; badge.className = 'badge b-red';
     box.textContent = 'Network error: ' + err.message;
+    if(liveDot) liveDot.style.background = 'var(--red)';
+    if(liveLabel) { liveLabel.textContent = 'ERROR'; liveLabel.style.color = 'var(--red)'; }
+    if(connStatus) { connStatus.textContent = 'Error'; connStatus.style.color = 'var(--red)'; }
   }
 }
 
 async function runShopifySync() {
-  const box = document.getElementById('shopify-status-box');
-  const log = document.getElementById('shopify-log');
-  if(log) { log.style.display='block'; log.textContent='Starting full sync...'; }
-  if(box) box.textContent = 'Syncing...';
-
-  try {
-    const result = await Store.syncFromShopify();
-    if(box) box.textContent = result.synced
-      ? '✓ Sync complete · ' + result.matched + ' products matched'
-      : '✗ Sync skipped: ' + result.reason;
-    toast(result.synced ? 'Shopify sync complete' : 'Sync skipped: '+result.reason, result.synced?'success':'warning');
-    navigate('integrations');
-  } catch(err) {
-    if(box) box.textContent = 'Sync error: ' + err.message;
-    toast('Sync error: ' + err.message, 'error');
-  }
+  stallonSyncAll();
 }
-
 
 function igTab(i){[0,1,2,3].forEach(j=>{$('ig-t'+j)?.classList.toggle('on',j===i);$('ig-p'+j)?.classList.toggle('on',j===i);});}
 function syncShopify(){
@@ -12601,19 +13052,19 @@ function syncShopify(){
  if(btn){btn.textContent='Syncing...';btn.disabled=true;}
  Store.syncFromShopify().then(result=>{
    if(result.synced){
-     Store.addNotif('success','Integrations',`Shopify sync complete. ${result.matched} products matched, ${result.shopifyTotal} Shopify products, ${result.locations} inventory locations.`,'integrations');
+     Store.addNotif('success','Stallon',`Shopify sync complete. ${result.matched} products matched, ${result.shopifyTotal} Shopify products, ${result.locations} inventory locations.`,'integrations');
    } else {
-     Store.addNotif('warning','Integrations','Shopify sync failed: '+(result.reason||'Unknown error'),'integrations');
+     Store.addNotif('warning','Stallon','Shopify sync failed: '+(result.reason||'Unknown error'),'integrations');
    }
    navigate('integrations');
  }).catch(e=>{
-   Store.addNotif('warning','Integrations','Shopify sync error: '+e.message,'integrations');
+   Store.addNotif('warning','Stallon','Shopify sync error: '+e.message,'integrations');
    navigate('integrations');
  });
 }
 function syncQB(){
  Store.updateIntegration('quickbooks',{lastSync:new Date().toISOString()});
- Store.addNotif('success','Integrations','QuickBooks sync complete. 8 accounts reconciled.','integrations');
+ Store.addNotif('success','Stallon','QuickBooks sync complete. 8 accounts reconciled.','integrations');
  navigate('integrations');
 }
 window.onerror=function(msg,url,line,col,err){
