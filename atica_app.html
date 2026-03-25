@@ -2173,32 +2173,44 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
 
        // Ã¢ÂÂÃ¢ÂÂ Build live styles from ALL matching Shopify product variants Ã¢ÂÂÃ¢ÂÂ
        const seedStyles = styles[prod.id] || [];
-       const liveStyles = [];
+       // Group variants by style name (first option = color/fit) to avoid one card per size
+       const styleGroups = {};
+       const COLOR_PALETTE = ['#1a2a4a','#4a4a4a','#c8c8c8','#2a4a2a','#8a3a2a','#3a5a78','#6a5a4a','#4a3a6a','#7a6a5a','#2a3a5a','#5a3a2a','#3a6a5a'];
+       let colorIdx = 0;
        for (const mp of matchedShopify) {
          for (const sv of mp.variants) {
            const skuUpper = (sv.sku || '').toUpperCase();
            const existing = seedStyles.find(s => s.sku && s.sku.toUpperCase() === skuUpper);
            const vel = velBySku[skuUpper] || {};
-           liveStyles.push({
-             id: existing ? existing.id : 'sv-' + sv.variantId,
-             code: existing ? existing.code : (sv.sku || String(sv.variantId)),
-             name: (mp.title !== sp.title ? mp.title + ' Ã¢ÂÂ ' : '') + (sv.title || (existing ? existing.name : 'Default')),
-             color: existing ? existing.color : '#888888',
-             sku: sv.sku || '',
-             status: 'active',
-             shopify: true,
-             shopifyVariantId: sv.variantId,
-             shopifyProductTitle: mp.title,
-             price: parseFloat(sv.price) || 0,
-             inventoryQty: sv.inventoryQty || 0,
-             inventoryItemId: sv.inventoryItemId,
-             sell: existing ? existing.sell : 50,
-             vel: vel.unitsPerDay ? Math.round(vel.unitsPerDay * 30 * 10) / 10 : (existing ? existing.vel : 0),
-             grade: existing ? existing.grade : 'C',
-             colorFamily: existing ? existing.colorFamily : 'dark',
-           });
+           const varTitle = sv.title || '';
+           const styleName = varTitle.includes(' / ') ? varTitle.split(' / ')[0].trim() : varTitle;
+           const groupKey = (mp.title !== sp.title ? mp.title + ' — ' : '') + styleName;
+           if (!styleGroups[groupKey]) {
+             const existingStyle = seedStyles.find(s => s.name && s.name.toLowerCase().includes(styleName.toLowerCase()));
+             styleGroups[groupKey] = {
+               id: existing ? existing.id : ('sg-' + prod.id + '-' + groupKey.replace(/[^a-z0-9]/gi,'').toLowerCase().slice(0,12)),
+               code: existing ? existing.code : styleName.slice(0,4).toUpperCase().replace(/\s/g,''),
+               name: groupKey,
+               color: existing ? existing.color : (existingStyle ? existingStyle.color : COLOR_PALETTE[colorIdx++ % COLOR_PALETTE.length]),
+               skus: [], status: 'active', shopify: true,
+               shopifyProductTitle: mp.title,
+               price: parseFloat(sv.price) || 0,
+               inventoryQty: 0, inventoryItemIds: [],
+               sell: existing ? existing.sell : 50, vel: 0,
+               grade: existing ? existing.grade : 'C',
+               colorFamily: existing ? existing.colorFamily : 'dark',
+             };
+           }
+           const g = styleGroups[groupKey];
+           if (sv.sku) g.skus.push(sv.sku);
+           if (sv.inventoryItemId) g.inventoryItemIds.push(sv.inventoryItemId);
+           g.inventoryQty += (sv.inventoryQty || 0);
+           if (vel.unitsPerDay) g.vel += Math.round(vel.unitsPerDay * 30 * 10) / 10;
          }
        }
+       const liveStyles = Object.values(styleGroups).map(g => ({
+         ...g, sku: g.skus[0] || '', vel: Math.round(g.vel * 10) / 10,
+       }));
        if (liveStyles.length > 0) styles[prod.id] = liveStyles;
 
        // Ã¢ÂÂÃ¢ÂÂ Aggregate product velocity from live styles Ã¢ÂÂÃ¢ÂÂ
