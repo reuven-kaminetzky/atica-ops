@@ -682,18 +682,71 @@ const getNotifs=()=>load(KEYS.NOTIFICATIONS,SEED_NOTIF);
  const advanceStage=(poId)=>{
  const pos=getPOs();const idx=pos.findIndex(p=>p.id===poId);
  if(idx<0||pos[idx].stage>=9)return null;
- pos[idx].stage++;
- pos[idx].stageLabel=['','Concept','Development','Sampling','Breakdown','Shipping','Invoicing','Cost accounting','Distribution','Marketing'][pos[idx].stage];
- if(!pos[idx].stageHistory)pos[idx].stageHistory={};
- pos[idx].stageHistory[pos[idx].stage]={done:true,date:new Date().toISOString().split('T')[0]};
- if(pos[idx].stage===5) pos[idx].status='in-transit'; // auto-set status
- if(pos[idx].stage===9) pos[idx].status='complete';
- save(KEYS.POS,pos);
- addNotif('info','All departments',`PO ${poId} advanced to Stage ${pos[idx].stage}: ${pos[idx].stageLabel}`,'pos');
- if(pos[idx].stage===5){
- autoCreateShipment(pos[idx]);
+ const po=pos[idx];
+ const nextStage=po.stage+1;
+
+ // ── STAGE GATES — real data required to advance ──────────────────
+ const STAGES=['','Concept','Development','Sampling','Breakdown','Shipping','Invoicing','Cost accounting','Distribution','Complete'];
+ const gate={ok:true,reason:''};
+
+ if(nextStage===2){
+  // Concept→Dev: must have product + vendor + FOB
+  const prod=getProducts().find(p=>p.id===po.mpId);
+  if(!po.mpId||!prod) { gate.ok=false; gate.reason='No master product linked to this PO'; }
+  else if(!prod.vendor||prod.vendor==='—') { gate.ok=false; gate.reason='Product has no vendor assigned'; }
+  else if(!(prod.fob>0)) { gate.ok=false; gate.reason='FOB price not set on product'; }
  }
- return pos[idx];
+ if(nextStage===3){
+  // Dev→Sampling: units and style breakdown must exist
+  if(!(po.units>0)) { gate.ok=false; gate.reason='PO has no units — set quantity first'; }
+  if(gate.ok&&!(po.styleNames&&po.styleNames.length>0)) { gate.ok=false; gate.reason='No styles defined on this PO'; }
+ }
+ if(nextStage===4){
+  // Sampling→Breakdown: fobTotal locked
+  if(!(po.fobTotal>0)) { gate.ok=false; gate.reason='FOB total not set — confirm units × FOB'; }
+ }
+ if(nextStage===5){
+  // Breakdown→Shipping: at least one payment recorded
+  const paid=(po.payments||[]).filter(pm=>pm.status==='paid');
+  if(paid.length===0) { gate.ok=false; gate.reason='No payments recorded — deposit must be paid before shipping'; }
+ }
+ if(nextStage===6){
+  // Shipping→Invoicing: ETA must be set
+  if(!po.eta) { gate.ok=false; gate.reason='No ETA set — cannot move to invoicing without arrival date'; }
+ }
+ if(nextStage===8){
+  // Cost acctg→Distribution: all non-projected payments must be paid or reconciled
+  const unpaid=(po.payments||[]).filter(pm=>pm.status==='due'||pm.status==='overdue');
+  if(unpaid.length>0) { gate.ok=false; gate.reason=`${unpaid.length} payment(s) unpaid — clear AP before distribution`; }
+ }
+ if(nextStage===9){
+  // Distribution→Complete: inventory must show real received stock
+  const inv=getInventoryFor(po.mpId)||{};
+  const totalReceived=Object.values(inv).reduce((s,q)=>s+(q||0),0);
+  if(totalReceived===0) { gate.ok=false; gate.reason='No inventory recorded — sync Shopify or enter received qty first'; }
+  // Also require real velocity > 0 if product is active
+  const prod=getProducts().find(p=>p.id===po.mpId);
+  if(prod&&prod.status==='active'&&!(prod.vel>0)&&!(prod.inc>0)){
+   gate.ok=false; gate.reason='No velocity or incoming stock — product must be live on Shopify first';
+  }
+ }
+
+ if(!gate.ok) {
+  // Return error object — UI will show the reason
+  return {error:true,stage:po.stage,reason:gate.reason};
+ }
+
+ // ── Advance ──────────────────────────────────────────────────────
+ po.stage=nextStage;
+ po.stageLabel=STAGES[nextStage]||STAGES[nextStage];
+ if(!po.stageHistory)po.stageHistory={};
+ po.stageHistory[nextStage]={done:true,date:new Date().toISOString().split('T')[0]};
+ if(nextStage===5) po.status='in-transit';
+ if(nextStage===9) po.status='complete';
+ save(KEYS.POS,pos);
+ addNotif('info','All departments',`PO ${poId} → Stage ${nextStage}: ${po.stageLabel}`,'pos');
+ if(nextStage===5) autoCreateShipment(po);
+ return po;
  };
 
  const SHIPMENT_KEY='am_shipments';
@@ -2057,7 +2110,7 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
 
  styles.forEach(st => {
  const velShare = totalStyleVel > 0 ? (st.vel || 0) / totalStyleVel : 1 / styles.length;
- const styleStock = Math.round(totalProductStock * velShare);
+ const styleStock = (st.inventoryQty != null) ? st.inventoryQty : Math.round(totalProductStock * velShare);
  const styleIncoming = Math.round(incomingUnits * velShare);
  const weeklyBurn = (st.vel || 0) * mult;
  const totalBurn = Math.round(weeklyBurn * weeks);
@@ -5148,6 +5201,8 @@ function renderStyleDetail(combined){
  const styleProj = proj.find(r=>r.styleId===styleId);
  const season = Store.getCurrentSeason();
  const styleFrac = s.vel / Math.max(1, styles.reduce((sum,x)=>sum+x.vel,0));
+ // Real style stock: use inventoryQty from Shopify sync if available
+ const realStyleTotal = s.inventoryQty != null ? s.inventoryQty : Math.round(Store.totalStock(mpId) * styleFrac);
  const comps = compsLoad();
  const weave = (()=>{
  const nm = s.name.toLowerCase();
@@ -7279,8 +7334,11 @@ function renderProductDetail(id) {
  <div style="font-family:var(--display);font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--ink)">Styles</div>
  <div style="display:grid;grid-template-columns:repeat(${Math.min(styles.length,3)},1fr);gap:10px;margin-bottom:28px">
  ${styles.map(s=>{
+ // Use real Shopify inventory if synced; fall back to velocity-weighted estimate
+ const inv = Store.getInventoryFor(id)||{};
+ const realStyleStock = s.inventoryQty != null ? s.inventoryQty : null;
  const styleFrac = s.vel / Math.max(1, styles.reduce((sum,x)=>sum+x.vel,0));
- const styleStock = Math.round(stock * styleFrac);
+ const styleStock = realStyleStock !== null ? realStyleStock : Math.round(Store.totalStock(id) * styleFrac);
  return `<div onclick="navigate('style-detail','${id}__${s.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;cursor:pointer;transition:transform .12s,box-shadow .12s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 16px rgba(0,0,0,.12)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.06)'">
  <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
  <div style="width:36px;height:36px;border-radius:50%;background:${s.color};border:2px solid rgba(0,0,0,.1);flex-shrink:0"></div>
@@ -7610,13 +7668,7 @@ function renderPOs(){
  <button class="btn btn-sm" onclick="navigate('po-detail','${po.id}')">Open</button>
  <button class="btn btn-sm" onclick="navigate('po-stages','${po.id}')">Stages</button>
  <button class="btn btn-sm" onclick="navigate('product-detail','${po.mpId}')">Product</button>
- ${po.stage<9?`<button class="btn btn-sm btn-p" onclick="
- const p=Store.getPOs();const idx=p.findIndex(x=>x.id==='${po.id}');
- if(idx>=0){p[idx].stage=Math.min(9,p[idx].stage+1);const lb=['','Quote','Sample','Approved','Cutting','Shipping','At sea','Customs','Receiving','Complete'];p[idx].stageLabel=lb[p[idx].stage];
- if(p[idx].stage>=5&&p[idx].status==='active')p[idx].status='in-transit';if(p[idx].stage===9)p[idx].status='complete';
- if(!p[idx].stageHistory)p[idx].stageHistory={};p[idx].stageHistory[p[idx].stage]={done:true,date:new Date().toISOString().split('T')[0]};
- try{localStorage.setItem('am_pos',JSON.stringify(p));}catch(e){}toast('Stage '+(p[idx].stage),'success');navigate('pos');}
- ">→ Stage ${po.stage+1}</button>`:''}
+ ${po.stage<9?`<button class="btn btn-sm btn-p" onclick="(()=>{const _r=Store.advanceStage('${po.id}');if(_r&&_r.error){toast(_r.reason,'error',5000);}else{navigate('pos');}})()" >→ Stage ${po.stage+1}</button>`:''}
  </div>
  </div>`:''}
  </div>`;
@@ -7665,7 +7717,7 @@ function renderPODetail(poId){
  </div>
  <div style="display:flex;gap:2px;margin-bottom:8px">${stages.map((s,i)=>`<div style="flex:1;height:6px;border-radius:3px;background:${i<po.stage?'var(--grn)':i===po.stage?'var(--amb)':'var(--brd)'};transition:background .2s"></div>`).join('')}</div>
  <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:7px;color:var(--faded)">${stages.map(s=>`<span>${s}</span>`).join('')}</div>
- ${po.status!=='complete'?`<div style="margin-top:10px"><button class="btn btn-sm btn-p" onclick="Store.advanceStage('${poId}');navigate('po-detail','${poId}')">Advance to ${stages[po.stage]||'next'}</button></div>`:''}
+ ${po.status!=='complete'?`<div style="margin-top:10px"><button class="btn btn-sm btn-p" onclick="(()=>{const _r=Store.advanceStage('${poId}');if(_r&&_r.error){toast(_r.reason,'error',5000);}else{navigate('po-detail','${poId}');}})()">Advance to ${stages[po.stage]||'next'}</button></div>`:''}
  </div>
 
  
