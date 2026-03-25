@@ -3,6 +3,39 @@ const { json, cors, authenticate } = require('../../lib/auth');
 const { mapProduct, mapOrder, mapLedgerEntry, mapSnapshotProduct, mapSKU } = require('../../lib/mappers');
 const { sinceDate, buildVelocity, buildSalesSummary } = require('../../lib/analytics');
 
+// ═══════════════════════════════════════════════════════════════
+// Stallon: In-memory cache — persists within lambda container
+// Netlify reuses containers for ~5-15 min between cold starts.
+// This prevents hammering Shopify on rapid page navigations.
+// ═══════════════════════════════════════════════════════════════
+const _cache = {};
+const CACHE_TTL = {
+  status:     30,   // 30s  — connection check
+  products:   300,  // 5min — products rarely change
+  inventory:  120,  // 2min — inventory changes often
+  orders:     60,   // 1min — orders flow in
+  velocity:   180,  // 3min — aggregated, stable
+  sales:      120,  // 2min — sales summary
+  titles:     300,  // 5min — just titles
+  'sku-map':  300,  // 5min — SKU list
+};
+
+function cacheGet(key) {
+  const entry = _cache[key];
+  if (!entry) return null;
+  if (Date.now() > entry.expires) { delete _cache[key]; return null; }
+  return entry.data;
+}
+
+function cacheSet(key, data, ttlSec) {
+  _cache[key] = { data, expires: Date.now() + (ttlSec || 60) * 1000 };
+}
+
+function cacheKey(path, params) {
+  const ps = params ? JSON.stringify(params) : '';
+  return `${path}:${ps}`;
+}
+
 class RouteError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -10,40 +43,51 @@ class RouteError extends Error {
 // ── Route handlers ──────────────────────────────────────────
 
 async function status() {
+  const ck = cacheKey('status');
+  const cached = cacheGet(ck);
+  if (cached) return cached;
+
   const client = await createClient();
   if (!client) return { connected: false, message: 'Set SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN' };
   try {
     const { shop } = await client._request('/shop.json');
-    return { connected: true, shop: shop.name, domain: shop.domain, plan: shop.plan_name, currency: shop.currency };
+    const result = { connected: true, shop: shop.name, domain: shop.domain, plan: shop.plan_name, currency: shop.currency };
+    cacheSet(ck, result, CACHE_TTL.status);
+    return result;
   } catch (err) {
     return { connected: false, message: err.message };
   }
 }
 
-async function connect() {
-  return {
-    message: 'Set env vars in Netlify dashboard',
-    steps: ['Site settings → Environment variables','SHOPIFY_STORE_URL = your-store.myshopify.com','SHOPIFY_ACCESS_TOKEN = shpat_xxxxx','Redeploy'],
-  };
-}
-
-async function disconnect() {
-  return { message: 'Remove SHOPIFY_ACCESS_TOKEN from Netlify env vars to disconnect' };
-}
-
 async function syncProducts(client) {
+  const ck = cacheKey('products');
+  const cached = cacheGet(ck);
+  if (cached) return { ...cached, _cached: true };
+
   const { products } = await client.getProducts();
-  return { count: products.length, products: products.map(mapProduct) };
+  const result = { count: products.length, products: products.map(mapProduct) };
+  cacheSet(ck, result, CACHE_TTL.products);
+  return result;
 }
 
 async function syncOrders(client, { body, params }) {
   const since = body.since || params.since;
+  const ck = cacheKey('orders', { since });
+  const cached = cacheGet(ck);
+  if (cached) return { ...cached, _cached: true };
+
   const opts = since ? { created_at_min: since } : {};
   const { orders } = await client.getOrders(opts);
-  return { count: orders.length, orders: orders.map(mapOrder) };
+  const result = { count: orders.length, orders: orders.map(mapOrder) };
+  cacheSet(ck, result, CACHE_TTL.orders);
+  return result;
 }
 
 async function syncInventory(client) {
+  const ck = cacheKey('inventory');
+  const cached = cacheGet(ck);
+  if (cached) return { ...cached, _cached: true };
+
   const { locations } = await client.getLocations();
   const result = [];
   for (const loc of locations) {
@@ -58,19 +102,33 @@ async function syncInventory(client) {
       })),
     });
   }
-  return { locations: result };
+  const data = { locations: result };
+  cacheSet(ck, data, CACHE_TTL.inventory);
+  return data;
 }
 
 async function velocity(client, { params }) {
   const days = parseInt(params.days || '30', 10);
+  const ck = cacheKey('velocity', { days });
+  const cached = cacheGet(ck);
+  if (cached) return cached;
+
   const { orders } = await client.getOrders({ created_at_min: sinceDate(days) });
-  return { days, orderCount: orders.length, velocity: buildVelocity(orders, days) };
+  const result = { days, orderCount: orders.length, velocity: buildVelocity(orders, days) };
+  cacheSet(ck, result, CACHE_TTL.velocity);
+  return result;
 }
 
 async function sales(client, { params }) {
   const days = parseInt(params.days || '30', 10);
+  const ck = cacheKey('sales', { days });
+  const cached = cacheGet(ck);
+  if (cached) return cached;
+
   const { orders } = await client.getOrders({ created_at_min: sinceDate(days) });
-  return buildSalesSummary(orders, days);
+  const result = buildSalesSummary(orders, days);
+  cacheSet(ck, result, CACHE_TTL.sales);
+  return result;
 }
 
 async function ledger(client, { params }) {
@@ -90,11 +148,17 @@ async function listSnapshots() {
 }
 
 async function skuMap(client, { params }) {
+  const ck = cacheKey('sku-map', { filter: params.filter });
+  const cached = cacheGet(ck);
+  if (cached) return cached;
+
   const { products } = await client.getProducts();
   const map = products.flatMap(p => p.variants.map(v => mapSKU(p, v)));
   const filter = params.filter;
   const filtered = filter && filter !== 'all' ? map.filter(s => s.sku.toLowerCase().includes(filter.toLowerCase())) : map;
-  return { count: filtered.length, skuMap: filtered };
+  const result = { count: filtered.length, skuMap: filtered };
+  cacheSet(ck, result, CACHE_TTL['sku-map']);
+  return result;
 }
 
 async function updateSKU(client, { pathParams, body }) {
@@ -120,10 +184,13 @@ async function webhooksSetup(client, { body }) {
   return { message: 'Webhooks configured', webhooks: created };
 }
 
-
 async function listTitles(client) {
+  const ck = cacheKey('titles');
+  const cached = cacheGet(ck);
+  if (cached) return cached;
+
   const { products } = await client.getProducts();
-  return {
+  const result = {
     count: products.length,
     titles: products.map(p => ({
       title: p.title,
@@ -133,14 +200,33 @@ async function listTitles(client) {
       price: p.variants[0]?.price || '0',
     })).sort((a,b) => a.title.localeCompare(b.title))
   };
+  cacheSet(ck, result, CACHE_TTL.titles);
+  return result;
+}
+
+// ── Cache management endpoint ─────────────────────────────────
+async function cacheStats() {
+  const entries = Object.entries(_cache);
+  const stats = entries.map(([key, entry]) => ({
+    key: key.split(':')[0],
+    expiresIn: Math.round((entry.expires - Date.now()) / 1000),
+    alive: Date.now() < entry.expires,
+  }));
+  return { entries: stats.length, alive: stats.filter(s => s.alive).length, stats };
+}
+
+async function cacheClear() {
+  const count = Object.keys(_cache).length;
+  for (const k of Object.keys(_cache)) delete _cache[k];
+  return { cleared: count };
 }
 
 // ── Route table ─────────────────────────────────────────────
 
 const ROUTES = [
   { method: 'GET',   path: 'status',              handler: status,         noClient: true },
-  { method: 'POST',  path: 'connect',             handler: connect,        noClient: true },
-  { method: 'POST',  path: 'disconnect',          handler: disconnect,     noClient: true },
+  { method: 'POST',  path: 'connect',             handler: () => ({ message: 'Set env vars in Netlify dashboard' }), noClient: true },
+  { method: 'POST',  path: 'disconnect',          handler: () => ({ message: 'Remove SHOPIFY_ACCESS_TOKEN to disconnect' }), noClient: true },
   { method: 'POST',  path: 'sync/products',       handler: syncProducts },
   { method: 'POST',  path: 'sync/orders',         handler: syncOrders },
   { method: 'POST',  path: 'sync/inventory',      handler: syncInventory },
@@ -154,6 +240,8 @@ const ROUTES = [
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU,  noClient: true },
   { method: 'POST',  path: 'webhooks/setup',      handler: webhooksSetup },
   { method: 'GET',   path: 'titles',              handler: listTitles },
+  { method: 'GET',   path: 'cache/stats',         handler: cacheStats,     noClient: true },
+  { method: 'POST',  path: 'cache/clear',         handler: cacheClear,     noClient: true },
 ];
 
 function matchRoute(method, path) {
@@ -180,7 +268,6 @@ exports.handler = async (event) => {
   const auth = authenticate(event);
   if (!auth.ok) return json(401, { error: auth.error });
 
-  // Normalise path — handle both /api/shopify/* and /.netlify/functions/shopify/*
   let rawPath = event.path || '';
   rawPath = rawPath
     .replace(/^\/api\/shopify\/?/, '')
@@ -204,7 +291,22 @@ exports.handler = async (event) => {
     };
 
     const result = await route.handler(client, ctx);
-    return json(200, result);
+
+    // Add ETag for cacheable GET responses
+    const headers = {};
+    if (event.httpMethod === 'GET' && result && !result.error) {
+      const crypto = require('crypto');
+      const etag = '"' + crypto.createHash('md5').update(JSON.stringify(result)).digest('hex').slice(0, 12) + '"';
+      headers['ETag'] = etag;
+
+      // Check If-None-Match
+      const clientEtag = event.headers['if-none-match'];
+      if (clientEtag === etag) {
+        return { statusCode: 304, headers: { ...cors(), ...headers } };
+      }
+    }
+
+    return json(200, result, headers);
 
   } catch (err) {
     if (err instanceof RouteError) return json(err.status, { error: err.message });
@@ -212,6 +314,3 @@ exports.handler = async (event) => {
     return json(500, { error: err.message });
   }
 };
-
-// ── Diagnostic: list all Shopify product titles ──────────────
-// Remove this endpoint after setup is complete

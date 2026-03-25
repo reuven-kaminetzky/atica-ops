@@ -1,85 +1,58 @@
 # Atica Man — Operations Platform
 
-Live: https://atica-ops.netlify.app  
-Store: aticaman.myshopify.com
-
-## Team Zones
-
-| Session  | Zone                        | Scope                                          |
-|----------|-----------------------------|-------------------------------------------------|
-| **Shrek**    | `app/marketplace/`          | MPs, product matching, title matchers, nav      |
-| **Deshawn**  | `app/cash-flow/`            | Cash flow, POs, AP/AR, bookkeeping              |
-| **Stallon**  | `lib/shopify/` + `app/api/` | Shopify client, sync, webhooks, API routes      |
-
-**Rule: stay in your lane. Don't edit other zones.**
+**Live:** https://atica-ops.netlify.app/atica_app.html  
+**Store:** aticaman.myshopify.com
 
 ## Architecture
 
 ```
-lib/shopify/
-  client.ts      ← Shopify API client (paginated, rate-limited)
-  types.ts       ← Full TypeScript types (raw Shopify + Atica domain)
-  mappers.ts     ← Shopify → Atica transforms + product tree builder
-  analytics.ts   ← Velocity, sales aggregation
-  locations.ts   ← Store name normalizer (Shopify → Lakewood/Flatbush/etc)
-  sync.ts        ← fullSync() + salesPulse() + getProductInventory()
-  index.ts       ← Barrel export
-
-app/api/
-  shopify/[...path]/route.ts  ← All /api/shopify/* endpoints (backward compat)
-  sync/full/route.ts          ← POST /api/sync/full (boot sync)
-  sync/pulse/route.ts         ← POST /api/sync/pulse (3-min lightweight)
-  inventory/[productId]/       ← GET /api/inventory/:id (per-product by store)
-  webhooks/shopify/route.ts   ← POST /api/webhooks/shopify (Shopify events)
+atica_app.html          ← Entire frontend (single-file SPA, ~1MB)
+netlify/functions/
+  shopify.js            ← Shopify API proxy (cached, rate-limited)
+  webhooks-shopify.js   ← Webhook receiver
+lib/
+  shopify.js            ← Shopify client (paginated, auto-retry on 429)
+  mappers.js            ← Shopify → Atica data transforms
+  analytics.js          ← Velocity, sales aggregation
+  auth.js               ← CORS, API key auth, same-origin check
+lib/shopify/            ← TypeScript reference types (not compiled)
 ```
+
+**No build step.** No framework. HTML served static, functions run serverless.
+
+## Team Zones
+
+| Session    | Files                    | Scope                       |
+|------------|--------------------------|------------------------------|
+| **Stallon**  | `lib/`, `netlify/functions/`, API routes | Shopify client, sync, cache |
+| **Shrek**    | Product matching, title matchers in `atica_app.html` | MPs, nav, product UI |
+| **Deshawn**  | Finance renderers in `atica_app.html` | Cash flow, POs, AP/AR |
 
 ## API Endpoints
 
-### Shopify (backward compatible with Netlify functions)
+All via `/api/shopify/` → Netlify function. Cached in-memory (survives within lambda container).
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/shopify/status` | Connection check |
-| POST | `/api/shopify/sync/products` | All products → mapped |
-| POST | `/api/shopify/sync/orders` | Orders (body: `{since}`) |
-| POST | `/api/shopify/sync/inventory` | All locations + levels |
-| GET | `/api/shopify/velocity?days=30` | SKU velocity |
-| GET | `/api/shopify/sales?days=30` | Sales summary + daily |
-| GET | `/api/shopify/ledger?days=30` | Ledger entries |
-| GET | `/api/shopify/sku-map` | All SKU mappings |
-| GET | `/api/shopify/titles` | Product title list |
-| GET | `/api/shopify/products/tree` | Product trees (MP→Style→Fit→Size) |
-| POST | `/api/shopify/snapshot` | Inventory snapshot |
-| POST | `/api/shopify/webhooks/setup` | Register webhooks |
+| Method | Path | Cache | Description |
+|--------|------|-------|-------------|
+| GET | `status` | 30s | Connection check |
+| POST | `sync/products` | 5min | All products mapped |
+| POST | `sync/orders` | 1min | Orders (body: `{since}`) |
+| POST | `sync/inventory` | 2min | Locations + levels |
+| GET | `velocity?days=30` | 3min | SKU velocity |
+| GET | `sales?days=30` | 2min | Sales summary + daily |
+| GET | `ledger?days=30` | — | Ledger entries |
+| GET | `sku-map` | 5min | SKU mappings |
+| GET | `titles` | 5min | Product title list |
+| GET | `cache/stats` | — | View cache state |
+| POST | `cache/clear` | — | Flush cache |
 
-### New (Stallon)
+GET responses include `ETag` — browser gets 304 Not Modified on repeat requests.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/sync/full` | Full sync (products+inventory+orders+velocity) |
-| POST | `/api/sync/pulse` | Sales-only pulse (last 24h, runs every 3min) |
-| GET | `/api/inventory/:productId` | Per-product inventory by store |
-| POST | `/api/webhooks/shopify` | Webhook receiver |
+## Auto-Sync
 
-## Product Hierarchy
-
-```
-Master Product (MP)
-  └── Style (color/fabric)
-        └── Fit
-              └── Size
-                    └── Length (where applicable)
-```
-
-### Fits by Category
-
-- **Suits**: Lorenzo 6, Lorenzo 4, Alexander 4, Alexander 2
-- **Shirts**: Modern (Extra Slim), Contemporary (Slim), Classic
-- **Pants**: Slim, Regular, Relaxed
-
-### Stores
-
-Lakewood, Flatbush, Crown Heights, Monsey, Online, Reserve, Wholesale
+- **Boot:** Full sync (products + inventory + orders + velocity) on page load
+- **Pulse:** Lightweight sales-only sync every 3 minutes (last 24h orders)
+- **Live indicator:** Green dot in topbar shows sync status + time since last pulse
 
 ## Setup
 
@@ -89,11 +62,5 @@ cd atica-ops
 npm install
 cp .env.example .env.local
 # Fill in SHOPIFY_ACCESS_TOKEN
-npm run dev
-```
-
-## Test
-
-```bash
-npx tsx scripts/test-shopify.ts
+npx netlify dev
 ```
