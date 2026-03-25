@@ -3515,44 +3515,29 @@ function renderFinCashflow(){
    {v:'Guangdon XDDD',d:'Shoes 908',a:18115,m:1},{v:'Serena',d:'Essential Pants balance',a:28128,m:1},{v:'Hefei Easy Way',d:'Ties balance',a:4227,m:1}
   ],
   construction: [{v:'Cruz Wood Working - Monsey',b:11000,p:[5000,0,0,0,0,0,0,0,0,0]},{v:'Construction Monsey (Jacob)',b:22516,p:[0,0,0,0,0,0,0,0,0,0]}],
-  bal:(()=>{
-   const _bp=Store.getProducts();
-   const _invUS=Math.round(_bp.reduce((s,p)=>{
-    const inv=Store.getInventoryFor(p.id)||{};
-    return s+['Lakewood','Flatbush','Crown Heights','Monsey','Reserve'].reduce((ss,l)=>ss+(inv[l]||0)*p.fob*1.34,0);
-   },0));
-   const _invOverseas=Math.round(Store.getPOs().filter(po=>po.status==='in-transit').reduce((s,po)=>s+(po.fobTotal||0),0));
-   return {assets:_invUS+_invOverseas+71000+650000+380000+15000+768,liab:4090486,
-    assetItems:{'Inventory (US)':_invUS,'Inventory (Overseas)':_invOverseas,'Cash on Hand':71000,'Lakewood RE':650000,'CH RE':380000,'Other Assets':15000,'Accounts Receivable':768},
-    liabItems:{'Investments':4200000,'Other Liabilities':149900,'Line of Credit':99507,'Credit Card':41079,'Losses':-350000,'Interest Expenses':-50000}};
-  })()
+  bal: {assets:3977307,liab:4090486,
+   assetItems:{'Inventory (US)':1930100,'Inventory (Overseas)':930439,'Cash on Hand':71000,'Lakewood RE':650000,'CH RE':380000,'Other Assets':15000,'Accounts Receivable':768},
+   liabItems:{'Investments':4200000,'Other Liabilities':149900,'Line of Credit':99507,'Credit Card':41079,'Losses':-350000,'Interest Expenses':-50000}}
  };
 
  // ── COMPUTE outTotals & netCF DYNAMICALLY ──────────────────────────
  // outTotals = opex + shipping + vendor static rows + real PO payments + AP invoices
  const _opexArr = D.opex.totals;
  const _shipArr = D.shipping;
- // Live PO payments exist → use them INSTEAD of static D.orders to avoid double-count
- const _hasLivePOPayments = _pos.some(po=>(po.payments||[]).some(pm=>pm.due&&pm.due!=='TBD'&&pm.status!=='paid'));
-
  D.outTotals = _MONTHS.map((_,mi) => {
   let out = _opexArr[mi] + _shipArr[mi];
-  // Static vendor category rows (future planned, not PO-specific — keep these)
+  // Static vendor rows
   Object.values(D.vendors).forEach(arr => out += arr[mi]||0);
-  // PO payments: use LIVE if available, static D.orders as fallback
-  if(_hasLivePOPayments) {
-   out += _poOutByMonth[mi]; // real PO payment schedules
-  } else {
-   D.orders.forEach(o => out += o.p[mi]||0); // fallback to static plan
-  }
-  // Static invoice rows: use REAL_AP_INVOICES if available, else D.invoices
-  if(_apByMonth.some(v=>v>0)) {
-   out += _apByMonth[mi]; // real AP
-  } else {
-   D.invoices.filter(i=>i.m===mi).forEach(i => out += i.a||0); // fallback
-  }
-  // Construction (always static — not in PO system)
+  // Static order rows
+  D.orders.forEach(o => out += o.p[mi]||0);
+  // Static invoice rows
+  D.invoices.filter(i=>i.m===mi).forEach(i => out += i.a||0);
+  // Construction
   D.construction.forEach(c => out += c.p[mi]||0);
+  // LIVE: real PO payments due this month
+  out += _poOutByMonth[mi];
+  // LIVE: AP invoices due this month (from REAL_AP_INVOICES)
+  out += _apByMonth[mi];
   return Math.round(out);
  });
 
@@ -3940,9 +3925,9 @@ function renderFinCatRev(){
  const c=cats[p.cat];
  c.prods.push(p);
  c.stock+=Store.totalStock(p.id);
- const wRev=Math.round(p.vel*season.multiplier*p.retail);
+ const wRev=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail);
  c.rev+=wRev*52;
- c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+ c.cogs+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34*52);
  c.margin+=(p.retail||0)>0?Math.round(((p.retail||0)-(p.fob||0)*1.34)/(p.retail||1)*100):0;
  });
  Object.values(cats).forEach(c=>{c.avgMargin=c.prods.length?Math.round(c.margin/c.prods.length):0;c.gross=c.rev-c.cogs;c.grossPct=c.rev>0?Math.round(c.gross/c.rev*100):0;});
@@ -3982,7 +3967,7 @@ function renderFinCatRev(){
  ${expanded?`
  <div style="border-top:1px solid var(--brd)">
  ${c.prods.sort((a,b)=>b.vel*b.retail-a.vel*a.retail).map(p=>{
- const pRev=Math.round(p.vel*season.multiplier*p.retail*52);
+ const pRev=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail*52);
  const pMg=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;
  return `<div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:1fr 60px 40px;padding:8px 16px 8px 32px;border-bottom:1px solid var(--brd);cursor:pointer;align-items:center;font-size:12px" class="row-hover">
  <span style="font-weight:500">${p.name}</span>
@@ -4206,7 +4191,7 @@ function renderAnCatPL(){
  prods.forEach(p=>{
  if(!cats[p.cat])cats[p.cat]={products:[],stock:0,vel:0,revenue:0,cost:0,margin:0};
  const stock=Store.totalStock(p.id);
- const adjVel=p.vel*season.multiplier;
+ const adjVel=(getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier));
  const rev=Math.round(adjVel*p.retail*4.33);
  const cost=Math.round(stock*p.fob*1.34);
  const mg=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;
@@ -4281,9 +4266,9 @@ function renderAnScorecard(){
 
   // === COMPUTE ALL METRICS ===
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
-  const weeklyRev=prods.reduce((s,p)=>s+Math.round((p.vel||0)*season.multiplier*(p.retail||0)),0);
+  const weeklyRev=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||(p.vel||0)*season.multiplier)*(p.retail||0)),0);
   const annualRev=weeklyRev*52;
-  const weeklyCOGS=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.fob*1.34),0);
+  const weeklyCOGS=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34),0);
   const grossProfit=(weeklyRev-weeklyCOGS)*52;
   const grossPct=annualRev>0?Math.round(grossProfit/annualRev*100):0;
   const invCost=prods.reduce((s,p)=>s+Store.totalStock(p.id)*(p.fob||0)*1.34,0);
@@ -4293,7 +4278,7 @@ function renderAnScorecard(){
   const avgOrder=custs.length?Math.round(custs.reduce((s,c)=>s+Store.getCustomerLTV(c),0)/custs.length):0;
   const totalLTV=custs.reduce((s,c)=>s+Store.getCustomerLTV(c),0);
   const oos=prods.filter(p=>Store.totalStock(p.id)===0&&p.vel>0).length;
-  const totalVel=Math.round(prods.reduce((s,p)=>s+(p.vel||0)*season.multiplier,0));
+  const totalVel=Math.round(prods.reduce((s,p)=>s+(getRealVelocity(p.id,30)||(p.vel||0)*season.multiplier),0));
   const openPOs=pos.filter(po=>po.status!=='complete');
   const incoming=openPOs.reduce((s,po)=>s+po.units,0);
   const unpaidAP=pos.flatMap(po=>(po.payments||[]).filter(pm=>pm.status!=='paid')).reduce((s,pm)=>s+(pm.amount||0),0);
@@ -4304,8 +4289,8 @@ function renderAnScorecard(){
     if(!cats[p.cat])cats[p.cat]={count:0,stock:0,rev:0,cogs:0,styles:0,oos:0};
     const c=cats[p.cat]; c.count++;
     c.stock+=Store.totalStock(p.id);
-    c.rev+=Math.round(p.vel*season.multiplier*p.retail*52);
-    c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+    c.rev+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail*52);
+    c.cogs+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34*52);
     c.styles+=Store.getStyles(p.id).length;
     if(Store.totalStock(p.id)===0&&p.vel>0) c.oos++;
   });
@@ -4323,7 +4308,7 @@ function renderAnScorecard(){
     const vn=(p.vendor||'').split('(')[0].trim();
     if(!vendorMetrics[vn])vendorMetrics[vn]={count:0,rev:0,units:0,onTime:0};
     vendorMetrics[vn].count++;
-    vendorMetrics[vn].rev+=Math.round(p.vel*season.multiplier*p.retail*52);
+    vendorMetrics[vn].rev+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail*52);
     vendorMetrics[vn].units+=Store.totalStock(p.id);
   });
 
@@ -4340,14 +4325,14 @@ function renderAnScorecard(){
       {l:'At Cost',v:'$'+Math.round(invCost/1000)+'K',sub:'Landed cost basis'},
       {l:'At Retail',v:'$'+Math.round(invRetail/1000)+'K',sub:'Full price value'},
       {l:'Sell-Through',v:Math.round(prods.reduce((s,p)=>s+p.sell,0)/prods.length)+'%',sub:'Average across catalog',health:true},
-      {l:'OOS Products',v:String(oos),sub:oos>0?'Losing $'+Math.round(prods.filter(p=>Store.totalStock(p.id)===0).reduce((s,p)=>s+p.vel*season.multiplier*p.retail,0)/1000)+'K/wk':'All stocked',health:oos===0?'green':'red'},
+      {l:'OOS Products',v:String(oos),sub:oos>0?'Losing $'+Math.round(prods.filter(p=>Store.totalStock(p.id)===0).reduce((s,p)=>s+(getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail,0)/1000)+'K/wk':'All stocked',health:oos===0?'green':'red'},
       {l:'Incoming',v:incoming.toLocaleString(),sub:openPOs.length+' open POs'},
     ]},
     velocity:{label:'Velocity',metrics:[
       {l:'Units/Week',v:String(totalVel),sub:season.label+' (×'+season.multiplier+')'},
       {l:'Revenue/Week',v:'$'+Math.round(weeklyRev/1000)+'K',sub:'$'+Math.round(weeklyRev*52/1000000*10)/10+'M annual'},
       {l:'Avg Velocity',v:String(Math.round(totalVel/prods.length*10)/10)+'/product',sub:prods.length+' products'},
-      {l:'Top Product Rev',v:'$'+Math.round(Math.max(...prods.map(p=>p.vel*season.multiplier*p.retail))/1000)+'K/wk'},
+      {l:'Top Product Rev',v:'$'+Math.round(Math.max(...prods.map(p=>(getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail))/1000)+'K/wk'},
       {l:'Cover Days',v:String(totalVel>0?Math.round(totalStock/totalVel*7):999),sub:'Days of stock remaining',health:totalVel>0&&totalStock/totalVel*7>60?'green':'amber'},
     ]},
     financial:{label:'Financial',metrics:[
@@ -4514,7 +4499,93 @@ function renderAnWeb(){
  }).join('')}
  </div>`;
 }
-function renderAnDemand(){navigate('demand');}
+function renderAnDemand(){
+  const prods  = Store.getProducts();
+  const season = Store.getCurrentSeason();
+  const sales30 = getSalesSince(30);
+  const sales7  = getSalesSince(7);
+  const by30    = getSalesByProduct(sales30);
+  const by7     = getSalesByProduct(sales7);
+  const hasData = sales30.length > 0;
+
+  const rows = prods.map(p => {
+    const vel30  = getRealVelocity(p.id, 30);
+    const vel7   = getRealVelocity(p.id, 7);
+    const velSeed= Math.round((p.vel||0)*season.multiplier*10)/10;
+    const vel    = vel30 > 0 ? vel30 : velSeed;
+    const trend  = vel30>0&&vel7>0 ? (vel7-vel30)/Math.max(vel30,.1) : 0;
+    const stock  = Store.totalStock(p.id);
+    const cover  = vel>0 ? Math.round(stock/vel) : 999;
+    const sold30 = (by30[p.id]||{}).units||0;
+    const sold7  = (by7[p.id]||{}).units||0;
+    const rev30  = (by30[p.id]||{}).revenue||0;
+    return {...p,vel,vel30,vel7,velSeed,trend,stock,cover,sold30,sold7,rev30};
+  }).filter(p=>p.vel>0||p.sold30>0)
+    .sort((a,b)=>b.vel-a.vel);
+
+  const up   = rows.filter(p=>p.trend> .15).slice(0,6);
+  const risk = rows.filter(p=>p.cover<6&&p.vel>0).slice(0,8);
+  const down = rows.filter(p=>p.trend<-.15).slice(0,6);
+  const ta   = t=>t>.15?'↑':t<-.15?'↓':'→';
+  const tc   = t=>t>.15?'var(--grn)':t<-.15?'var(--brick)':'var(--faded)';
+
+  $('page').innerHTML=`
+  <div style="max-width:960px">
+    <div class="back-link" onclick="navigate('analytics')">← Analytics</div>
+    <div style="font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Demand</div>
+    <div style="font-size:11px;color:var(--faded);margin-bottom:20px;font-family:var(--mono)">${rows.length} active · ${sales30.length} orders/30d · ${hasData?'live data':'no Shopify data yet'}</div>
+
+    ${!hasData?`<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:32px;text-align:center">
+      <div style="font-size:14px;margin-bottom:12px;color:var(--faded)">No order data — sync Shopify first</div>
+      <button class="btn btn-p" onclick="(async()=>{this.textContent='Syncing…';const r=await Store.syncFromShopify();navigate('an-demand');toast(r.synced?'Done':'Error',r.synced?'success':'error')})()">Sync Now</button>
+    </div>`:`
+
+    ${up.length?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--grn);margin-bottom:8px">↑ Accelerating</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:20px">
+      ${up.map(p=>`<div onclick="navigate('product-detail','${p.id}')" style="background:var(--sur2);border:1px solid rgba(26,88,48,.2);border-radius:var(--rl);padding:12px 14px;cursor:pointer" class="row-hover">
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="display:flex;align-items:baseline;gap:5px"><span style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${p.vel}/w</span><span style="font-size:10px;color:var(--grn)">+${Math.round(p.trend*100)}%</span></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">${p.sold30}u sold · ${p.cover>99?'∞':p.cover+'w'}</div>
+      </div>`).join('')}
+    </div>`:''}
+
+    ${risk.length?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--brick);margin-bottom:8px">⚠ Cover &lt; 6w</div>
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px">
+      ${risk.map((p,i)=>`<div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:1fr 56px 56px 56px;align-items:center;padding:9px 14px;border-bottom:${i<risk.length-1?'1px solid var(--brd)':'none'};cursor:pointer" class="row-hover">
+        <div><div style="font-size:12px;font-weight:600">${p.name}</div><div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.cat}</div></div>
+        <div style="text-align:right"><div style="font-size:8px;color:var(--faded)">STOCK</div><div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--brick)">${p.stock}</div></div>
+        <div style="text-align:right"><div style="font-size:8px;color:var(--faded)">VEL</div><div style="font-family:var(--mono);font-size:12px">${p.vel}/w</div></div>
+        <div style="text-align:right"><div style="font-size:8px;color:var(--faded)">COVER</div><div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--brick)">${p.cover}w</div></div>
+      </div>`).join('')}
+    </div>`:''}
+
+    ${down.length?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--amb);margin-bottom:8px">↓ Decelerating</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:20px">
+      ${down.map(p=>`<div onclick="navigate('product-detail','${p.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 14px;cursor:pointer" class="row-hover">
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="display:flex;align-items:baseline;gap:5px"><span style="font-family:var(--mono);font-size:16px;font-weight:700">${p.vel}/w</span><span style="font-size:10px;color:var(--amb)">${Math.round(p.trend*100)}%</span></div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">${p.sold30}u · ${p.stock}u stock</div>
+      </div>`).join('')}
+    </div>`:''}
+
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--faded);margin-bottom:8px">All Active</div>
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+      <div style="display:grid;grid-template-columns:1fr 50px 50px 50px 50px 50px;padding:7px 14px;border-bottom:1px solid var(--brd)">
+        ${['PRODUCT','7D','30D','TREND','COVER','REV 30D'].map(h=>`<span style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em${h!=='PRODUCT'?';text-align:right':''}">${h}</span>`).join('')}
+      </div>
+      ${rows.slice(0,30).map((p,i)=>`
+      <div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:1fr 50px 50px 50px 50px 50px;align-items:center;padding:8px 14px;border-bottom:${i<Math.min(rows.length,30)-1?'1px solid var(--brd)':'none'};cursor:pointer" class="row-hover">
+        <div><div style="font-size:12px;font-weight:500">${p.name}</div><div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.cat}</div></div>
+        <div style="font-family:var(--mono);font-size:11px;text-align:right">${p.sold7||'—'}</div>
+        <div style="font-family:var(--mono);font-size:11px;text-align:right;font-weight:600">${p.vel>0?p.vel+'u':'—'}</div>
+        <div style="font-size:13px;text-align:right;color:${tc(p.trend)};font-weight:700">${p.vel30>0?ta(p.trend):'—'}</div>
+        <div style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.cover<8?'var(--brick)':p.cover<16?'var(--amb)':'var(--faded)'}">${p.cover>99?'∞':p.cover+'w'}</div>
+        <div style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--txt3)">${p.rev30>0?'$'+Math.round(p.rev30/1000)+'K':'—'}</div>
+      </div>`).join('')}
+    </div>
+    `}
+  </div>`;
+}
 function renderRetStore(){
  const prods=Store.getProducts();
  const STORES=Store.LOCS.filter(l=>l!=='Online'&&l!=='Reserve'&&l!=='Wholesale');
@@ -5955,7 +6026,7 @@ function renderVdProducts(vendorId){
   const v=Store.getVendors().find(x=>x.id===vendorId);if(!v)return;
   const prods=Store.getProducts().filter(p=>p.vendor.includes(v.short||v.name));
   const season=Store.getCurrentSeason();
-  const totalRev=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.retail*52),0);
+  const totalRev=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail*52),0);
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
 
   $('page').innerHTML=`
@@ -5971,7 +6042,7 @@ function renderVdProducts(vendorId){
 
     ${prods.sort((a,b)=>b.vel*b.retail-a.vel*a.retail).map(p=>{
       const stk=Store.totalStock(p.id);
-      const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+      const adjVel=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*10)/10;
       const margin=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;
       return `
     <div onclick="navigate('product-detail','${p.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 16px;margin-bottom:3px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.06);display:grid;grid-template-columns:${p.heroImg?'32px ':''} 1fr 50px 50px 40px;align-items:center;gap:8px;transition:background .12s" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
@@ -6081,315 +6152,114 @@ function renderPOStages(poId){
  const po=Store.getPO(poId);if(!po)return;
  const labels=['','Quote request','Sample review','Approved to produce','Cutting / production','Shipping docs','At sea','Customs clearance','Receiving / QC','Complete'];
  const tasks={
-  1:['Request quote from vendor','Confirm FOB per unit','Confirm lead time','Negotiate payment terms'],
-  2:['Request pre-production sample','Review fit and construction','Check fabric hand and color','Approve or reject with notes'],
-  3:['Send approved PO to vendor','Confirm size breakdown','Confirm delivery date','Pay deposit (50%)'],
-  4:['Monitor cutting progress','Request cutting photos','Confirm packing specs','Review mid-production QC'],
-  5:['Receive commercial invoice','Receive packing list','Compare PL to original order','File ISF (10+2)','Book container / forwarder'],
-  6:['Track vessel','Monitor ETA','Prepare receiving plan','Alert stores for incoming'],
-  7:['Submit customs entry','Pay duty','Clear container','Schedule delivery to warehouse'],
-  8:['Receive at warehouse','Count units vs PL','Check for damage / defects','Sort by style and size','Distribute to stores'],
-  9:['Reconcile PO vs received','Pay balance to vendor','Close PO','Update inventory counts']};
-
- // Load per-stage saved data
- const dataKey='am_po_stagedata_'+poId;
- let stageData={};try{stageData=JSON.parse(localStorage.getItem(dataKey)||'{}');}catch(e){}
- const saveStageField=(stage,field,val)=>{
-  if(!stageData[stage])stageData[stage]={};
-  stageData[stage][field]=val;
-  try{localStorage.setItem(dataKey,JSON.stringify(stageData));}catch(e){}
-  toast('Saved','success');
- };
- const sd=(stage,field,fallback)=>stageData[stage]?.[field]||po[field]||fallback||'';
-
+ 1:['Request quote from vendor','Confirm FOB per unit','Confirm lead time','Negotiate payment terms'],
+ 2:['Request pre-production sample','Review fit and construction','Check fabric hand and color','Approve or reject with notes'],
+ 3:['Send approved PO to vendor','Confirm size breakdown','Confirm delivery date','Pay deposit (50%)'],
+ 4:['Monitor cutting progress','Request cutting photos','Confirm packing specs','Review mid-production QC'],
+ 5:['Receive commercial invoice','Receive packing list','Compare PL to original order','File ISF (10+2)','Book container / forwarder'],
+ 6:['Track vessel','Monitor ETA','Prepare receiving plan','Alert stores for incoming'],
+ 7:['Submit customs entry','Pay duty','Clear container','Schedule delivery to warehouse'],
+ 8:['Receive at warehouse','Count units vs PL','Check for damage / defects','Sort by style and size','Distribute to stores'],
+ 9:['Reconcile PO vs received','Pay balance to vendor','Close PO','Update inventory counts']};
  const history=po.stageHistory||{};
- if(!window._stgX)window._stgX={};
+
+ if(!window._stgX) window._stgX={};
  const X=window._stgX;
  const tog=(k)=>`window._stgX['${k}']=!window._stgX['${k}'];navigate('po-stages','${poId}')`;
  const checkKey='am_po_checks_'+poId;
- let checks;try{checks=JSON.parse(localStorage.getItem(checkKey)||'{}');}catch(e){checks={};}
-
- // ── CONTRADICTION DETECTOR ─────────────────────────────────────────
- const conflicts=[];
- const fin=Store.getRealFinancials();
- const apInvoices=fin.invoices||[];
- // Check: FOB total in PO vs matching AP invoice
- const matchedInv=apInvoices.filter(inv=>{
-  const t=(inv.vendor||'').toLowerCase()+(inv.item||'').toLowerCase();
-  const pn=(po.vendor||'').toLowerCase();
-  const pm=(po.mpName||'').toLowerCase();
-  return t.includes(pn.split('(')[0].trim().slice(0,5)) || t.includes(pm.slice(0,8));
- });
- if(matchedInv.length){
-  const invTotal=matchedInv.reduce((s,i)=>s+(i.bill||0),0);
-  if(invTotal>0&&Math.abs(invTotal-po.fobTotal)>500){
-   conflicts.push({type:'amount',msg:`PO FOB total $${(po.fobTotal||0).toLocaleString()} vs AP invoice total $${invTotal.toLocaleString()} — $${Math.abs(invTotal-po.fobTotal).toLocaleString()} gap`});
-  }
- }
- // Check: payment status vs PO stage
- const unpaidDeposit=(po.payments||[]).find(pm=>pm.desc?.toLowerCase().includes('deposit')&&pm.status!=='paid');
- if(po.stage>=4&&unpaidDeposit){
-  conflicts.push({type:'payment',msg:`PO is in stage ${po.stage} (${labels[po.stage]}) but deposit is not marked paid`});
- }
- // Check: in-transit but no container
- if(po.status==='in-transit'&&(!po.container||po.container==='TBC')){
-  conflicts.push({type:'data',msg:`Status is "in-transit" but no container number recorded`});
- }
- // Check: ETA vs cash flow month
- if(po.eta){
-  const etaMo=new Date(po.eta).getMonth()-2;
-  const D_orders=(window._cfOrders||[]);
-  // If the PO has a matching CF order and payment is in wrong month
-  const depPay=(po.payments||[]).find(pm=>pm.desc?.toLowerCase().includes('deposit'));
-  if(depPay&&depPay.due&&depPay.due!=='TBD'){
-   const depMo=new Date(depPay.due).getMonth()-2;
-   if(etaMo>=0&&depMo>=0&&depMo>etaMo){
-    conflicts.push({type:'timing',msg:`Deposit due ${depPay.due} is AFTER ETA ${po.eta} — payment timing reversed`});
-   }
-  }
- }
- // Check: units in PO vs what Shopify shows incoming
- const shopifyIncoming=parseInt(localStorage.getItem('am_incoming_'+po.mpId)||'0');
- if(shopifyIncoming>0&&Math.abs(shopifyIncoming-po.units)>po.units*0.1){
-  conflicts.push({type:'units',msg:`PO shows ${po.units} units but Shopify incoming shows ${shopifyIncoming} — check sync`});
- }
-
- // ── STAGE DATA FIELDS per stage ────────────────────────────────────
- const stageFields={
-  1:[
-   {k:'quotedFOB',l:'Quoted FOB ($/unit)',type:'number',ph:'e.g. 42.50',icon:'💲'},
-   {k:'leadTimeQuoted',l:'Lead time quoted (days)',type:'number',ph:'e.g. 90',icon:'📅'},
-   {k:'payTermsQuoted',l:'Payment terms quoted',type:'text',ph:'e.g. 50/50 TT',icon:'📋'},
-   {k:'vendorContact',l:'Vendor contact used',type:'text',ph:'e.g. Carol Huang',icon:'👤'},
-   {k:'quoteNotes',l:'Quote notes',type:'textarea',ph:'Any deviations from standard terms...',icon:'📝'},
-  ],
-  2:[
-   {k:'sampleReceivedDate',l:'Sample received date',type:'date',icon:'📦'},
-   {k:'fitNotes',l:'Fit & construction notes',type:'textarea',ph:'Collar too wide, chest fits true to size...',icon:'✏️'},
-   {k:'fabricNotes',l:'Fabric hand & color notes',type:'textarea',ph:'Color matches swatch, hand feels correct...',icon:'🧵'},
-   {k:'sampleApproved',l:'Sample decision',type:'select',opts:['Pending','Approved','Approved with changes','Rejected'],icon:'✅'},
-   {k:'revisionNotes',l:'Revision instructions (if any)',type:'textarea',ph:'Shorten hem by 1cm, adjust collar stand...',icon:'🔄'},
-  ],
-  3:[
-   {k:'poSentDate',l:'PO sent to vendor',type:'date',icon:'📤'},
-   {k:'confirmedDeliveryDate',l:'Vendor confirmed delivery date',type:'date',icon:'📅'},
-   {k:'sizeBreakdownNotes',l:'Size breakdown notes',type:'textarea',ph:'Confirmed: 40R = 120 units, 38R = 80 units...',icon:'📊'},
-   {k:'depositDueDate',l:'Deposit due date',type:'date',icon:'💳'},
-   {k:'depositRef',l:'Wire reference / confirmation',type:'text',ph:'e.g. Wire #2024-0392',icon:'🏦'},
-  ],
-  4:[
-   {k:'sampleBin',l:'PP sample bin location',type:'text',ph:'e.g. Reserve Rack B-12',icon:'📍'},
-   {k:'cuttingPhotoDate',l:'Cutting photos received',type:'date',icon:'📷'},
-   {k:'midQCNotes',l:'Mid-production QC notes',type:'textarea',ph:'Stitching checked, seam allowances correct...',icon:'🔍'},
-   {k:'packingSpecs',l:'Packing specs confirmed',type:'textarea',ph:'12 per carton, poly bag each unit...',icon:'📦'},
-   {k:'etdConfirmed',l:'ETD confirmed',type:'date',icon:'🚢'},
-  ],
-  5:[
-   {k:'commercialInvoiceRef',l:'Commercial invoice ref #',type:'text',ph:'e.g. INV-2026-0088',icon:'🧾'},
-   {k:'commercialInvoiceAmount',l:'Invoice amount ($)',type:'number',ph:'',icon:'💲'},
-   {k:'container',l:'Container #',type:'text',ph:'e.g. MSCU1234567',icon:'🚢',saveOnPO:true},
-   {k:'vessel',l:'Vessel name',type:'text',ph:'e.g. MSC ANNA',icon:'⛵',saveOnPO:true},
-   {k:'etd',l:'ETD (departure)',type:'date',icon:'📅',saveOnPO:true},
-   {k:'forwarder',l:'Freight forwarder',type:'text',ph:'e.g. Straight Forwarding',icon:'🏢'},
-   {k:'isfRef',l:'ISF filing reference',type:'text',ph:'e.g. ISF-2026-4421',icon:'📋'},
-  ],
-  6:[
-   {k:'eta',l:'ETA (confirmed from vessel)',type:'date',icon:'📅',saveOnPO:true},
-   {k:'vesselTracking',l:'Vessel tracking URL',type:'text',ph:'e.g. track.msc.com/...',icon:'🔗'},
-   {k:'currentPosition',l:'Current vessel position',type:'text',ph:'e.g. Pacific Ocean, 3 days out',icon:'🌊'},
-   {k:'receivingPlan',l:'Receiving plan notes',type:'textarea',ph:'Warehouse appointment booked for...',icon:'🏭'},
-   {k:'storesAlerted',l:'Stores alerted',type:'select',opts:['Not yet','Lakewood ✓','All stores ✓'],icon:'🔔'},
-  ],
-  7:[
-   {k:'customsEntry',l:'CBP Entry #',type:'text',ph:'e.g. 2026-1234567-8',icon:'🛃',saveOnPO:true},
-   {k:'dutyPaid',l:'Duty paid ($)',type:'number',ph:'',icon:'💲'},
-   {k:'dutyPaidDate',l:'Duty paid date',type:'date',icon:'📅'},
-   {k:'brokerRef',l:'Customs broker ref',type:'text',ph:'e.g. Flexport #FF-2026-99',icon:'📋'},
-   {k:'clearanceDate',l:'Cleared customs',type:'date',icon:'✅'},
-   {k:'warehouseAppt',l:'Warehouse delivery appointment',type:'date',icon:'🏭'},
-  ],
-  8:[
-   {k:'receivedDate',l:'Date received at warehouse',type:'date',icon:'📦'},
-   {k:'receivedUnits',l:'Units actually received',type:'number',ph:'',icon:'🔢'},
-   {k:'shortShipNotes',l:'Short ship / damage notes',type:'textarea',ph:'3 units damaged in transit, style navy...',icon:'⚠️'},
-   {k:'warehouseBin',l:'Warehouse bin assigned',type:'text',ph:'e.g. Aisle C, Rack 4',icon:'📍'},
-   {k:'receivingRef',l:'Receiving reference #',type:'text',ph:'e.g. WH-RCV-2026-044',icon:'🧾'},
-  ],
-  9:[
-   {k:'finalUnitCount',l:'Final reconciled unit count',type:'number',ph:'',icon:'✓'},
-   {k:'discrepancyNotes',l:'Discrepancy notes',type:'textarea',ph:'PO was 500 units, received 497...',icon:'📝'},
-   {k:'balanceWireRef',l:'Balance wire reference',type:'text',ph:'e.g. Wire #2026-0812',icon:'🏦'},
-   {k:'closedDate',l:'PO closed date',type:'date',icon:'🔒'},
-  ],
- };
+ let checks;
+ try{checks=JSON.parse(localStorage.getItem(checkKey))||{};}catch(e){checks={};}
 
  $('page').innerHTML=`
  <div style="max-width:860px">
-  <div class="back-link" onclick="navigate('po-detail','${poId}')">← ${po.num}</div>
-  <div style="font-family:var(--display);font-size:24px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Stages — ${po.mpName}</div>
-  <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:16px">${po.num} · ${po.vendor} · Stage ${po.stage}/9</div>
+ <div class="back-link" onclick="navigate('po-detail','${poId}')">← ${po.num}</div>
+ <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:24px">Stages — ${po.mpName}</div>
 
-  ${conflicts.length?`
-  <div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:20px">
-   <div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ ${conflicts.length} Contradiction${conflicts.length>1?'s':''} detected vs Cash Flow</div>
-   ${conflicts.map(c=>`<div style="font-size:11px;color:var(--brick);padding:4px 0;border-bottom:1px solid rgba(138,58,42,.15);display:flex;gap:8px">
-    <span style="flex-shrink:0">${{amount:'💲',payment:'💳',data:'📋',timing:'⏰',units:'📦'}[c.type]||'⚠'}</span>
-    <span>${c.msg}</span>
-   </div>`).join('')}
-   <div style="margin-top:8px;display:flex;gap:6px">
-    <button class="btn btn-sm" onclick="navigate('fin-cashflow')">Cash Flow</button>
-    <button class="btn btn-sm" onclick="navigate('fin-ap')">AP</button>
-    <button class="btn btn-sm" onclick="navigate('po-payments','${poId}')">Payments</button>
-   </div>
-  </div>`:
-  `<div style="background:rgba(26,120,56,.06);border:1px solid rgba(26,120,56,.2);border-radius:var(--rl);padding:10px 16px;margin-bottom:20px;font-size:11px;color:var(--grn)">✓ No contradictions detected between this PO and cash flow</div>`}
+ ${[1,2,3,4,5,6,7,8,9].map(stage=>{
+ const done=history[stage]?.done;
+ const date=history[stage]?.date||'';
+ const current=po.stage===stage;
+ const future=po.stage<stage;
+ const sk='stg_'+stage;
+ const expanded=X[sk];
+ const stageTasks=tasks[stage]||[];
+ const stageChecks=checks[stage]||{};
+ const completedTasks=stageTasks.filter((_,ti)=>stageChecks[ti]).length;
 
-  ${[1,2,3,4,5,6,7,8,9].map(stage=>{
-   const done=history[stage]?.done;
-   const date=history[stage]?.date||'';
-   const current=po.stage===stage;
-   const future=po.stage<stage;
-   const sk='stg_'+stage;
-   const expanded=X[sk];
-   const stageTasks=tasks[stage]||[];
-   const stageChecks=checks[stage]||{};
-   const completedTasks=stageTasks.filter((_,ti)=>stageChecks[ti]).length;
-   const fields=stageFields[stage]||[];
-   const filledFields=fields.filter(f=>sd(stage,f.k)).length;
+ return`
+ <div style="background:${current?'rgba(184,154,90,.06)':done?'var(--sur2)':'var(--bg)'};border:${current?'2px solid var(--gold)':'1px solid var(--brd)'};border-radius:var(--rl);margin-bottom:4px;overflow:hidden;box-shadow:${current?'0 3px 12px rgba(184,154,90,.15)':'0 2px 8px rgba(0,0,0,.06)'}">
+ <div onclick="${tog(sk)}" style="cursor:pointer;display:grid;grid-template-columns:40px 1fr 70px 50px;align-items:center;padding:14px 16px" class="row-hover">
+ <div style="width:34px;height:34px;border-radius:50%;background:${done?'var(--grn)':current?'var(--gold)':'var(--brd)'};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;font-weight:700">${done?'✓':stage}</div>
+ <div>
+ <div style="font-size:15px;font-weight:${current?'700':'500'};color:${future?'var(--faded)':'var(--ink)'}">${labels[stage]}</div>
+ <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${date?'Completed '+date:current?completedTasks+'/'+stageTasks.length+' tasks':''}</div>
+ </div>
+ <span style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--faded)">${expanded?'▾':'▸'}</span>
+ <span style="text-align:right">${done?'<span style="color:var(--grn);font-size:16px">✓</span>':current?'<span style="color:var(--gold);font-size:16px">●</span>':''}</span>
+ </div>
+ ${expanded?`<div style="border-top:1px solid var(--brd);padding:14px 16px">
+ ${stageTasks.map((task,ti)=>{
+ const checked=stageChecks[ti];
+ return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
+ <div onclick="
+ let ch;try{ch=JSON.parse(localStorage.getItem('${checkKey}'))||{};}catch(e){ch={};}
+ if(!ch[${stage}])ch[${stage}]={};
+ ch[${stage}][${ti}]=!ch[${stage}][${ti}];
+ localStorage.setItem('${checkKey}',JSON.stringify(ch));
+ navigate('po-stages','${poId}');
+ " style="width:22px;height:22px;border:2px solid ${checked?'var(--grn)':'var(--brd)'};border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;background:${checked?'var(--grn)':'transparent'};flex-shrink:0">
+ ${checked?'<span style="color:#fff;font-size:14px;font-weight:700">✓</span>':''}
+ </div>
+ <span style="font-size:13px;${checked?'text-decoration:line-through;color:var(--faded)':''}">${task}</span>
+ </div>`;
+ }).join('')}
 
-   return`
-   <div style="background:${current?'rgba(184,154,90,.06)':done?'var(--sur2)':'var(--bg)'};border:${current?'2px solid var(--gold)':'1px solid var(--brd)'};border-radius:var(--rl);margin-bottom:4px;overflow:hidden;box-shadow:${current?'0 3px 12px rgba(184,154,90,.15)':'none'}">
-    <div onclick="${tog(sk)}" style="cursor:pointer;display:grid;grid-template-columns:40px 1fr 80px 50px;align-items:center;padding:14px 16px" class="row-hover">
-     <div style="width:34px;height:34px;border-radius:50%;background:${done?'var(--grn)':current?'var(--gold)':'var(--brd)'};color:#fff;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;font-weight:700">${done?'✓':stage}</div>
-     <div>
-      <div style="font-size:15px;font-weight:${current?'700':'500'};color:${future?'var(--faded)':'var(--ink)'}">${labels[stage]}</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">
-       ${date?'Done '+date:current?completedTasks+'/'+stageTasks.length+' tasks · '+filledFields+'/'+fields.length+' fields':''}
-      </div>
-     </div>
-     <div style="display:flex;gap:4px;justify-content:flex-end">
-      ${filledFields>0?`<span style="font-size:9px;background:rgba(26,120,56,.1);color:var(--grn);padding:2px 6px;border-radius:8px">${filledFields}/${fields.length} filled</span>`:''}
-     </div>
-     <span style="text-align:right">${done?'<span style="color:var(--grn)">✓</span>':current?'<span style="color:var(--gold)">●</span>':''}</span>
-    </div>
+ ${stage===5?`
+ <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+ <button class="btn btn-sm" onclick="toast('Upload invoice — connect Shopify/QB integration','info')">Upload invoice</button>
+ <button class="btn btn-sm" onclick="toast('Upload packing list — connect integration','info')">Upload PL</button>
+ <button class="btn btn-sm" onclick="navigate('po-pl-compare','${poId}')">Compare PL to order</button>
+ </div>`:''}
 
-    ${expanded?`<div style="border-top:1px solid var(--brd)">
+ ${stage===4?`
+    <div style="margin-top:12px">
+     <div style="font-size:11px;font-weight:600;color:var(--brick);margin-bottom:6px">⚠ Required to advance: pre-production sample photo + bin location</div>
+     <div>${renderPhotoSlots('sample_${poId}',1)}</div>
+     <label style="font-size:11px;color:var(--faded);display:block;margin-top:8px">Warehouse bin location</label>
+     <input id="bin-${poId}" type="text" value="${po.sampleBin||po.binLocation||''}" placeholder="e.g. Reserve Rack B-12" style="margin-top:4px;width:100%;border:1px solid var(--brd);border-radius:6px;padding:7px 10px;font-size:12px;font-family:var(--mono)" onblur="(()=>{const _all=Store.getPOs();const _i=_all.findIndex(x=>x.id==='${poId}');if(_i>=0){_all[_i].sampleBin=this.value;try{localStorage.setItem('am_pos',JSON.stringify(_all));}catch(e){}}toast('Bin saved','success');})()"/>
+    </div>`:''}
+ ${stage===8?`
+ <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+ <button class="btn btn-sm" onclick="navigate('po-receiving','${poId}')">Receiving worksheet</button>
+ <button class="btn btn-sm" onclick="navigate('pd-inv','${po.mpId}')">Adjust inventory</button>
+ </div>`:''}
 
-     <!-- TABS: Checklist | Data -->
-     <div style="display:flex;border-bottom:1px solid var(--brd)">
-      <div onclick="window._stgTab_${stage}='check';navigate('po-stages','${poId}')" style="flex:1;text-align:center;padding:9px;font-size:11px;font-weight:${(window['_stgTab_'+stage]||'check')==='check'?'700':'400'};background:${(window['_stgTab_'+stage]||'check')==='check'?'var(--sur)':'transparent'};cursor:pointer;border-right:1px solid var(--brd)">☑ Checklist (${completedTasks}/${stageTasks.length})</div>
-      <div onclick="window._stgTab_${stage}='data';navigate('po-stages','${poId}')" style="flex:1;text-align:center;padding:9px;font-size:11px;font-weight:${window['_stgTab_'+stage]==='data'?'700':'400'};background:${window['_stgTab_'+stage]==='data'?'var(--sur)':'transparent'};cursor:pointer">📋 Data & Uploads (${filledFields}/${fields.length})</div>
-     </div>
+ ${stage===9?`
+ <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+ <button class="btn btn-sm" onclick="navigate('po-payments','${poId}')">Payments</button>
+ <button class="btn btn-sm" onclick="navigate('fin-ap')">AP report</button>
+ </div>`:''}
 
-     ${(window['_stgTab_'+stage]||'check')==='check'?`
-     <!-- CHECKLIST TAB -->
-     <div style="padding:14px 16px">
-      ${stageTasks.map((task,ti)=>{
-       const checked=stageChecks[ti];
-       return`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--brd)">
-        <div onclick="let ch;try{ch=JSON.parse(localStorage.getItem('${checkKey}'))||{};}catch(e){ch={};}if(!ch[${stage}])ch[${stage}]={};ch[${stage}][${ti}]=!ch[${stage}][${ti}];localStorage.setItem('${checkKey}',JSON.stringify(ch));navigate('po-stages','${poId}');" style="width:22px;height:22px;border:2px solid ${checked?'var(--grn)':'var(--brd)'};border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;background:${checked?'var(--grn)':'transparent'};flex-shrink:0">
-         ${checked?'<span style="color:#fff;font-size:14px;font-weight:700">✓</span>':''}
-        </div>
-        <span style="font-size:13px;${checked?'text-decoration:line-through;color:var(--faded)':''}">${task}</span>
-       </div>`;
-      }).join('')}
-     </div>`:`
+ ${current&&completedTasks===stageTasks.length?`
+ <div style="margin-top:14px">
+ <button class="btn btn-p" onclick="
+ const p=Store.getPOs();const i=p.findIndex(x=>x.id==='${po.id}');
+ if(i>=0){p[i].stage=${stage+1};const lb=['','Quote request','Sample review','Approved to produce','Cutting','Shipping docs','At sea','Customs','Receiving','Complete'];p[i].stageLabel=lb[p[i].stage]||'';
+ const _gate=Store._checkStageGate(p[i],${stage},${stage+1});
+ if(!_gate.ok){toast('Cannot advance: '+_gate.reason,'error',5000);return;}
+ if(p[i].stage>=5&&p[i].status==='active')p[i].status='in-transit';if(p[i].stage===9)p[i].status='complete';
+ if(!p[i].stageHistory)p[i].stageHistory={};p[i].stageHistory[${stage+1}]={done:true,date:new Date().toISOString().split('T')[0]};
+ try{localStorage.setItem('am_pos',JSON.stringify(p));}catch(e){}toast('Stage ${stage+1}: '+p[i].stageLabel,'success');navigate('po-stages','${poId}');}
+ ">Complete stage ${stage} →</button>
+ </div>`:''}
 
-     <!-- DATA TAB -->
-     <div style="padding:14px 16px">
-      ${fields.map(f=>{
-       const val=sd(stage,f.k);
-       const inputStyle='width:100%;border:1px solid var(--brd);border-radius:6px;padding:7px 10px;font-size:12px;background:var(--sur);color:var(--ink);font-family:var(--mono)';
-       const saveCall=f.saveOnPO
-        ?`(()=>{window['_sv_${stage}_${f.k}']=this.value;const _a=Store.getPOs();const _i=_a.findIndex(x=>x.id==='${poId}');if(_i>=0){_a[_i]['${f.k}']=this.value;try{localStorage.setItem('am_pos',JSON.stringify(_a));}catch(e){}};let _sd={};try{_sd=JSON.parse(localStorage.getItem('${dataKey}')||'{}')}catch(e){};if(!_sd[${stage}])_sd[${stage}]={};_sd[${stage}]['${f.k}']=this.value;try{localStorage.setItem('${dataKey}',JSON.stringify(_sd));}catch(e){}toast('Saved','success');})()`
-        :`(()=>{let _sd={};try{_sd=JSON.parse(localStorage.getItem('${dataKey}')||'{}')}catch(e){};if(!_sd[${stage}])_sd[${stage}]={};_sd[${stage}]['${f.k}']=this.value;try{localStorage.setItem('${dataKey}',JSON.stringify(_sd));}catch(e){}toast('Saved','success');})()`;
-
-       return`<div style="margin-bottom:12px">
-        <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faded);display:flex;align-items:center;gap:4px;margin-bottom:4px">
-         <span>${f.icon||''}</span><span>${f.l}</span>${val?'<span style="color:var(--grn);font-size:10px">✓</span>':''}
-        </label>
-        ${f.type==='textarea'
-         ?`<textarea rows="2" placeholder="${f.ph||''}" style="${inputStyle};resize:vertical" onblur="${saveCall}">${val}</textarea>`
-         :f.type==='select'
-         ?`<select style="${inputStyle}" onchange="${saveCall}"><option value="">— select —</option>${(f.opts||[]).map(o=>`<option value="${o}" ${val===o?'selected':''}>${o}</option>`).join('')}</select>`
-         :`<input type="${f.type||'text'}" value="${val.replace(/"/g,'&quot;')}" placeholder="${f.ph||''}" style="${inputStyle}" onblur="${saveCall}"/>`
-        }
-       </div>`;
-      }).join('')}
-
-      ${stage===2||stage===4||stage===8?`
-      <div style="margin-bottom:12px">
-       <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faded);display:flex;align-items:center;gap:4px;margin-bottom:4px">
-        <span>📷</span><span>${{2:'Sample photos',4:'Cutting / PP sample photos',8:'Receiving photos'}[stage]}</span>
-        ${getPhotos({{2:'sample',4:'sample',8:'recv'}[stage]+'_${poId}').length>0?'<span style="color:var(--grn);font-size:10px">✓</span>':'<span style="color:var(--brick);font-size:10px">Required</span>'}
-       </label>
-       ${renderPhotoSlots({{2:'sample',4:'sample',8:'recv'}[stage]+'_${poId}',1)}
-      </div>`:``}
-
-      ${stage===5?`
-      <div style="margin-bottom:12px">
-       <label style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--faded);display:block;margin-bottom:4px">📄 Commercial invoice / packing list</label>
-       <div style="display:flex;gap:6px">
-        <button class="btn btn-sm" onclick="navigate('po-pl-compare','${poId}')">Open PL comparison →</button>
-       </div>
-      </div>`:``}
-     </div>`}
-
-     <!-- ADVANCE BUTTON (only on current stage) -->
-     ${current?`
-     <div style="padding:12px 16px;border-top:1px solid var(--brd);background:rgba(0,0,0,.02)">
-      ${completedTasks===stageTasks.length?`
-       <button class="btn btn-p" onclick="advanceStageUI('${poId}')">Advance to ${labels[stage+1]||'Complete'} →</button>
-      `:`
-       <div style="font-family:var(--mono);font-size:11px;color:var(--faded)">Complete all ${stageTasks.length} checklist tasks to advance · ${stageTasks.length-completedTasks} remaining</div>
-      `}
-     </div>`:''}
-
-    </div>`:``}
-   </div>`;
-  }).join('')}
-
-  <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
-   <button class="btn" onclick="navigate('po-detail','${poId}')">PO Overview</button>
-   <button class="btn" onclick="navigate('po-payments','${poId}')">Payments</button>
-   <button class="btn" onclick="syncShopifyPOData('${poId}')">↻ Sync Shopify</button>
-  </div>
+ ${current&&completedTasks<stageTasks.length?`
+ <div style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--faded)">Complete all ${stageTasks.length} tasks to advance</div>`:''}
+ </div>`:''}
+ </div>`;
+ }).join('')}
  </div>`;
 }
-
-async function syncShopifyPOData(poId){
- const po=Store.getPO(poId);if(!po)return;
- toast('Syncing from Shopify...','info',2000);
- try{
-  // Pull draft orders from Shopify which is how Stocky surfaces POs
-  const [prodRes,invRes]=await Promise.all([
-   fetch('/api/shopify/sync/products',{method:'POST'}),
-   fetch('/api/shopify/sync/inventory',{method:'POST'}),
-  ]);
-  if(prodRes.ok){
-   const data=await prodRes.json();
-   // Find products matching this PO's MP
-   const matched=data.products?.filter(p=>{
-    const t=(p.title||'').toLowerCase();
-    const n=(po.mpName||'').toLowerCase().split(' ').filter(w=>w.length>4);
-    return n.some(w=>t.includes(w));
-   })||[];
-   if(matched.length){
-    // Update incoming units from Shopify inventory
-    const totalIncoming=matched.reduce((s,p)=>s+(p.inventoryQuantity||0),0);
-    localStorage.setItem('am_incoming_'+po.mpId,String(totalIncoming));
-    toast(`Shopify: ${matched.length} variant(s) matched, ${totalIncoming} units in Shopify inventory`,'success',4000);
-   } else {
-    toast('No matching Shopify products found for '+po.mpName,'info',3000);
-   }
-  }
-  navigate('po-stages',poId);
- }catch(e){
-  toast('Sync error: '+e.message,'error',4000);
- }
-}
-
-
 function renderPOPayments(poId){
  const po=Store.getPO(poId);if(!po)return;
  const payments=(po.payments||[]);
@@ -9627,6 +9497,8 @@ const AX_METRICS = [
  { id:'retVal', label:'Retail value', fmt:v=>'$'+Math.round(v).toLocaleString(), color:()=>'', agg:'sum' },
  { id:'margin', label:'Margin', fmt:v=>v.toFixed(1)+'%', color:(v)=>v>65?'var(--grn)':v>50?'var(--amb)':'var(--red)', agg:'wavg' },
  { id:'inc', label:'Incoming', fmt:v=>v.toLocaleString(), color:(v)=>v>0?'var(--blu)':'', agg:'sum' },
+ { id:'realSales30', label:'Real rev 30d', fmt:v=>v>0?'$'+Math.round(v).toLocaleString():'—', color:()=>'', agg:'sum' },
+ { id:'realUnits30', label:'Sold 30d', fmt:v=>v>0?v.toLocaleString():'—', color:()=>'', agg:'sum' },
  { id:'skuCount', label:'SKUs', fmt:v=>v.toLocaleString(), color:()=>'', agg:'sum' }];
 const FIT_MAP = {
  suits: {
@@ -9718,7 +9590,8 @@ function buildFacts() {
  const effectiveStyles = styles.length > 0 ? styles : [{ id:'_none', code:'—', name:'(no styles)', color:'#aaa', vel:0, sell:p.sell || 0 }];
 
  effectiveStyles.forEach(s => {
- const sVel = s.vel || p.vel / nStyles;
+ const _rv = getRealVelocity(s.id || p.id, 30);
+ const sVel = _rv > 0 ? _rv / nSizes / LOCS.length : (s.vel || (p.vel||0) / nStyles);
  const sSell = s.sell || p.sell || 0;
 
  sizes.forEach(sz => {
@@ -9772,6 +9645,8 @@ function buildFacts() {
  cover: szLocVel > 0 ? szLocStock / szLocVel * 7 : 999,
  xRate: szLocStock > 0 && szLocVel > 0 ? (szLocVel * 52) / szLocStock : (szLocVel > 0 ? 99 : 0),
  salesWk: szLocVel * p.retail,
+ realSales30: (getSalesByProduct(getSalesSince(30))[p.id]||{}).revenue || 0,
+ realUnits30: (getSalesByProduct(getSalesSince(30))[p.id]||{}).units || 0,
  lostSales: locLostVel * p.retail,
  oosRate: isReserve ? 0 : (isOOS ? 100 : 0),
  oosLocs: isOOS ? 1 : 0,
@@ -9789,6 +9664,7 @@ function buildFacts() {
  return rows;
 }
 function aggRows(rows) {
+ const _ax = window._ax;
  if (!rows.length) return {stock:0,vel:0,adjVel:0,sell:0,cover:0,xRate:0,salesWk:0,lostSales:0,oosRate:0,oosLocs:0,fobVal:0,retVal:0,margin:0,inc:0,skuCount:0};
  const n = rows.length;
  const totalStock = rows.reduce((s,r)=>s+r.stock,0);
@@ -9808,7 +9684,12 @@ function aggRows(rows) {
  const cover = totalVel > 0 ? totalStock / totalVel * 7 : 999;
  const xRate = totalStock > 0 && totalVel > 0 ? (totalVel * 52) / totalStock : (totalVel > 0 ? 99 : 0);
 
+ const totalRealRev   = rows.reduce((s,r)=>s+(r.realSales30||0),0);
+ const totalRealUnits = rows.reduce((s,r)=>s+(r.realUnits30||0),0);
+
  return {
+ realSales30: totalRealRev,
+ realUnits30: totalRealUnits,
  stock: totalStock,
  vel: totalVel,
  adjVel: totalAdjVel,
@@ -9829,12 +9710,27 @@ function getVal(row, dim) {
  const v = row[dim];
  return v !== undefined ? String(v) : '—';
 }
+// ── Analytics drill state — persisted across renders ────────────────
+if (!window._ax) window._ax = {
+  dims: ['cat','product'],
+  metric: 'stock',
+  sort: 'stock',
+  sortDir: -1,
+  expanded: new Set(),
+  search: '',
+  savedViews: [],
+};
+
+
 function renderAnalytics(){
+ const _ax = window._ax;
  const prods=Store.getProducts();
  const season=Store.getCurrentSeason();
  const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
- const totalVel=Math.round(prods.reduce((s,p)=>s+(p.vel||0)*season.multiplier,0)*10)/10;
- const weeklyRev=prods.reduce((s,p)=>s+Math.round((p.vel||0)*season.multiplier*(p.retail||0)),0);
+ const totalVel=Math.round(prods.reduce((s,p)=>{const r=getRealVelocity(p.id,30);return s+(r>0?r:(p.vel||0)*season.multiplier);},0)*10)/10;
+ const _sales30=getSalesSince(30);
+ const _realRev30=getSalesRevenue(_sales30);
+ const weeklyRev=_realRev30>0?Math.round(_realRev30/4.33):prods.reduce((s,p)=>s+Math.round((p.vel||0)*season.multiplier*(p.retail||0)),0);
  const annualRev=weeklyRev*52;
  const avgMargin=prods.length?Math.round(prods.reduce((s,p)=>s+((p.retail||0)>0?Math.round(((p.retail||0)-(p.fob||0)*1.34)/(p.retail||1)*100):0),0)/prods.length):0;
  const totalCOGS=prods.reduce((s,p)=>s+Math.round((p.vel||0)*season.multiplier*(p.fob||0)*1.34),0)*52;
@@ -9863,16 +9759,22 @@ function renderAnalytics(){
 
  $('page').innerHTML=`
  <div style="max-width:1100px">
- <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;flex-wrap:wrap;gap:8px">/div>
-   <div onclick="navigate('an-velocity')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Velocity</div>
-   <div onclick="navigate('an-forecast')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Forecast</div>
-   <div onclick="navigate('an-catpl')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Category P&L</div>
-  </div>
+ <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:6px">
+   <div>
+     <div style="font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.4px">Analytics</div>
+     <div style="font-size:11px;color:var(--faded);margin-top:2px;font-family:var(--mono)">${prods.length} products · ${(buildFacts().length).toLocaleString()} data points</div>
+   </div>
+   <div style="display:flex;gap:4px;flex-wrap:wrap">
+     <div onclick="navigate('an-velocity')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Velocity</div>
+     <div onclick="navigate('an-demand')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Demand</div>
+     <div onclick="navigate('an-forecast')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Forecast</div>
+     <div onclick="navigate('an-catpl')" style="cursor:pointer;padding:6px 12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;font-family:var(--mono)">Category P&L</div>
+   </div>
  </div>
 
  <!-- COMPACT KPI BAR -->
  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px" class="hscroll">
-  <div style="padding:12px 6px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--grn)">$${Math.round(annualRev/1000000*10)/10}M</div><div style="font-size:8px;color:var(--faded);margin-top:2px">annual rev</div></div>
+  <div style="padding:12px 6px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:17px;font-weight:700;color:var(--grn)">$${_realRev30>0?Math.round(_realRev30/1000)+"K (30d)":Math.round(annualRev/1000000*10)/10+"M"}</div><div style="font-size:8px;color:var(--faded);margin-top:2px">${_realRev30>0?"real 30d":"est annual"}</div></div>
   <div style="padding:12px 6px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:17px;font-weight:700">$${Math.round(invCost/1000)}K</div><div style="font-size:8px;color:var(--faded);margin-top:2px">inv cost</div></div>
   <div style="padding:12px 6px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:17px;font-weight:700">${avgMargin}%</div><div style="font-size:8px;color:var(--faded);margin-top:2px">margin</div></div>
   <div style="padding:12px 6px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:17px;font-weight:700">${gmroi}x</div><div style="font-size:8px;color:var(--faded);margin-top:2px">GMROI</div></div>
@@ -9937,6 +9839,7 @@ function renderAnalytics(){
  drawMatrix();
 }
 function axRenderDimRow() {
+ const _ax = window._ax;
  const row = $('ax-dims-row'); if (!row) return;
  row.innerHTML = `<div class="drill-path" style="margin-bottom:0">${_ax.dims.map((d, i) => {
  const dim = AX_DIMS.find(x=>x.id===d) || {label:d};
@@ -9951,25 +9854,30 @@ function axRenderDimRow() {
  </div>`;
 }
 function axAddDim(id) {
+ const _ax = window._ax;
  if (!_ax.dims.includes(id)) { _ax.dims.push(id); _ax.expanded=new Set(); }
  axRenderDimRow(); drawMatrix();
 }
 function axRemoveDim(i) {
+ const _ax = window._ax;
  _ax.dims.splice(i,1); _ax.expanded=new Set();
  axRenderDimRow(); drawMatrix();
 }
 function axPreset(dimStr, metric) {
+ const _ax = window._ax;
  _ax.dims = dimStr.split(',');
  _ax.expanded = new Set();
  if(metric){_ax.metric=metric;_ax.sort=metric;}
  axRenderDimRow(); drawMatrix();
 }
 function axReset() {
+ const _ax = window._ax;
  _ax.dims=['cat','product','fit'];_ax.metric='stock';_ax.sort='stock';_ax.sortDir=-1;
  _ax.expanded=new Set();_ax.search='';
  renderAnalytics();
 }
 function axSaveView() {
+ const _ax = window._ax;
  const name=prompt('Name this view:');
  if(!name)return;
  if(!_ax.savedViews) _ax.savedViews=[];
@@ -9977,6 +9885,7 @@ function axSaveView() {
  renderAnalytics();
 }
 function axLoadView(idx) {
+ const _ax = window._ax;
  if(idx==='')return;
  const v=_ax.savedViews[parseInt(idx)];
  if(!v)return;
@@ -9985,6 +9894,7 @@ function axLoadView(idx) {
  axRenderDimRow(); drawMatrix();
 }
 function drawMatrix() {
+ const _ax = window._ax;
  const container = $('ax-matrix'); if (!container) return;
  const totalsBar = $('ax-totals');
  const search = $('ax-search');
@@ -10028,6 +9938,7 @@ function drawMatrix() {
  }
 }
 function renderLevel(rows, dims, depth, ancestors) {
+ const _ax = window._ax;
  if (!dims.length || depth >= dims.length) return '';
  const dim = dims[depth];
  const hasChildren = depth < dims.length - 1;
@@ -10128,6 +10039,7 @@ function renderLevel(rows, dims, depth, ancestors) {
  return html;
 }
 function axToggle(path) {
+ const _ax = window._ax;
  if (_ax.expanded.has(path)) _ax.expanded.delete(path);
  else _ax.expanded.add(path);
  drawMatrix();
@@ -10980,358 +10892,292 @@ function npCatChange(){
  if(vSel&&vOther){vSel.onchange=()=>{vOther.style.display=vSel.value===''?'block':'none';};}
 }
 function getProductStack(id) {
-  const p=Store.getProduct(id);if(!p)return null;
-  const styles=Store.getStyles(id);const pos=Store.getPOs().filter(po=>po.mpId===id);
-  const stock=Store.totalStock(id);const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();
-  const dna=(()=>{try{return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}');}catch(e){return{};}})();
-  const constr=dna.construction||{};const qc=dna.qc||{};
-  const catSpecs=Object.values(Store.CATEGORY_COMPONENTS[p.cat]||{}).flat();
-  const hasVendor=p.vendor&&p.vendor!=='—';const hasFob=p.fob>0;const hasHts=p.hts&&p.hts.length>=4;
-  const mk=(id2,label,done,val,action,actionLabel)=>({id:id2,label,done,val:val||'',action:action||'',actionLabel:actionLabel||''});
-  const phases=[
-    {id:'brief',label:'Brief',icon:'1',desc:'Product identity',sections:{
-      'Identity':[mk('name','Product name',p.name?.length>2,p.name),mk('code','Code',p.code?.length>=3,p.code),mk('cat','Category',p.cat&&p.cat!=='Uncategorized',p.cat),mk('desc','Description',p.description?.length>=20,(p.description?.length||0)+' chars'),mk('retail','Retail price',p.retail>0,'$'+p.retail,"navigate('pd-edit','"+id+"')"),mk('img','Hero image',!!p.heroImg,p.heroImg?'Set':'Missing')]
-    }},
-    {id:'sourcing',label:'Sourcing',icon:'2',desc:'Vendor & materials',sections:{
-      'Vendor':[mk('vendor','Vendor assigned',hasVendor,p.vendor,"navigate('pd-dna','"+id+"')"),mk('fob','FOB price',hasFob,'$'+p.fob),mk('lead','Lead time',p.lead>0,p.lead+'d'),mk('moq','MOQ',p.moq>0,p.moq+'u')]
-    }},
-    {id:'development',label:'Dev',icon:'3',desc:'Specs & samples',sections:{
-      'Construction':catSpecs.map(s=>mk(s.id,s.label,!!constr[s.id],constr[s.id]||'—',"navigate('pd-dna','"+id+"')")),
-      'Approval':[mk('sample','Sample approved',!!st.sampleApproved,st.sampleApproved||'Pending',"stackAction('"+id+"','sampleApproved')","Approve"),mk('fit','Fit approved',!!st.fitApproved,st.fitApproved||'Pending',"stackAction('"+id+"','fitApproved')","Approve")]
-    }},
-    {id:'costing',label:'Costing',icon:'4',desc:'Margin & pricing',sections:{
-      'Cost':[mk('hts','HTS code',hasHts,p.hts||'—'),mk('duty','Duty rate',p.duty>0,p.duty+'%'),mk('margin','Margin check',p.retail>0&&hasFob,Math.round((p.retail-p.fob*1.34)/p.retail*100)+'%'),mk('marginOk','Margin approved',!!st.marginApproved,st.marginApproved||'Pending',"stackAction('"+id+"','marginApproved')","Approve")]
-    }},
-    {id:'content',label:'Content',icon:'5',desc:'Photos & copy',sections:{
-      'Content':[mk('hero','Hero image',!!p.heroImg,p.heroImg?'Set':'Missing'),mk('desc2','Description 50+ chars',p.description?.length>=50,(p.description?.length||0)+' chars'),mk('shopify','Shopify listing',!!p.shopifyUrl,p.shopifyUrl?'Live':'No')]
-    }},
-    {id:'launch',label:'Launch',icon:'6',desc:'Go live',sections:{
-      'Inventory':[mk('stock','Stock received',stock>0,stock+' units'),mk('dist','Distributed',Store.LOCS.filter(l=>(Store.getInventoryFor(id)||{})[l]>0).length>1,Store.LOCS.filter(l=>(Store.getInventoryFor(id)||{})[l]>0).length+' locations'),mk('live','Go live',p.status==='active',p.status||'dev',"stackAction('"+id+"','goLive')","Go Live")]
-    }}
+  const p      = Store.getProduct(id); if (!p) return null;
+  const styles = Store.getStyles(id);
+  const pos    = Store.getPOs().filter(po => po.mpId === id);
+  const inv    = Store.getInventoryFor(id) || {};
+  const stock  = Store.totalStock(id);
+  const sizes  = Store.SIZE_SETS[p.sizes] || [];
+  const core   = Store.CORE[p.sizes] || [];
+  const catComps = Store.CATEGORY_COMPONENTS[p.cat] || {};
+
+  // Persisted state
+  const st  = (() => { try { return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}'); } catch(e) { return {}; } })();
+  const dna = (() => { try { return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}'); } catch(e) { return {}; } })();
+  const constr = dna.construction || {};
+
+  // Derived numbers
+  const realVel  = getRealVelocity(id, 30);
+  const vel      = realVel > 0 ? realVel : (p.vel || 0);
+  const cover    = vel > 0 ? Math.round(stock / vel) : 999;
+  const lnd      = p.fob ? Math.round(p.fob * 1.34 * 100) / 100 : 0;
+  const margin   = p.retail && lnd ? Math.round((p.retail - lnd) / p.retail * 100) : 0;
+  const sold30   = (getSalesByProduct(getSalesSince(30))[id] || {}).units || 0;
+  const openPOs  = pos.filter(po => po.status !== 'complete');
+  const incoming = openPOs.reduce((s, po) => s + (po.units || 0), 0);
+
+  // Construction completeness
+  const allSpecs    = Object.values(catComps).flat();
+  const filledSpecs = allSpecs.filter(s => constr[s.id]);
+  const specPct     = allSpecs.length > 0 ? Math.round(filledSpecs.length / allSpecs.length * 100) : 0;
+
+  // Approval chain
+  const approvals = [
+    { id:'sampleApproved', label:'Initial sample', date: st.sampleApproved },
+    { id:'fitApproved',    label:'Fit sample',     date: st.fitApproved    },
+    { id:'ppApproved',     label:'Pre-production', date: st.ppApproved     },
+    { id:'marginApproved', label:'Margin sign-off',date: st.marginApproved },
   ];
-  phases.forEach(ph=>{const reqs=Object.values(ph.sections).flat();ph.total=reqs.length;ph.done=reqs.filter(r=>r.done).length;ph.pct=ph.total>0?Math.round(ph.done/ph.total*100):0;ph.complete=ph.pct===100;});
-  const totalReqs=phases.reduce((s,ph)=>s+ph.total,0);const totalDone=phases.reduce((s,ph)=>s+ph.done,0);
-  const totalPct=totalReqs>0?Math.round(totalDone/totalReqs*100):0;
-  return{phases,totalDone,totalReqs,totalPct,p,styles,pos,stock};
+
+  return { p, styles, pos, openPOs, inv, stock, sizes, core, catComps, constr,
+           vel, cover, lnd, margin, sold30, incoming, specPct, filledSpecs, allSpecs,
+           approvals, st };
 }
 
 function stackAction(productId, action) {
- const key='am_stack_'+productId;
- let state={};
- try{state=JSON.parse(localStorage.getItem(key)||'{}');}catch(e){}
- const today=new Date().toISOString().split('T')[0];
+  const key = 'am_stack_' + productId;
+  let state = {};
+  try { state = JSON.parse(localStorage.getItem(key)||'{}'); } catch(e) {}
+  const today = new Date().toISOString().split('T')[0];
+  const p = Store.getProduct(productId);
 
- if(action==='goLive'){
- const prods=Store.getProducts();
- const idx=prods.findIndex(x=>x.id===productId);
- if(idx>=0){prods[idx].status='active';try{localStorage.setItem('am_products',JSON.stringify(prods));}catch(e){}}
- toast('Product is now LIVE');
- }else if(action==='sampleApproved'){
- if(!confirm('Confirm: initial sample meets spec?'))return;
- state.sampleApproved=today;toast('Sample approved');
- }else if(action==='fitApproved'){
- if(!confirm('Confirm: fit sample approved on live model?'))return;
- state.fitApproved=today;toast('Fit approved');
- }else if(action==='marginApproved'){
- const p=Store.getProduct(productId);
- const landed=p.fob*1.34;
- const mg=p.retail>0?((p.retail-landed)/p.retail*100).toFixed(1):0;
- if(!confirm('Sign off margin at '+mg+'%? Retail $'+p.retail+', Landed $'+landed.toFixed(2)))return;
- state.marginApproved=today;toast('Margin approved');
- }
- try{localStorage.setItem(key,JSON.stringify(state));}catch(e){}
- navigate('product-stack',productId);
+  if (action === 'goLive') {
+    const prods = Store.getProducts();
+    const idx = prods.findIndex(x => x.id === productId);
+    if (idx >= 0) { prods[idx].status = 'active'; try { localStorage.setItem('am_products', JSON.stringify(prods)); } catch(e) {} }
+    toast('Product is now LIVE', 'success');
+  } else if (action === 'sampleApproved') {
+    if (!confirm('Confirm: initial sample meets spec?')) return;
+    state.sampleApproved = today; toast('Sample approved ✓', 'success');
+  } else if (action === 'fitApproved') {
+    if (!confirm('Confirm: fit sample approved on live model?')) return;
+    state.fitApproved = today; toast('Fit approved ✓', 'success');
+  } else if (action === 'ppApproved') {
+    if (!confirm('Confirm: pre-production sample approved?')) return;
+    state.ppApproved = today; toast('PP approved ✓', 'success');
+  } else if (action === 'marginApproved') {
+    const lnd = p.fob * 1.34;
+    const mg  = p.retail > 0 ? ((p.retail - lnd) / p.retail * 100).toFixed(1) : 0;
+    if (!confirm('Sign off margin at ' + mg + '%?\nRetail $' + p.retail + '  Landed $' + lnd.toFixed(2))) return;
+    state.marginApproved = today; toast('Margin signed off ✓', 'success');
+  } else if (action === 'unapprove') {
+    const field = prompt('Which approval to reset? (sampleApproved / fitApproved / ppApproved / marginApproved)');
+    if (field && state[field]) { delete state[field]; toast('Approval reset', 'info'); }
+  }
+  try { localStorage.setItem(key, JSON.stringify(state)); } catch(e) {}
+  navigate('product-stack', productId);
 }
+
 function renderProductStack(id) {
-  const data=getProductStack(id);
-  if(!data){$('page').innerHTML='<div style="padding:40px;color:var(--faded)">Product not found.</div>';return;}
-  const {phases,totalDone,totalReqs,totalPct,p,styles,pos,stock}=data;
-  const season=Store.getCurrentSeason();
-  const adjVel=Math.round(p.vel*season.multiplier*10)/10;
-  const coverWk=adjVel>0?Math.round(stock/adjVel):999;
-  const landed=Math.round(p.fob*1.34*100)/100;
-  const margin=p.retail>0?Math.round((p.retail-landed)/p.retail*100):0;
-  const vendorId=(()=>{const vs=Store.getVendors();const f=vs.find(v=>p.vendor.includes(v.short||v.name));return f?f.id:null;})();
-  const vendor=vendorId?Store.getVendor(vendorId):null;
-  const comps=(()=>{try{return JSON.parse(localStorage.getItem('am_components_v2')||'{}');}catch(e){return{};}})();
-  const myComps=Object.entries(comps).flatMap(([type,arr])=>(arr||[]).filter(c=>(c.cats||[]).includes(id)));
-  const dna=(()=>{try{return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}');}catch(e){return{};}})();
-  const constr=dna.construction||{};
-  const catComps=Store.CATEGORY_COMPONENTS[p.cat]||{};
-  const sizes=Store.SIZE_SETS[p.sizes]||[];
-  const core=Store.CORE[p.sizes]||[];
-  const catConfig=Store.CATEGORY_CONFIG[p.cat]||{};
-  const activePOs=pos.filter(po=>po.status!=='complete');
-  const incoming=activePOs.reduce((s,po)=>s+po.units,0);
-  const ppItem=getProductionPlan().plan.find(x=>x.id===id);
-  const wa=Store.getWebAnalyticsFor(id)||{};
-  const LOCS=Store.LOCS;
+  const data = getProductStack(id);
+  if (!data) { $('page').innerHTML = '<div style="padding:40px;color:var(--faded)">Product not found.</div>'; return; }
 
-  if(!window._stackTab) window._stackTab={};
-  const activeTab=window._stackTab[id]||phases.find(ph=>!ph.complete)?.id||'brief';
-  const activePh=phases.find(ph=>ph.id===activeTab)||phases[0];
-  const phIdx=phases.indexOf(activePh);
+  const { p, styles, openPOs, inv, stock, sizes, core, catComps, constr,
+          vel, cover, lnd, margin, sold30, incoming, specPct, allSpecs, approvals, st } = data;
 
-  // Phase-specific rich content
-  const phaseContent = {
-    brief: `
-      <!-- IDENTITY -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+  const vendorObj = (() => {
+    const vs = Store.getVendors();
+    return vs.find(v => (p.vendor || '').includes(v.short || v.name)) || null;
+  })();
+
+  if (!window._stkTab) window._stkTab = {};
+  const tab = window._stkTab[id] || 'foundation';
+
+  const coverColor = cover < 6 ? 'var(--brick)' : cover < 12 ? 'var(--amb)' : 'var(--grn)';
+  const mgColor    = margin >= 70 ? 'var(--grn)' : margin >= 55 ? 'var(--amb)' : 'var(--brick)';
+
+  // ── Approval chain ────────────────────────────────────────────────
+  const approvalChain = `
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:14px">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--faded)">Approval Chain</span>
+        <span style="font-size:9px;color:var(--faded)">${approvals.filter(a=>a.date).length}/${approvals.length} signed</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr)">
+        ${approvals.map((a, i) => {
+          const done = !!a.date;
+          const canSign = !done && (i === 0 || !!approvals[i-1].date);
+          return `<div style="padding:12px 10px;border-right:${i<3?'1px solid var(--brd)':'none'};text-align:center;background:${done?'rgba(26,88,48,.04)':'transparent'}">
+            <div style="width:22px;height:22px;border-radius:50%;border:2px solid ${done?'var(--grn)':'var(--brd)'};background:${done?'var(--grn)':'transparent'};display:flex;align-items:center;justify-content:center;margin:0 auto 6px;font-size:10px;color:white">${done?'✓':i+1}</div>
+            <div style="font-size:10px;font-weight:600;color:${done?'var(--ink)':'var(--txt3)'}">${a.label}</div>
+            <div style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-top:3px">${a.date || '—'}</div>
+            ${canSign ? `<button class="btn btn-sm btn-p" style="font-size:8px;margin-top:6px;padding:3px 8px" onclick="stackAction('${id}','${a.id}')">Sign off</button>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+  // ── Foundation tab ────────────────────────────────────────────────
+  const foundationHTML = `
+    ${approvalChain}
+
+    ${Object.entries(catComps).map(([section, specs]) => `
+    <div style="margin-bottom:12px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--faded);padding:0 0 6px">${section}</div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+        ${specs.map(spec => {
+          const val = constr[spec.id];
+          const done = !!val;
+          return `<div style="display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--brd);min-height:44px"
+            onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
+            <div>
+              <div style="font-size:11px;color:var(--txt3)">${spec.label}</div>
+              <div style="font-family:var(--mono);font-size:11px;font-weight:600;color:${done?'var(--ink)':'var(--faded)'};margin-top:1px">${val || 'Not set'}</div>
+            </div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">
+              ${(spec.options||[]).slice(0,4).map(opt => `<span onclick="saveDNAField('${id}','construction','${spec.id}','${opt.replace(/'/g,'\\\'')}')" style="cursor:pointer;font-size:9px;padding:2px 6px;border-radius:3px;border:1px solid ${val===opt?'var(--gold)':'var(--brd)'};background:${val===opt?'rgba(184,154,90,.12)':'transparent'};color:${val===opt?'var(--gold)':'var(--txt3)'}">${opt}</span>`).join('')}
+              ${(spec.options||[]).length > 4 ? `<span onclick="navigate('pd-dna','${id}')" style="cursor:pointer;font-size:9px;color:var(--faded)">more…</span>` : ''}
+            </div>
+            <div style="width:10px;height:10px;border-radius:50%;background:${done?'var(--grn)':'var(--brd)'};flex-shrink:0"></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('')}
+
+    ${allSpecs.length === 0 ? `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:24px;text-align:center;color:var(--faded)">No construction specs defined for ${p.cat}</div>` : ''}
+
+    <!-- Sizing & Fits -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--faded);padding:0 0 6px">Sizing & Fits</div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--brd)">
+          <div style="font-size:10px;color:var(--txt3);margin-bottom:6px">Size run <span style="color:var(--faded)">(blue = core)</span></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            ${sizes.map(sz => `<span style="font-family:var(--mono);font-size:9px;padding:3px 7px;border-radius:3px;background:${core.includes(sz)?'rgba(26,68,144,.1)':'var(--bg)'};color:${core.includes(sz)?'var(--blu)':'var(--txt3)'};border:1px solid ${core.includes(sz)?'rgba(26,68,144,.3)':'var(--brd)'}">${sz}</span>`).join('')}
+          </div>
+        </div>
+        <div style="padding:10px 14px">
+          <div style="font-size:10px;color:var(--txt3);margin-bottom:6px">Fits</div>
+          ${p.fits && p.fits.length > 0
+            ? p.fits.map(f => `<div style="font-family:var(--mono);font-size:11px;font-weight:600;padding:2px 0">${f}</div>`).join('')
+            : `<span style="font-size:11px;color:var(--faded)">Not defined — edit product</span>`}
+        </div>
+      </div>
+    </div>
+
+    <!-- Sourcing & Costing -->
+    <div style="margin-bottom:12px">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--faded);padding:0 0 6px">Sourcing & Costing</div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
         ${[
-          {l:'Product name',v:p.name,k:'name',done:p.name?.length>2},
-          {l:'Code',v:p.code,k:'code',done:p.code?.length>=3},
-          {l:'Category',v:p.cat,k:'cat',done:p.cat&&p.cat!=='Uncategorized'},
-          {l:'Description',v:p.description?(p.description.length+' chars — '+(p.description.length>=20?'✓':'needs 20+')):'empty',k:'desc',done:p.description?.length>=20},
-          {l:'Retail target',v:p.retail?'$'+p.retail:'not set',k:'retail',done:p.retail>0},
-          {l:'Tagline',v:p.tagline||'not set',k:'tag',done:p.tagline?.length>5},
-        ].map(f=>`
-        <div style="display:grid;grid-template-columns:24px 130px 1fr auto;align-items:center;border-bottom:1px solid var(--brd);min-height:48px;padding:0 14px">
-          <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${f.done?'var(--grn)':'var(--brd)'};background:${f.done?'var(--grn)':'transparent'};display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff">${f.done?'✓':''}</div>
-          <span style="font-size:12px;font-weight:500;color:var(--faded)">${f.l}</span>
-          <span style="font-family:var(--mono);font-size:13px;font-weight:${f.done?'600':'400'};color:${f.done?'var(--ink)':'var(--faded)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.v}</span>
-          ${!f.done?`<button class="btn btn-sm" onclick="navigate('pd-edit','${id}')" style="font-size:9px">Edit</button>`:''}
+          ['Vendor',       p.vendor || '—',                    !!(p.vendor)],
+          ['FOB',          p.fob ? '$'+p.fob : '—',            p.fob > 0],
+          ['Lead time',    p.lead ? p.lead+'d' : '—',          p.lead > 0],
+          ['MOQ',          p.moq ? p.moq+'u' : '—',            p.moq > 0],
+          ['HTS code',     p.hts || '—',                       !!(p.hts)],
+          ['Duty',         p.duty ? p.duty+'%' : '—',          p.duty > 0],
+          ['Landed cost',  lnd > 0 ? '$'+lnd : '—',            lnd > 0],
+          ['Retail',       p.retail ? '$'+p.retail : '—',      p.retail > 0],
+          ['Margin',       margin > 0 ? margin+'%' : '—',      margin >= 55],
+        ].map(([l,v,done]) => `<div style="display:grid;grid-template-columns:120px 1fr 10px;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--brd)">
+          <span style="font-size:11px;color:var(--txt3)">${l}</span>
+          <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${done?'var(--ink)':'var(--faded)'}">${v}</span>
+          <div style="width:8px;height:8px;border-radius:50%;background:${done?'var(--grn)':'var(--brd)'}"></div>
         </div>`).join('')}
       </div>
-      ${p.heroImg?`<div style="margin-bottom:16px"><img src="${p.heroImg}" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--rl);box-shadow:0 4px 16px rgba(0,0,0,.1)"/></div>`:'<div style="background:var(--brd);border-radius:var(--rl);height:120px;display:flex;align-items:center;justify-content:center;color:var(--faded);font-size:14px;margin-bottom:16px">No product image — <span onclick="navigate(\'pd-edit\',\''+id+'\')" style="color:var(--gold);cursor:pointer;margin-left:4px;text-decoration:underline">upload</span></div>'}
-    `,
+    </div>`;
 
-    sourcing: `
-      <!-- VENDOR -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        <div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:14px;border-bottom:1px solid var(--brd)">
-          <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${p.vendor&&p.vendor!=='—'?'var(--grn)':'var(--brd)'};background:${p.vendor&&p.vendor!=='—'?'var(--grn)':'transparent'};font-size:8px;color:#fff;display:flex;align-items:center;justify-content:center">${p.vendor&&p.vendor!=='—'?'✓':''}</div>
-          <div><div style="font-size:14px;font-weight:600">${p.vendor||'No vendor'}</div>${vendor?`<div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${vendor.country||''} · ${vendor.onTime||0}% on-time · ${vendor.payTerms||'—'}</div>`:''}</div>
-          ${vendorId?`<button class="btn btn-sm" onclick="navigate('vendor-detail','${vendorId}')">Vendor →</button>`:`<button class="btn btn-sm btn-p" onclick="navigate('pd-dna','${id}')">Assign</button>`}
-        </div>
-        <!-- TERMS -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--brd)">
-          ${[{l:'Lead time',v:p.lead?p.lead+' days':'not set',done:p.lead>0},{l:'MOQ',v:p.moq?p.moq+' units':'not set',done:p.moq>0},{l:'Incoterm',v:vendor?.incoterm||'FOB',done:true}].map((d,i)=>`
-          <div style="padding:12px 14px;border-right:${i<2?'1px solid var(--brd)':'none'};text-align:center">
-            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${d.done?'var(--ink)':'var(--faded)'}">${d.v}</div>
-            <div style="font-size:8px;color:var(--faded);margin-top:2px">${d.l}</div>
+  // ── Styles Library tab ───────────────────────────────────────────
+  const stylesHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--txt3)">${styles.length} style${styles.length!==1?'s':''} in this MP</div>
+      <button class="btn btn-sm btn-p" onclick="addStyle('${id}')">+ Add Style</button>
+    </div>
+
+    ${styles.length === 0 ? `
+    <div style="background:var(--sur2);border:2px dashed var(--brd);border-radius:var(--rl);padding:40px;text-align:center;color:var(--faded)">
+      <div style="font-size:14px;margin-bottom:8px">No styles yet</div>
+      <div style="font-size:11px;margin-bottom:14px">Sync Shopify to pull in variants, or add manually</div>
+      <button class="btn btn-p" onclick="(async()=>{this.textContent='Syncing…';const r=await Store.syncFromShopify();navigate('product-stack','${id}');toast(r.synced?'Synced':'Error',r.synced?'success':'error')})()">Sync Shopify</button>
+    </div>` : `
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+      ${styles.map(s => {
+        const sStock = s.inventoryQty != null ? s.inventoryQty : null;
+        const sVel   = getRealVelocity(s.id, 30) || s.vel || 0;
+        const stockColor = sStock != null && sStock < 5 ? 'var(--brick)' : sStock != null && sStock < 20 ? 'var(--amb)' : 'var(--txt2)';
+        const gradeColor = s.grade === 'A' ? 'var(--grn)' : s.grade === 'B' ? 'var(--blu)' : s.grade === 'C' ? 'var(--amb)' : s.grade === 'D' ? 'var(--brick)' : 'var(--faded)';
+        return `<div onclick="navigate('style-detail','${id}__${s.id}')"
+          style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;cursor:pointer;transition:border-color .1s,transform .1s"
+          onmouseover="this.style.borderColor='var(--brd-s)';this.style.transform='translateY(-2px)'"
+          onmouseout="this.style.borderColor='var(--brd)';this.style.transform=''">
+
+          <!-- Color swatch header -->
+          <div style="height:48px;background:${s.color||'#888'};position:relative">
+            <div style="position:absolute;top:6px;right:8px;display:flex;gap:4px">
+              ${s.grade ? `<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.4);color:${gradeColor}">${s.grade}</span>` : ''}
+              ${s.shopify ? `<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(0,0,0,.4);color:#96bf48">●</span>` : ''}
+            </div>
+          </div>
+
+          <div style="padding:10px 12px">
+            <div style="font-size:12px;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
+            <div style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-bottom:8px">${s.code} · ${s.sku || '—'}</div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+              <div style="background:var(--bg);border-radius:4px;padding:5px 7px;text-align:center">
+                <div style="font-size:7px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em">Stock</div>
+                <div style="font-family:var(--mono);font-size:12px;font-weight:700;color:${stockColor}">${sStock != null ? sStock : '—'}</div>
+              </div>
+              <div style="background:var(--bg);border-radius:4px;padding:5px 7px;text-align:center">
+                <div style="font-size:7px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em">Vel/wk</div>
+                <div style="font-family:var(--mono);font-size:12px;font-weight:700">${sVel > 0 ? sVel : '—'}</div>
+              </div>
+            </div>
+
+            ${s.fits && s.fits.length ? `<div style="font-size:9px;color:var(--faded);margin-top:6px">${s.fits.join(' · ')}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`}`;
+
+  // ── Tab bar ───────────────────────────────────────────────────────
+  const tabs = [
+    { id: 'foundation', label: 'Foundation', sub: `${specPct}% specs` },
+    { id: 'styles',     label: 'Styles',     sub: styles.length + ' colorways' },
+  ];
+
+  $('page').innerHTML = `
+  <div style="max-width:900px">
+    <div class="back-link" onclick="navigate('product-detail','${id}')">← ${p.name}</div>
+
+    <!-- MP HEADER -->
+    <div style="display:grid;grid-template-columns:${p.heroImg?'90px ':''}1fr;gap:16px;align-items:start;margin-bottom:18px">
+      ${p.heroImg ? `<img src="${p.heroImg}" style="width:90px;height:116px;object-fit:cover;border-radius:8px;border:1px solid var(--brd)"/>` : ''}
+      <div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-bottom:2px">${p.code} · ${p.cat} · ${p.vendor||'No vendor'}</div>
+        <div style="font-family:var(--display);font-size:22px;font-weight:600;letter-spacing:-.3px;margin-bottom:4px">${p.name}</div>
+        ${p.tagline ? `<div style="font-size:12px;color:var(--txt3);margin-bottom:10px">${p.tagline}</div>` : ''}
+
+        <div style="display:flex;gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+          ${[
+            ['Stock',    stock+'u',                  stock<20?'var(--brick)':'var(--txt2)'],
+            ['Vel/wk',   vel>0?vel:'—',              'var(--txt2)'],
+            ['Cover',    cover>99?'∞':cover+'w',     coverColor],
+            ['Margin',   margin>0?margin+'%':'—',    mgColor],
+            ['FOB',      p.fob?'$'+p.fob:'—',       'var(--txt2)'],
+            ['Landed',   lnd>0?'$'+lnd:'—',         'var(--txt2)'],
+            ['Incoming', incoming>0?incoming+'u':'—',incoming>0?'var(--grn)':'var(--faded)'],
+            ['Sold 30d', sold30>0?sold30+'u':'—',   sold30>0?'var(--grn)':'var(--faded)'],
+          ].map(([l,v,c],i,arr) => `<div style="flex:1;padding:7px 4px;text-align:center${i<arr.length-1?';border-right:1px solid var(--brd)':''}">
+            <div style="font-size:7px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px">${l}</div>
+            <div style="font-family:var(--mono);font-size:11px;font-weight:700;color:${c}">${v}</div>
           </div>`).join('')}
         </div>
       </div>
-      <!-- COMPONENTS -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;color:${myComps.length?'var(--ink)':'var(--faded)'}">Components · ${myComps.length}</div>
-      ${myComps.length?myComps.map(c=>`
-      <div style="display:grid;grid-template-columns:70px 1fr 60px;padding:8px 14px;border-bottom:1px solid var(--brd);font-size:12px;background:var(--sur2);margin-bottom:2px;border-radius:var(--rl)">
-        <span style="font-family:var(--mono);font-size:9px;color:var(--faded);text-transform:uppercase">${Object.entries(comps).find(([t,arr])=>arr?.some(x=>x.id===c.id))?.[0]||'—'}</span>
-        <div><span style="font-weight:500">${c.name}</span>${c.vendor?`<span style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-left:6px">${c.vendor}</span>`:''}</div>
-        <span style="font-family:var(--mono);font-size:11px;text-align:right">${c.cost&&c.cost!=='—'?c.cost:''}</span>
-      </div>`).join(''):`<div style="padding:16px;text-align:center;color:var(--faded);font-size:12px;background:var(--sur2);border-radius:var(--rl)">No components assigned</div>`}
-      <button class="btn btn-sm" style="margin-top:8px" onclick="addComponentModal('${id}')">+ Add component</button>
-    `,
-
-    development: `
-      <!-- CONSTRUCTION SPECS -->
-      ${Object.keys(catComps).length?`
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Construction · ${Object.values(constr).filter(Boolean).length}/${Object.values(catComps).flat().length}</div>
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${Object.entries(catComps).flatMap(([group,fields])=>fields.map(f=>{
-          const val=constr[f.id]||'';
-          return `<div style="display:grid;grid-template-columns:24px 120px 1fr;align-items:center;border-bottom:1px solid var(--brd);min-height:42px;padding:0 12px">
-            <div style="width:12px;height:12px;border-radius:50%;border:2px solid ${val?'var(--grn)':'var(--brd)'};background:${val?'var(--grn)':'transparent'};font-size:7px;color:#fff;display:flex;align-items:center;justify-content:center">${val?'✓':''}</div>
-            <span style="font-size:11px;color:var(--faded)">${f.label}</span>
-            <span style="font-family:var(--mono);font-size:12px;font-weight:${val?'600':'400'};color:${val?'var(--ink)':'var(--faded)'}">${val||'— not set —'}</span>
-          </div>`;
-        })).join('')}
-      </div>
-      <button class="btn btn-sm" onclick="navigate('pd-dna','${id}')" style="margin-bottom:16px">Edit in Tech Pack →</button>
-      `:''}
-
-      <!-- STYLES -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Styles · ${styles.length}</div>
-      <div style="display:grid;grid-template-columns:repeat(${Math.min(styles.length||1,4)},1fr);gap:6px;margin-bottom:16px">
-        ${styles.length?styles.map(s=>`
-        <div onclick="navigate('style-detail','${id}__${s.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:10px;cursor:pointer;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:transform .12s" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
-          <div style="width:28px;height:28px;border-radius:50%;background:${s.color};border:2px solid rgba(0,0,0,.1);margin:0 auto 6px"></div>
-          <div style="font-size:11px;font-weight:600">${s.name.length>12?s.name.substring(0,10)+'…':s.name}</div>
-          <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${s.sku} · ${s.grade}</div>
-        </div>`).join(''):'<div style="padding:16px;text-align:center;color:var(--faded);font-size:12px;grid-column:1/-1;background:var(--sur2);border-radius:var(--rl)">No styles yet</div>'}
-      </div>
-      <button class="btn btn-sm" onclick="addStyle('${id}')">+ Add style</button>
-
-      <!-- SAMPLE STATUS -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin:16px 0 8px">Approvals</div>
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[{l:'Sample approval',k:'sampleApproved',action:'sampleApproved'},{l:'Fit approval',k:'fitApproved',action:'fitApproved'}].map(a=>{
-          const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();
-          const done=!!st[a.k];
-          return `<div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:12px 14px;border-bottom:1px solid var(--brd);min-height:48px">
-            <div style="width:16px;height:16px;border-radius:50%;border:2px solid ${done?'var(--grn)':'var(--brd)'};background:${done?'var(--grn)':'transparent'};font-size:9px;color:#fff;display:flex;align-items:center;justify-content:center">${done?'✓':''}</div>
-            <div><div style="font-size:13px;font-weight:${done?'400':'600'};color:${done?'var(--faded)':'var(--ink)'};${done?'text-decoration:line-through':''}">${a.l}</div>${done?`<div style="font-family:var(--mono);font-size:9px;color:var(--grn)">Approved ${st[a.k]}</div>`:''}</div>
-            ${!done?`<button class="btn btn-sm btn-p" onclick="stackAction('${id}','${a.action}')" style="font-size:10px">Approve</button>`:''}
-          </div>`;
-        }).join('')}
-      </div>
-    `,
-
-    costing: `
-      <!-- COST WATERFALL -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[
-          {l:'FOB (ex-factory)',v:'$'+p.fob,done:p.fob>0,bold:false},
-          {l:'Duty ('+p.duty+'%)',v:'$'+Math.round(p.fob*p.duty/100*100)/100,done:p.duty>0},
-          {l:'Freight (~12%)',v:'$'+Math.round(p.fob*0.12*100)/100,done:true},
-          {l:'Landed cost',v:'$'+landed,done:landed>0,bold:true},
-          {l:'Retail price',v:'$'+p.retail,done:p.retail>0,bold:true},
-          {l:'Gross margin',v:margin+'%',done:margin>=50,bold:true,color:margin>=65?'var(--grn)':margin>=50?'':'var(--brick)'},
-        ].map(f=>`
-        <div style="display:grid;grid-template-columns:24px 1fr 80px;align-items:center;padding:${f.bold?'14px':'10px'} 14px;border-bottom:1px solid var(--brd);${f.bold?'background:var(--sur)':''}">
-          <div style="width:12px;height:12px;border-radius:50%;border:2px solid ${f.done?'var(--grn)':'var(--brd)'};background:${f.done?'var(--grn)':'transparent'};font-size:7px;color:#fff;display:flex;align-items:center;justify-content:center">${f.done?'✓':''}</div>
-          <span style="font-size:${f.bold?'14px':'12px'};font-weight:${f.bold?'700':'500'}">${f.l}</span>
-          <span style="font-family:var(--mono);font-size:${f.bold?'18px':'14px'};text-align:right;font-weight:700;color:${f.color||''}">${f.v}</span>
-        </div>`).join('')}
-      </div>
-      <!-- MARGIN BAR -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <span style="font-size:11px;color:var(--faded);width:40px">0%</span>
-        <div style="flex:1;height:12px;background:var(--brd);border-radius:6px;overflow:hidden;position:relative">
-          <div style="height:100%;width:${Math.min(100,margin)}%;background:${margin>=65?'var(--grn)':margin>=50?'var(--amb)':'var(--brick)'};border-radius:6px"></div>
-          <div style="position:absolute;left:50%;top:0;width:2px;height:100%;background:var(--ink);opacity:.3" title="50% target"></div>
-        </div>
-        <span style="font-size:11px;color:var(--faded);width:40px;text-align:right">100%</span>
-      </div>
-      <!-- PROFITABILITY -->
-      ${(()=>{const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();return !st.marginApproved?`<div style="margin-top:12px"><button class="btn btn-p" onclick="stackAction('${id}','marginApproved')">Sign off margin at ${margin}%</button></div>`:`<div style="font-family:var(--mono);font-size:10px;color:var(--grn);margin-top:12px">✓ Margin signed off ${st.marginApproved}</div>`;})()}
-      <button class="btn btn-sm" style="margin-top:8px" onclick="navigate('pd-cost','${id}')">Full cost build →</button>
-    `,
-
-    content: `
-      <!-- IMAGE -->
-      ${p.heroImg?`<img src="${p.heroImg}" style="width:100%;max-height:180px;object-fit:cover;border-radius:var(--rl);margin-bottom:16px;box-shadow:0 4px 16px rgba(0,0,0,.1)"/>`:'<div style="background:var(--brd);border-radius:var(--rl);height:100px;display:flex;align-items:center;justify-content:center;color:var(--faded);font-size:13px;margin-bottom:16px">No hero image</div>'}
-      <!-- CONTENT CHECKLIST -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[
-          {l:'Hero image',v:p.heroImg?'Set':'Missing',done:!!p.heroImg},
-          {l:'Description (50+ chars)',v:p.description?(p.description.length+' chars'):'Empty',done:p.description?.length>=50},
-          {l:'Features (2+)',v:(p.features||[]).length+' features',done:(p.features||[]).length>=2},
-          {l:'Shopify listing',v:p.shopifyUrl?'Live':'Not created',done:!!p.shopifyUrl},
-          {l:'Web views',v:(wa.views||0).toLocaleString()+' views',done:(wa.views||0)>0},
-        ].map(f=>`
-        <div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:12px 14px;border-bottom:1px solid var(--brd);min-height:44px">
-          <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${f.done?'var(--grn)':'var(--brd)'};background:${f.done?'var(--grn)':'transparent'};font-size:8px;color:#fff;display:flex;align-items:center;justify-content:center">${f.done?'✓':''}</div>
-          <span style="font-size:12px;font-weight:${f.done?'400':'600'};color:${f.done?'var(--faded)':'var(--ink)'}">${f.l}</span>
-          <span style="font-family:var(--mono);font-size:11px;color:${f.done?'var(--grn)':'var(--faded)'}">${f.v}</span>
-        </div>`).join('')}
-      </div>
-      ${p.description?`<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px;font-size:13px;line-height:1.6;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.06)">${p.description}</div>`:''}
-      ${(p.features||[]).length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">${p.features.map(f=>`<span style="padding:4px 10px;border-radius:10px;font-size:10px;font-family:var(--mono);background:var(--sur2);border:1px solid var(--brd)">${f}</span>`).join('')}</div>`:''}
-      <button class="btn btn-sm" onclick="navigate('pd-edit','${id}')">Edit content</button>
-      ${p.shopifyUrl?`<button class="btn btn-sm" style="margin-left:6px" onclick="window.open('${p.shopifyUrl}','_blank')">View on Shopify</button>`:''}
-    `,
-
-    launch: `
-      <!-- INVENTORY -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Inventory · ${stock} units</div>
-      <div style="display:grid;grid-template-columns:repeat(${LOCS.length},1fr);gap:2px;margin-bottom:16px">
-        ${LOCS.map(loc=>{
-          const q=(Store.getInventoryFor(id)||{})[loc]||0;
-          const maxQ=Math.max(1,...LOCS.map(l=>(Store.getInventoryFor(id)||{})[l]||0));
-          return `<div style="text-align:center;padding:8px 2px;background:var(--sur2);border:1px solid var(--brd);border-radius:4px">
-            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${q>0?'var(--ink)':'var(--faded)'}">${q}</div>
-            <div style="font-size:7px;color:var(--faded);margin-top:2px">${loc.length>6?loc.substring(0,5)+'…':loc}</div>
-          </div>`;
-        }).join('')}
-      </div>
-
-      <!-- PO STATUS -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Purchase Orders · ${pos.length}</div>
-      ${activePOs.length?activePOs.map(po=>{
-        const pct=Math.round(po.stage/9*100);
-        return `<div onclick="navigate('po-detail','${po.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 14px;margin-bottom:3px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:12px;font-weight:600">${po.num} <span class="badge ${po.status==='in-transit'?'b-amb':'b-blu'}" style="font-size:8px">${po.status}</span></span>
-            <span style="font-family:var(--mono);font-size:11px">${po.units}u · $${(po.fobTotal||0).toLocaleString()}</span>
-          </div>
-          <div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:3px;background:var(--brd);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:2px"></div></div><span style="font-family:var(--mono);font-size:8px;color:var(--faded)">${po.stage}/9</span></div>
-        </div>`;
-      }).join(''):''}
-      ${!pos.length?`<div style="padding:16px;text-align:center;color:var(--faded);font-size:12px;background:var(--sur2);border-radius:var(--rl);margin-bottom:12px">No POs yet</div>`:''}
-      <div style="display:flex;gap:6px;margin-top:8px;margin-bottom:16px">
-        <button class="btn btn-sm btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ Create PO</button>
-        ${stock>0?`<button class="btn btn-sm" onclick="navigate('distribution')">Distribute</button>`:''}
-      </div>
-
-      <!-- GO-LIVE -->
-      ${ppItem?`
-      <div style="background:${ppItem.isDead||ppItem.isUrgent?'rgba(138,58,42,.06)':'var(--sur2)'};border:1px solid ${ppItem.isDead||ppItem.isUrgent?'rgba(138,58,42,.2)':'var(--brd)'};border-radius:var(--rl);padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-bottom:8px">
-          ${[{l:'Cover',v:coverWk>100?'∞':coverWk+'w',c:coverWk<8?'var(--brick)':''},{l:'Vel/wk',v:String(adjVel)},{l:'Incoming',v:incoming?incoming.toLocaleString():'0',c:incoming?'var(--grn)':''},{l:'Status',v:p.status||'dev'}].map((d,i)=>`<div style="text-align:center;${i<3?'border-right:1px solid var(--brd)':''}"><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${d.c||''}">${d.v}</div><div style="font-size:7px;color:var(--faded)">${d.l}</div></div>`).join('')}
-        </div>
-        ${p.status!=='active'&&stock>0?`<button class="btn btn-sm btn-p" onclick="stackAction('${id}','goLive')" style="margin-top:6px">Go Live</button>`:''}
-        ${p.status==='active'?`<div style="font-family:var(--mono);font-size:11px;color:var(--grn);margin-top:6px">✓ Product is LIVE</div>`:''}
-      </div>
-      `:''}
-    `,
-  };
-
-  $('page').innerHTML=`
-  <div style="max-width:900px">
-    <div style="margin-bottom:16px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--faded);padding:8px 0;min-height:44px" onclick="navigate('product-detail','${id}')">← ${p.name}</div>
-
-    <!-- HEADER -->
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
-      ${p.heroImg?`<img src="${p.heroImg}" style="width:52px;height:66px;object-fit:cover;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12)"/>`:''}
-      <div style="flex:1;min-width:0">
-        <div style="font-family:var(--display);font-size:22px;font-weight:600;letter-spacing:-.3px">${p.name}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${p.code} · ${p.cat} · ${styles.length} styles · $${p.retail}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-family:var(--mono);font-size:26px;font-weight:700;color:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'};line-height:1">${totalPct}%</div>
-        <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${totalDone}/${totalReqs}</div>
-      </div>
     </div>
 
-    <!-- PROGRESS + TABS -->
-    <div style="height:5px;background:var(--brd);border-radius:3px;overflow:hidden;margin-bottom:2px"><div style="height:100%;width:${totalPct}%;background:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'};border-radius:3px"></div></div>
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin-bottom:20px;border-bottom:2px solid var(--brd)">
-      ${phases.map(ph=>{
-        const isActive=ph.id===activeTab;
-        const color=ph.complete?'var(--grn)':ph.pct>0?'var(--amb)':'var(--faded)';
-        return `<div onclick="window._stackTab['${id}']='${ph.id}';navigate('product-stack','${id}')" style="cursor:pointer;padding:10px 2px 8px;text-align:center;border-bottom:2px solid ${isActive?'var(--gold)':'transparent'};margin-bottom:-2px">
-          <div style="width:16px;height:16px;border-radius:50%;background:${ph.complete?'var(--grn)':isActive?'var(--gold)':'var(--brd)'};color:${ph.complete||isActive?'#fff':'var(--faded)'};display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:7px;font-weight:700;margin-bottom:3px">${ph.complete?'✓':ph.icon}</div>
-          <div style="font-size:8px;font-weight:${isActive?'700':'500'};color:${isActive?'var(--ink)':color}">${ph.label}</div>
-          <div style="font-family:var(--mono);font-size:7px;color:${color}">${ph.done}/${ph.total}</div>
-        </div>`;
-      }).join('')}
-    </div>
-
-    <!-- PHASE HEADER -->
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
-      <div>
-        <div style="font-family:var(--display);font-size:17px;font-weight:600">${activePh.icon} · ${activePh.label}</div>
-        <div style="font-size:11px;color:var(--faded);margin-top:2px">${activePh.desc}</div>
-      </div>
-      <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:${activePh.complete?'var(--grn)':activePh.pct>0?'var(--amb)':'var(--brick)'}">${activePh.pct}%</span>
-    </div>
-    <div style="height:3px;background:var(--brd);border-radius:2px;overflow:hidden;margin-bottom:20px"><div style="height:100%;width:${activePh.pct}%;background:${activePh.complete?'var(--grn)':'var(--amb)'};border-radius:2px"></div></div>
-
-    <!-- PHASE CONTENT -->
-    ${phaseContent[activeTab]||Object.entries(activePh.sections).map(([section,reqs])=>`
-      <div style="margin-bottom:12px">
-        <div style="font-family:var(--mono);font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.08em;padding:6px 0;border-bottom:1px solid var(--brd)">${section} · ${reqs.filter(r=>r.done).length}/${reqs.length}</div>
-        ${reqs.map(r=>`<div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:10px 4px;border-bottom:1px solid rgba(0,0,0,.04);gap:8px;min-height:44px">
-          <div style="width:16px;height:16px;border-radius:50%;border:2px solid ${r.done?'var(--grn)':'var(--brd)'};background:${r.done?'var(--grn)':'transparent'};font-size:9px;color:#fff;display:flex;align-items:center;justify-content:center">${r.done?'✓':''}</div>
-          <div><div style="font-size:12px;font-weight:${r.done?'400':'600'};color:${r.done?'var(--faded)':'var(--ink)'};${r.done?'text-decoration:line-through':''}">${r.label}</div><div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${r.val}</div></div>
-          ${!r.done?`<button class="btn btn-sm${r.actionLabel?' btn-p':''}" onclick="${r.action}" style="font-size:9px">${r.actionLabel||'Fix →'}</button>`:''}
-        </div>`).join('')}
+    <!-- TAB BAR -->
+    <div style="display:flex;gap:2px;margin-bottom:16px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:3px;width:fit-content">
+      ${tabs.map(t => `<div onclick="window._stkTab['${id}']='${t.id}';navigate('product-stack','${id}')"
+        style="cursor:pointer;padding:7px 18px;border-radius:8px;transition:background .1s;background:${tab===t.id?'var(--sur)':'transparent'};box-shadow:${tab===t.id?'0 1px 4px rgba(0,0,0,.08)':'none'}">
+        <div style="font-size:12px;font-weight:${tab===t.id?700:500};color:${tab===t.id?'var(--ink)':'var(--txt3)'}">${t.label}</div>
+        <div style="font-size:9px;color:var(--faded);margin-top:1px">${t.sub}</div>
       </div>`).join('')}
-
-    <!-- PHASE NAV -->
-    <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:2px solid var(--brd);margin-top:8px">
-      ${phIdx>0?`<button class="btn" onclick="window._stackTab['${id}']='${phases[phIdx-1].id}';navigate('product-stack','${id}')">← ${phases[phIdx-1].label}</button>`:'<span></span>'}
-      ${phIdx<5?`<button class="btn ${activePh.complete?'btn-p':''}" onclick="window._stackTab['${id}']='${phases[phIdx+1].id}';navigate('product-stack','${id}')">${phases[phIdx+1].label} →</button>`
-      :totalPct===100?`<button class="btn btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">Place PO →</button>`:'<span></span>'}
     </div>
 
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
-      <button class="btn btn-sm" onclick="navigate('pd-dna','${id}')">Tech Pack</button>
-      <button class="btn btn-sm" onclick="navigate('pd-cost','${id}')">Cost Build</button>
-      <button class="btn btn-sm" onclick="navigate('pd-edit','${id}')">Edit</button>
-      <button class="btn btn-sm" onclick="navigate('product-detail','${id}')">Overview</button>
-    </div>
+    <!-- TAB CONTENT -->
+    ${tab === 'foundation' ? foundationHTML : stylesHTML}
   </div>`;
 }
 
@@ -13369,17 +13215,7 @@ const APP_TREE = [
    {label:'Orders', route:'trunk-pos', sub:'pos-orders'},
   ]
  },
- {
-  id:'trunk-cf', label:'Cash Flow', icon:'💰', color:'#4a7a5a',
-  desc:'Inflows · outflows · open-to-buy',
-  routes:['trunk-cf'],
-  nav:[
-   {label:'Overview', route:'trunk-cf', sub:'cf-overview'},
-   {label:'Inflows', route:'trunk-cf', sub:'cf-in'},
-   {label:'Outflows', route:'trunk-cf', sub:'cf-out'},
-   {label:'Open-to-Buy', route:'trunk-cf', sub:'cf-otb'},
-  ]
- },
+
  {
   id:'products', label:'Products', icon:'👔', color:'#3a6a9a',
   desc:'Master products · styles · variants',
@@ -13431,18 +13267,6 @@ const APP_TREE = [
    {label:'Accounts Payable', route:'fin-ap'},
    {label:'Accounts Receivable', route:'fin-ar'},
    {label:'Margins', route:'fin-margins'},
-  ]
- },
- {
-  id:'operations', label:'Operations', icon:'⚙️', color:'#5a6a7a',
-  desc:'Integrations · planning · data',
-  routes:['operations','integrations','production-planning','ops-integrity','ops-fabric','an-forecast','an-velocity','an-scorecard','analytics','demand'],
-  nav:[
-   {label:'Integrations', route:'integrations'},
-   {label:'Production Plan', route:'production-planning'},
-   {label:'Analytics', route:'analytics'},
-   {label:'Demand', route:'demand'},
-   {label:'Data Integrity', route:'ops-integrity'},
   ]
  },
  {
@@ -13697,68 +13521,23 @@ function renderTrunkCF(sub) {
  }
 
  if (sub === 'cf-in') {
-  // Daily breakdown + per-store + top products
   const byDay = {};
-  const byStore = {};
-  const byProduct = {};
   sales30.forEach(o => {
    const d = (o.date||'').slice(0,10);
-   const store = o.store||o.location||'Online';
-   const rev = o.total||0;
-   if(d) byDay[d] = (byDay[d]||0) + rev;
-   byStore[store] = (byStore[store]||0) + rev;
-   (o.items||[]).forEach(item => {
-    const id = item.mpId||item.productId||'unknown';
-    if(!byProduct[id]) byProduct[id] = {units:0,rev:0};
-    byProduct[id].units += item.qty||item.quantity||1;
-    byProduct[id].rev += item.total||0;
-   });
+   if(d) byDay[d] = (byDay[d]||0)+(o.total||0);
   });
-  const days = Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,21);
-  const maxDay = Math.max(...Object.values(byDay), 1);
-  const stores = Object.entries(byStore).sort((a,b)=>b[1]-a[1]);
-  const maxStore = stores.length ? stores[0][1] : 1;
-  const topProds = Object.entries(byProduct).sort((a,b)=>b[1].rev-a[1].rev).slice(0,6);
-  const prods = Store.getProducts();
-
+  const days = Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).slice(0,14);
   body = `
-   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-    <div class="mbox"><div class="mbox-l">7-Day</div><div class="mbox-v" style="color:var(--grn)">${fmt(rev7)}</div><div class="mbox-s">${sales7.length} orders</div></div>
-    <div class="mbox"><div class="mbox-l">30-Day</div><div class="mbox-v" style="color:var(--grn)">${fmt(rev30)}</div><div class="mbox-s">${sales30.length} orders</div></div>
-    <div class="mbox"><div class="mbox-l">Daily Avg</div><div class="mbox-v">${fmt(Math.round(rev30/30))}</div><div class="mbox-s">Last 30 days</div></div>
-   </div>
-
    <div class="card2 mb16">
-    <div class="sec-h"><span style="font-size:12px;font-weight:600">By Location — 30 Days</span></div>
-    ${stores.map(([store,rev])=>`
-     <div class="drow">
-      <div class="fxb mb4"><span style="font-size:13px;font-weight:500">${store}</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">${fmt(rev)}</span></div>
-      <div style="height:4px;background:var(--brd);border-radius:2px"><div style="width:${Math.round(rev/maxStore*100)}%;height:100%;background:var(--grn);border-radius:2px;opacity:.7"></div></div>
-     </div>`).join('')}
-    ${stores.length===0?`<div style="color:var(--txt3);font-size:12px;padding:8px 0">No location data — sync Shopify</div>`:''}
-   </div>
-
-   ${topProds.length?`
-   <div class="card2 mb16">
-    <div class="sec-h"><span style="font-size:12px;font-weight:600">Top Products — 30 Days</span></div>
-    ${topProds.map(([id,d])=>{
-     const p = prods.find(x=>x.id===id);
-     return `<div class="drow fxb row-hover" onclick="navigate('product-detail','${id}')" style="cursor:pointer">
-      <div><div style="font-size:12px;font-weight:500">${p?p.name:id}</div><div style="font-size:10px;color:var(--txt3)">${d.units} units</div></div>
-      <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--grn)">${fmt(d.rev)}</span>
-     </div>`;
-    }).join('')}
-   </div>`:'' }
-
-   <div class="card2 mb16">
-    <div class="sec-h"><span style="font-size:12px;font-weight:600">Daily — Last 21 Days</span></div>
-    ${days.length===0?`<div style="padding:16px;text-align:center;color:var(--txt3)">No orders synced — <span onclick="Store.syncFromShopify&&Store.syncFromShopify()" style="color:var(--gold);cursor:pointer">sync Shopify</span></div>`:
+    <div class="sec-h"><span style="font-size:12px;font-weight:600">Daily Inflows — Last 30 Days</span><span style="font-family:var(--mono);font-size:12px;color:var(--grn)">${fmt(rev30)}</span></div>
+    ${days.length===0?`<div class="sec-empty">No inflow data</div>`:
     days.map(([d,v])=>`
-     <div class="drow" style="padding:5px 0;border-bottom:1px solid var(--brd)">
-      <div class="fxb mb2"><span style="font-size:11px;font-family:var(--mono);color:var(--txt3)">${d}</span><span style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--grn)">${fmt(v)}</span></div>
-      <div style="height:3px;background:var(--brd);border-radius:2px"><div style="width:${Math.round(v/maxDay*100)}%;height:100%;background:var(--grn);border-radius:2px;opacity:.6"></div></div>
+     <div class="drow fxb">
+      <span style="font-size:11px;color:var(--txt3);font-family:var(--mono)">${d}</span>
+      <span style="font-family:var(--mono);font-size:13px;font-weight:600;color:var(--grn)">${fmt(v)}</span>
      </div>`).join('')}
-   </div>`;
+   </div>
+   <div style="font-size:11px;color:var(--txt3)">Source: Shopify orders synced to POS · 7-day: ${fmt(rev7)}</div>`;
  }
 
   if (sub === 'cf-out') {
