@@ -12017,7 +12017,7 @@ window.onerror=function(msg,url,line,col,err){
 };
 window.onload=()=>{
  try{
- const DATA_VERSION='v28';
+ const DATA_VERSION='v30';
  if(localStorage.getItem('am_data_version')!==DATA_VERSION){
     const keys=Object.keys(localStorage);keys.forEach(k=>{if(k.startsWith('am_'))localStorage.removeItem(k);});
  ['am_products','am_pos','am_styles','am_inventory','am_notifications','am_demand','am_web_analytics','am_integrations','am_transfers','am_components_v2','am_shipments','am_milestones','am_launch'].forEach(k=>localStorage.removeItem(k));
