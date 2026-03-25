@@ -12,6 +12,7 @@ const { createHandler } = require('../../lib/handler');
 const { mapLedgerEntry, mapSnapshotProduct } = require('../../lib/mappers');
 const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
+const store = require('../../lib/store');
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -30,15 +31,28 @@ async function listLedger(client, { params }) {
 
 async function takeSnapshot(client) {
   const { products } = await client.getProducts();
-  return {
-    timestamp: new Date().toISOString(),
+  const timestamp = new Date().toISOString();
+  const key = `snap-${timestamp.slice(0, 10)}-${Date.now()}`;
+  const snapshot = {
+    id: key,
+    timestamp,
+    productCount: products.length,
     products: products.map(mapSnapshotProduct),
   };
+  await store.snapshots.put(key, snapshot);
+  return { saved: true, id: key, timestamp, productCount: products.length };
 }
 
 async function listSnapshots() {
-  // TODO: Store snapshots in persistent storage (Netlify Blobs, KV, etc.)
-  return { snapshots: [] };
+  const all = await store.snapshots.getAll();
+  // Return metadata only, not full product arrays
+  const snapshots = all.map(s => ({
+    id: s.id || s.key,
+    timestamp: s.timestamp,
+    productCount: s.productCount,
+  }));
+  snapshots.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  return { count: snapshots.length, snapshots };
 }
 
 // ── Routes ──────────────────────────────────────────────────
