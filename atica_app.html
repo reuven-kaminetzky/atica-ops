@@ -3282,6 +3282,23 @@ function showSearchResults(query) {
  </div>`).join('') : '<div style="padding:14px;color:var(--faded);font-size:12px;text-align:center">No results for "'+query+'"</div>';
 }
 function renderFinCashflow(){
+ // Live inflow from Shopify (POS trunk data)
+ const _sales30 = getSalesSince(30);
+ const _sales7  = getSalesSince(7);
+ const _rev30   = getSalesRevenue(_sales30);
+ const _rev7    = getSalesRevenue(_sales7);
+ const _fmtLive = n => '$'+(n>=1000?(n/1000).toFixed(1)+'K':Math.round(n).toLocaleString());
+ const _liveBar = `<div style="background:rgba(74,154,74,.06);border:1px solid rgba(74,154,74,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+  <div style="display:flex;gap:24px">
+   <div><div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3)">Live 7d Inflow</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${_fmtLive(_rev7)}</div></div>
+   <div><div style="font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3)">Live 30d Inflow</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${_fmtLive(_rev30)}</div></div>
+  </div>
+  <div style="display:flex;gap:8px;flex-shrink:0">
+   <button class="btn btn-sm" onclick="navigate('trunk-pos')">POS →</button>
+   <button class="btn btn-sm" onclick="navigate('trunk-cf')">Cash Flow →</button>
+  </div>
+ </div>`;
+
  if(!window._cfX)window._cfX={};
  window._cfToggle=function(k){window._cfX[k]=!window._cfX[k];const _s=window.scrollY;navigate('fin-cashflow');requestAnimationFrame(()=>window.scrollTo(0,_s));};
  const X=window._cfX;
@@ -3437,6 +3454,7 @@ function renderFinCashflow(){
   <div class="back-link" onclick="navigate('bookkeeping')">&larr; Finance</div>
   <div class="page-title">Cash Flow</div>
   <div class="page-sub">March - December &middot; Real Data</div>
+  ${_liveBar}
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px" class="hscroll">
    <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(avail)}</div><div class="kpi-label">Available Cash</div></div>
    <div class="kpi-cell"><div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(annIn)}</div><div class="kpi-label">Annual Inflow</div></div>
