@@ -3840,6 +3840,9 @@ function renderFinAP(){
 function renderFinAR(){
  const accounts=(()=>{try{return Store.getWSAccounts();}catch(e){return[];}})();
  const totalAR=accounts.reduce((s,a)=>s+(a.balance||0),0);
+ // Real 30-day retail inflow from Shopify
+ const sales30=getSalesSince(30);
+ const rev30=getSalesRevenue(sales30);
  const prods=Store.getProducts();
 
  $('page').innerHTML=`
@@ -3873,6 +3876,21 @@ function renderFinAR(){
  </div>`;
 }
 function renderFinMargins(){
+  // Real 90-day revenue per product from Shopify
+  const sales90=getSalesSince(90);
+  const revenueByTitle={};
+  sales90.forEach(order=>{(order.items||[]).forEach(item=>{
+    const t=(item.title||item.productTitle||'').toLowerCase();
+    if(!revenueByTitle[t])revenueByTitle[t]={rev:0,units:0};
+    revenueByTitle[t].rev+=(item.price||0)*(item.quantity||1);
+    revenueByTitle[t].units+=(item.quantity||1);
+  });});
+  const getLiveRev=(p)=>{
+    const n=(p.name||p.title||'').toLowerCase().split(' ').filter(w=>w.length>4);
+    let rev=0;
+    Object.entries(revenueByTitle).forEach(([t,d])=>{if(n.some(w=>t.includes(w)))rev+=d.rev;});
+    return rev;
+  };
   const prods=Store.getProducts();
   const season=Store.getCurrentSeason();
 
@@ -4314,6 +4332,11 @@ function renderAnCatPL(){
  </div>`;
 }
 function renderAnScorecard(){
+  // Live Shopify metrics for scorecard
+  const _s7=getSalesSince(7); const _s30=getSalesSince(30); const _s90=getSalesSince(90);
+  const _rev7=getSalesRevenue(_s7); const _rev30=getSalesRevenue(_s30); const _rev90=getSalesRevenue(_s90);
+  const _orders30=_s30.length;
+  const _aov30=_orders30>0?Math.round(_rev30/_orders30):0;
   const prods=Store.getProducts();
   const pos=Store.getPOs();
   const season=Store.getCurrentSeason();
@@ -7143,13 +7166,29 @@ function renderAnVelocity(){
  const season=Store.getCurrentSeason();
  const LOCS=Store.LOCS;
 
+ // Load real Shopify velocity from last sync
+ let shopifyVel={};
+ try{const sv=JSON.parse(localStorage.getItem('am_shopify_velocity')||'[]');
+  sv.forEach(v=>{if(v.sku)shopifyVel[v.sku.toUpperCase()]=v;});}catch(e){}
+ const getRealVel=(p)=>{
+  const styles=Store.getStyles(p.id);
+  let totalUnitsPerWeek=0;
+  styles.forEach(s=>{
+   const key=(s.sku||'').toUpperCase();
+   const sv=shopifyVel[key];
+   if(sv) totalUnitsPerWeek+=sv.unitsPerDay*7||0;
+  });
+  return totalUnitsPerWeek>0?Math.round(totalUnitsPerWeek*10)/10:p.vel;
+ };
+
  if(!window._velTab) window._velTab={sort:'rev',filter:'',cat:'all',expand:{}};
  const V=window._velTab;
 
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const realVel=getRealVel(p);
+ const adjVel=Math.round(realVel*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const weeklyRev=Math.round(adjVel*p.retail);
  const annualRev=weeklyRev*52;
@@ -7503,6 +7542,18 @@ const SIZE_SPECS = {
 function renderProductDetail(id) {
  const p = Store.getProduct(id);
  if (!p) { $('page').innerHTML='<div style="padding:40px;color:var(--faded)">Product not found.</div>'; return; }
+ // Real Shopify sales for this product
+ const _s30=getSalesSince(30);const _s90=getSalesSince(90);
+ let realUnits30=0,realRev30=0,realUnits90=0;
+ const _pname=(p.name||p.title||'').toLowerCase().split(' ').filter(w=>w.length>4);
+ _s30.forEach(o=>{(o.items||[]).forEach(it=>{
+  const t=(it.title||it.productTitle||'').toLowerCase();
+  if(_pname.some(w=>t.includes(w))){realUnits30+=it.quantity||1;realRev30+=(it.price||0)*(it.quantity||1);}
+ });});
+ _s90.forEach(o=>{(o.items||[]).forEach(it=>{
+  const t=(it.title||it.productTitle||'').toLowerCase();
+  if(_pname.some(w=>t.includes(w)))realUnits90+=it.quantity||1;
+ });});
  const styles = Store.getStyles(id);
  const stock = Store.totalStock(id);
  const season = Store.getCurrentSeason();
@@ -12004,7 +12055,25 @@ function toggleLaunchStep(styleId,key){
  else if(currentRoute==='product-detail')navigate('product-detail',window._pdId);
 }
 function renderCRM(){
-  const custs=Store.getCustomers();
+  // Enrich customers with real Shopify order totals where available
+  const sales30=getSalesSince(30);
+  const sales365=getSalesSince(365);
+  const shopifyEmails={};
+  [...sales30,...sales365].forEach(o=>{
+    const email=(o.email||o.customer?.email||'').toLowerCase();
+    if(!email)return;
+    if(!shopifyEmails[email])shopifyEmails[email]={orders:0,total:0,lastDate:''};
+    shopifyEmails[email].orders++;
+    shopifyEmails[email].total+=o.total||0;
+    if((o.date||o.created_at||'')>shopifyEmails[email].lastDate)
+      shopifyEmails[email].lastDate=o.date||o.created_at||'';
+  });
+  const custs=Store.getCustomers().map(c=>{
+    const email=(c.email||'').toLowerCase();
+    const live=shopifyEmails[email];
+    if(live&&live.total>0) return {...c,_liveOrders:live.orders,_liveSpend:live.total,_liveLastDate:live.lastDate};
+    return c;
+  });
   const tiers=Store.LOYALTY_TIERS;
   const totalLTV=custs.reduce((s,c)=>s+Store.getCustomerLTV(c),0);
   const tierCounts={};
@@ -12045,7 +12114,29 @@ function renderCRM(){
   </div>`;
 }
 function renderCRMCustomers(){
- const custs=Store.getCustomers();
+ // Merge seed + real Shopify customers from recent orders
+ const _salesLive=getSalesSince(180);
+ const _shopCusts={};
+ _salesLive.forEach(o=>{
+  const em=(o.email||o.customer?.email||'').toLowerCase().trim();
+  const nm=o.customer?.firstName?o.customer.firstName+' '+(o.customer.lastName||''):(o.customerName||'');
+  const k=em||nm;if(!k)return;
+  if(!_shopCusts[k]){_shopCusts[k]={name:nm||em,email:em,orders:[],spend:0,last:'',store:o.store||'Online'};}
+  _shopCusts[k].orders.push({date:o.date||o.created_at,total:o.total||0});
+  _shopCusts[k].spend+=o.total||0;
+  const d=o.date||o.created_at||'';
+  if(d>_shopCusts[k].last)_shopCusts[k].last=d;
+ });
+ const _seed=Store.getCustomers();
+ const _seedEmails=new Set(_seed.map(c=>(c.email||'').toLowerCase()));
+ const _liveOnly=Object.values(_shopCusts)
+  .filter(c=>c.email&&!_seedEmails.has(c.email))
+  .map(c=>({id:'live_'+c.email,name:c.name||c.email,email:c.email,store:c.store,orders:c.orders,_liveSpend:c.spend,lastVisit:c.last,_isLive:true}));
+ const custs=[..._seed.map(c=>{
+  const em=(c.email||'').toLowerCase();
+  const live=_shopCusts[em];
+  return live?{...c,_liveSpend:live.spend,lastVisit:live.last||c.lastVisit}:c;
+ }),..._liveOnly].sort((a,b)=>(b._liveSpend||Store.getCustomerLTV(b))-(a._liveSpend||Store.getCustomerLTV(a)));
  if(!window._crmTab) window._crmTab={filter:'',sort:'ltv',store:'all'};
  const CT=window._crmTab;
 
