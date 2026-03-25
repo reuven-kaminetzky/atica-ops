@@ -451,7 +451,12 @@ const SEED_PRODUCTS=[
     {id:'herring-shirt',name:'Herringbone Weave Shirt',code:'HBW',cat:'Shirts',vendor:'The Orient Apparel (TAL)',fob:15,retail:62,lead:90,moq:50,sizes:'shirts',qbCode:'4000-HBW',hts:'6205.20',duty:20,status:'active',vel:2.2,sell:68,inc:120,flag:'ok',tagline:'',description:'',features:[],gallery:[],notes:''},
     {id:'royal-oxford',name:'Royal Oxford Shirt',code:'ROX',cat:'Shirts',vendor:'The Orient Apparel (TAL)',fob:17,retail:72,lead:90,moq:50,sizes:'shirts',qbCode:'4000-ROX',hts:'6205.20',duty:20,status:'active',vel:1.8,sell:58,inc:100,flag:'ok',tagline:'',description:'',features:[],gallery:[],notes:''},
     {id:'pinpoint',name:'Pinpoint Oxford Shirt',code:'PPO',cat:'Shirts',vendor:'The Orient Apparel (TAL)',fob:13,retail:54,lead:90,moq:50,sizes:'shirts',qbCode:'4000-PPO',hts:'6205.20',duty:20,status:'active',vel:3.5,sell:75,inc:160,flag:'reorder',tagline:'',description:'',features:[],gallery:[],notes:''},
-    {id:'summer-suit',name:'Summer Weight Suit',code:'SWS',cat:'Suits',vendor:'Ningbo Youngor (YGR)',fob:65,retail:295,lead:90,moq:50,sizes:'suits',qbCode:'4000-SWS',hts:'6203.11',duty:17.5,status:'active',vel:1.8,sell:55,inc:60,flag:'watch',tagline:'',description:'',features:[],gallery:[],notes:''}
+    {id:'summer-suit',name:'Summer Weight Suit',code:'SWS',cat:'Suits',vendor:'Ningbo Youngor (YGR)',fob:65,retail:295,lead:90,moq:50,sizes:'suits',qbCode:'4000-SWS',hts:'6203.11',duty:17.5,status:'active',vel:1.8,sell:55,inc:60,flag:'watch',tagline:'',description:'',features:[],gallery:[],notes:''},
+    {id:'sweater',name:'Knit Sweaters',code:'KNT',cat:'Outerwear',vendor:'',fob:18,retail:89,lead:90,moq:50,sizes:'shirts',qbCode:'4000-KNT',hts:'6110.20',duty:17.5,status:'active',vel:3.2,sell:60,inc:0,flag:'watch',tagline:'Cardigans · Pullovers · Zip-Ups',description:'',features:[],gallery:[],notes:''},
+    {id:'luxury-pant',name:'Parkway Dress Pants',code:'PKDR',cat:'Pants',vendor:'Shandong (DY17)',fob:16,retail:72,lead:90,moq:100,sizes:'pants',qbCode:'4000-PKDR',hts:'6203.42',duty:24.1,status:'active',vel:8.5,sell:58,inc:0,flag:'watch',tagline:'Luxury Performance · Non-Iron',description:'',features:[],gallery:[],notes:''},
+    {id:'socks',name:'Everyday Comfort Socks',code:'SCK',cat:'Accessories',vendor:'',fob:2.5,retail:8,lead:60,moq:200,sizes:'socks',qbCode:'4000-SCK',hts:'6115.95',duty:12.8,status:'active',vel:18,sell:70,inc:0,flag:'watch',tagline:'Argyle · Lines · Patterns',description:'',features:[],gallery:[],notes:''},
+    {id:'hats',name:'Hats & Caps',code:'HAT',cat:'Accessories',vendor:'',fob:8,retail:64,lead:60,moq:50,sizes:'onesize',qbCode:'4000-HAT',hts:'6505.00',duty:7.9,status:'active',vel:2.1,sell:55,inc:0,flag:'watch',tagline:'Baseball Caps · Quilted · Rainproof',description:'',features:[],gallery:[],notes:''},
+    {id:'cufflinks',name:'Cufflinks',code:'CLK',cat:'Accessories',vendor:'',fob:6,retail:48,lead:60,moq:50,sizes:'onesize',qbCode:'4000-CLK',hts:'7117.19',duty:11,status:'active',vel:1.2,sell:50,inc:0,flag:'watch',tagline:'',description:'',features:[],gallery:[],notes:''}
     ];
 const SEED_STYLES={
  'hc360':[
@@ -10749,10 +10754,13 @@ function getProductionPlan() {
  const pos = Store.getPOs();
  const planned = (()=>{try{return JSON.parse(localStorage.getItem('am_planned_pos')||'[]');}catch(e){return[];}})();
 
+ const _salesPP = getSalesSince(30);
+ const _byProdPP = getSalesByProduct(_salesPP);
  const plan = prods.map(p => {
  const stock = Store.totalStock(p.id);
  const styles = Store.getStyles(p.id);
- const adjVel = Math.round(p.vel * season.multiplier * 10) / 10;
+ const realVel = getRealVelocity(p.id, 30);
+ const adjVel = realVel > 0 ? realVel : Math.round(p.vel * season.multiplier * 10) / 10;
  const weeklyUnits = adjVel;
  const coverWeeks = weeklyUnits > 0 ? Math.round(stock / weeklyUnits) : 999;
  const stockoutDate = weeklyUnits > 0 ? new Date(Date.now() + coverWeeks * 7 * 86400000) : null;
