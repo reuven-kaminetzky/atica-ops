@@ -259,21 +259,21 @@ const API = {
  async getNotifications() { return this._fetch('/api/notifications'); },
  async getActivity(limit) { return this._fetch('/api/activity?limit=' + (limit || 100)); },
  async health() { return this._fetch('/api/health'); },
- async shopifyStatus() { return this._fetch('/api/shopify/status'); },
+ async shopifyStatus() { return this._fetch('/api/status'); },
  async shopifyConnect(data) { return this._fetch('/api/shopify/connect', { method: 'POST', body: data }); },
  async shopifyDisconnect() { return this._fetch('/api/shopify/disconnect', { method: 'POST' }); },
- async shopifySyncProducts() { return this._fetch('/api/shopify/sync/products', { method: 'POST' }); },
- async shopifySyncOrders(since) { return this._fetch('/api/shopify/sync/orders', { method: 'POST', body: { since } }); },
- async shopifySyncInventory() { return this._fetch('/api/shopify/sync/inventory', { method: 'POST' }); },
- async shopifySnapshot() { return this._fetch('/api/shopify/snapshot', { method: 'POST' }); },
- async shopifySetupWebhooks(baseUrl) { return this._fetch('/api/shopify/webhooks/setup', { method: 'POST', body: { base_url: baseUrl } }); },
- async shopifyVelocity(days) { return this._fetch('/api/shopify/velocity?days=' + (days || 30)); },
- async shopifyLedger(params) { return this._fetch('/api/shopify/ledger?' + new URLSearchParams(params || {})); },
- async shopifySales(params) { return this._fetch('/api/shopify/sales?' + new URLSearchParams(params || {})); },
- async shopifySnapshots(params) { return this._fetch('/api/shopify/snapshots?' + new URLSearchParams(params || {})); },
- async shopifySKUMap(filter) { return this._fetch('/api/shopify/sku-map?filter=' + (filter || 'all')); },
- async shopifyMapSKU(sku, data) { return this._fetch('/api/shopify/sku-map/' + encodeURIComponent(sku), { method: 'PATCH', body: data }); },
- async shopifyConfirmAllSKU() { return this._fetch('/api/shopify/sku-map/confirm-all', { method: 'POST' }); },
+ async shopifySyncProducts() { return this._fetch('/api/products/sync', { method: 'POST' }); },
+ async shopifySyncOrders(since) { return this._fetch('/api/orders/sync', { method: 'POST', body: { since } }); },
+ async shopifySyncInventory() { return this._fetch('/api/inventory/sync', { method: 'POST' }); },
+ async shopifySnapshot() { return this._fetch('/api/ledger/snapshot', { method: 'POST' }); },
+ async shopifySetupWebhooks(baseUrl) { return this._fetch('/api/status/webhooks', { method: 'POST', body: { base_url: baseUrl } }); },
+ async shopifyVelocity(days) { return this._fetch('/api/orders/velocity?days=' + (days || 30)); },
+ async shopifyLedger(params) { return this._fetch('/api/ledger?' + new URLSearchParams(params || {})); },
+ async shopifySales(params) { return this._fetch('/api/orders/sales?' + new URLSearchParams(params || {})); },
+ async shopifySnapshots(params) { return this._fetch('/api/ledger/snapshots?' + new URLSearchParams(params || {})); },
+ async shopifySKUMap(filter) { return this._fetch('/api/products/sku-map?filter=' + (filter || 'all')); },
+ async shopifyMapSKU(sku, data) { return this._fetch('/api/products/sku-map/' + encodeURIComponent(sku), { method: 'PATCH', body: data }); },
+ async shopifyConfirmAllSKU() { return this._fetch('/api/products/sku-map/confirm-all', { method: 'POST' }); },
  async qbStatus() { return this._fetch('/api/qb/status'); },
  async qbAuth() { return this._fetch('/api/qb/auth'); },
  async qbDisconnect() { return this._fetch('/api/qb/disconnect', { method: 'POST' }); },
@@ -2139,7 +2139,7 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
  async function syncFromShopify() {
    try {
      // 1. Check connectivity
-     const statusRes = await fetch('/api/shopify/status');
+     const statusRes = await fetch('/api/status');
      if (!statusRes.ok) return { synced: false, reason: 'API unavailable' };
      const statusData = await statusRes.json();
      if (!statusData.connected) return { synced: false, reason: 'Not connected' };
@@ -2147,12 +2147,12 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
 
      // 2. Fetch products, inventory, velocity, sales, and orders in parallel
      const [prodRes, invRes, velRes, salesRes, ordersRes, treesRes] = await Promise.all([
-       fetch('/api/shopify/sync/products', { method: 'POST' }),
-       fetch('/api/shopify/sync/inventory', { method: 'POST' }),
-       fetch('/api/shopify/velocity?days=30'),
-       fetch('/api/shopify/sales?days=30'),
-       fetch('/api/shopify/sync/orders', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
-       fetch('/api/shopify/product-trees'),
+       fetch('/api/products/sync', { method: 'POST' }),
+       fetch('/api/inventory/sync', { method: 'POST' }),
+       fetch('/api/orders/velocity?days=30'),
+       fetch('/api/orders/sales?days=30'),
+       fetch('/api/orders/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
+       fetch('/api/products/trees'),
      ]);
      const prodData  = prodRes.ok  ? await prodRes.json()  : null;
      const treesData = treesRes && treesRes.ok ? await treesRes.json() : null;
@@ -6517,9 +6517,9 @@ async function syncShopifyPOData(poId){
  toast('Syncing from Shopify...','info',2000);
  try{
   const [prodRes,invRes,draftRes]=await Promise.all([
-   fetch('/api/shopify/sync/products',{method:'POST'}),
-   fetch('/api/shopify/sync/inventory',{method:'POST'}),
-   fetch('/api/shopify/draft-orders'),
+   fetch('/api/products/sync',{method:'POST'}),
+   fetch('/api/inventory/sync',{method:'POST'}),
+   fetch('/api/orders/drafts'),
   ]);
   const lines=[];
 
@@ -13368,7 +13368,7 @@ async function loadDraftOrders() {
   const status = document.getElementById('drafts-status');
   if(badge) badge.textContent = 'LOADING...';
   try {
-    const res = await fetch('/api/shopify/draft-orders');
+    const res = await fetch('/api/orders/drafts');
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const count = data.count || 0;
@@ -13401,14 +13401,14 @@ async function testShopifyConnection() {
 
   badge.textContent = 'TESTING...';
   badge.className = 'badge b-gry';
-  box.textContent = 'Calling /api/shopify/status...';
+  box.textContent = 'Calling /api/status...';
   if(log) { log.style.display='block'; log.textContent=''; }
 
   const addLog = (msg) => { if(log){ log.textContent += '\n' + msg; log.scrollTop=log.scrollHeight; } };
 
   try {
-    addLog('→ GET /api/shopify/status');
-    const res = await fetch('/api/shopify/status');
+    addLog('→ GET /api/status');
+    const res = await fetch('/api/status');
     addLog('← HTTP ' + res.status);
 
     if (!res.ok) {
@@ -13452,7 +13452,7 @@ async function runShopifySync() {
   try {
     const [syncResult, draftResult] = await Promise.all([
       Store.syncFromShopify(),
-      fetch('/api/shopify/draft-orders').then(r=>r.ok?r.json():{count:0,error:'unavailable'}),
+      fetch('/api/orders/drafts').then(r=>r.ok?r.json():{count:0,error:'unavailable'}),
     ]);
     const draftMsg = draftResult.count !== undefined ? ' · '+draftResult.count+' draft orders' : '';
     if(box) box.textContent = syncResult.synced
