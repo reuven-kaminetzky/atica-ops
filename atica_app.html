@@ -13993,7 +13993,7 @@ async function renderTrunkCF(sub) {
   if(r2.ok) posByLoc=await r2.json();
  }catch(e){}
  const liveTodayRev=posToday?.totalRevenue||posToday?.revenue||0;
- const liveStores=posByLoc?.locations||posByLoc?.stores||null;
+ const liveStores=posByLoc?.byStore||posByLoc?.locations||posByLoc?.stores||null;
  const fmt = n => '$'+(n>=1000?(n/1000).toFixed(1)+'K':Math.round(n).toLocaleString());
  const fmtFull = n => '$'+Math.round(n).toLocaleString();
 
@@ -14054,7 +14054,7 @@ async function renderTrunkCF(sub) {
   if(liveStores && liveStores.length > 0) {
    liveStores.forEach(s => {
     const name = s.name||s.location||s.store||'Unknown';
-    byStore[name] = s.revenue||s.total||0;
+    byStore[name] = s.revenue||s.totalRevenue||s.total||0;
    });
   }
   const byProduct = {};
