@@ -11967,54 +11967,151 @@ function renderIntegrations(){
   const intg=Store.getIntegrations();
   const prods=Store.getProducts();
   const shopifyInt=intg.shopify||{};
-  const shopifyCount=shopifyInt.matchedProducts||prods.filter(p=>p.shopifyId).length;
-  const shopifySynced=shopifyInt.syncedProducts||0;
+  const shopifyCount=prods.filter(p=>p.shopifyId).length;
   const lastSync=shopifyInt.lastSync?new Date(shopifyInt.lastSync).toLocaleString():'Never';
-
-  const connections=[
-    {id:'shopify',name:'Shopify',desc:'E-commerce platform — '+( shopifyInt.store||'atica-brand.myshopify.com'),status:shopifyInt.connected?'connected':'disconnected',icon:'🛒',stats:`${shopifyCount}/${prods.length} matched · ${shopifySynced} Shopify products · Last: ${lastSync}`,color:shopifyInt.connected?'var(--grn)':'var(--red)'},
-    {id:'quickbooks',name:'QuickBooks',desc:'Accounting & invoicing',status:'ready',icon:'📊',stats:'Awaiting API key',color:'var(--amb)'},
-    {id:'lightspeed',name:'Lightspeed POS',desc:'Retail point of sale',status:'ready',icon:'⚡',stats:'4 store locations',color:'var(--amb)'},
-    {id:'klaviyo',name:'Klaviyo',desc:'Email marketing & SMS',status:'planned',icon:'📧',stats:'Customer sync',color:'var(--faded)'},
-    {id:'shipstation',name:'ShipStation',desc:'Shipping & fulfillment',status:'planned',icon:'📦',stats:'Label printing',color:'var(--faded)'},
-    {id:'xero',name:'Xero',desc:'Alternative accounting',status:'planned',icon:'📒',stats:'AP/AR sync',color:'var(--faded)'},
-  ];
-
-  const connected=connections.filter(c=>c.status==='connected').length;
-  const ready=connections.filter(c=>c.status==='ready').length;
+  const isConnected=shopifyInt.connected||false;
 
   $('page').innerHTML=`
   <div style="max-width:860px">
     <div style="margin-bottom:16px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--faded);padding:8px 0;min-height:44px" onclick="navigate('operations')">← Operations</div>
     <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Integrations</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:20px">${connections.length} integrations · ${connected} connected · ${ready} ready</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:24px">Live data connections</div>
 
-    <div style="font-size:9px;color:var(--faded);margin-top:2px">connected</div></div>
-      <div style="padding:14px 8px;border-right:1px solid var(--brd);text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--amb)">${ready}</div><div style="font-size:9px;color:var(--faded);margin-top:2px">ready to connect</div></div>
-      <div style="padding:14px 8px;text-align:center"><div style="font-family:var(--mono);font-size:22px;font-weight:700">${connections.length-connected-ready}</div><div style="font-size:9px;color:var(--faded);margin-top:2px">planned</div></div>
+    <!-- SHOPIFY -->
+    <div id="shopify-card" style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid ${isConnected?'var(--grn)':'var(--brd-s)'};border-radius:var(--rl);padding:20px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">🛒</span>
+          <div>
+            <div style="font-size:15px;font-weight:600">Shopify</div>
+            <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">atica-brand.myshopify.com</div>
+          </div>
+        </div>
+        <span id="shopify-badge" class="badge ${isConnected?'b-grn':'b-gry'}">${isConnected?'CONNECTED':'CHECKING...'}</span>
+      </div>
+
+      <div id="shopify-status-box" style="background:var(--bg);border:1px solid var(--brd);border-radius:var(--r);padding:12px;margin-bottom:12px;font-family:var(--mono);font-size:11px;color:var(--faded)">
+        ${isConnected?`✓ ${shopifyCount} products matched · Last sync: ${lastSync}`:'Testing connection...'}
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-p" onclick="testShopifyConnection()">Test Connection</button>
+        <button class="btn" onclick="runShopifySync()">Sync Now</button>
+        <button class="btn" onclick="navigate('integrations')">Refresh</button>
+      </div>
+
+      <div id="shopify-log" style="margin-top:12px;font-family:var(--mono);font-size:10px;color:var(--faded);max-height:120px;overflow-y:auto;display:none"></div>
     </div>
 
-    ${connections.map(conn=>`
-    <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid ${conn.color};border-radius:var(--rl);padding:16px;margin-bottom:6px;box-shadow:0 2px 8px rgba(0,0,0,.06);display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:14px">
-      <div style="font-size:28px;text-align:center">${conn.icon}</div>
-      <div>
-        <div style="font-size:15px;font-weight:600">${conn.name}</div>
-        <div style="font-size:12px;color:var(--faded);margin-top:2px">${conn.desc}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:4px">${conn.stats}</div>
+    <!-- QUICKBOOKS -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid var(--amb);border-radius:var(--rl);padding:20px;margin-bottom:8px;opacity:.7">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">📊</span>
+          <div><div style="font-size:15px;font-weight:600">QuickBooks</div><div style="font-size:11px;color:var(--faded)">Accounting & invoicing</div></div>
+        </div>
+        <span class="badge b-amb">READY</span>
       </div>
-      <div style="text-align:right">
-        <span class="badge ${conn.status==='connected'?'b-grn':conn.status==='ready'?'b-amb':'b-gry'}" style="font-size:10px;padding:4px 10px">${conn.status}</span>
-        ${conn.status==='ready'?`<div style="margin-top:6px"><button class="btn btn-sm btn-p" style="font-size:9px">Connect</button></div>`:''}
-        ${conn.status==='planned'?`<div style="margin-top:6px;font-family:var(--mono);font-size:9px;color:var(--faded)">coming soon</div>`:''}
-      </div>
-    </div>`).join('')}
-
-    <div style="margin-top:20px;padding:20px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);text-align:center">
-      <div style="font-size:13px;font-weight:600;margin-bottom:4px">Need a custom integration?</div>
-      <div style="font-size:11px;color:var(--faded)">API endpoints will be available when the backend is connected via Vercel + Supabase</div>
     </div>
+
+    <!-- LIGHTSPEED -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-left:3px solid var(--amb);border-radius:var(--rl);padding:20px;margin-bottom:8px;opacity:.7">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">⚡</span>
+          <div><div style="font-size:15px;font-weight:600">Lightspeed POS</div><div style="font-size:11px;color:var(--faded)">Retail point of sale · 4 stores</div></div>
+        </div>
+        <span class="badge b-amb">READY</span>
+      </div>
+    </div>
+
+    <!-- KLAVIYO -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:20px;margin-bottom:8px;opacity:.5">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">📧</span>
+          <div><div style="font-size:15px;font-weight:600">Klaviyo</div><div style="font-size:11px;color:var(--faded)">Email marketing</div></div>
+        </div>
+        <span class="badge b-gry">PLANNED</span>
+      </div>
+    </div>
+
   </div>`;
+
+  // Auto-test on load
+  testShopifyConnection();
 }
+
+async function testShopifyConnection() {
+  const badge = document.getElementById('shopify-badge');
+  const box = document.getElementById('shopify-status-box');
+  const log = document.getElementById('shopify-log');
+  const card = document.getElementById('shopify-card');
+  if (!badge||!box) return;
+
+  badge.textContent = 'TESTING...';
+  badge.className = 'badge b-gry';
+  box.textContent = 'Calling /api/shopify/status...';
+  if(log) { log.style.display='block'; log.textContent=''; }
+
+  const addLog = (msg) => { if(log){ log.textContent += '\n' + msg; log.scrollTop=log.scrollHeight; } };
+
+  try {
+    addLog('→ GET /api/shopify/status');
+    const res = await fetch('/api/shopify/status');
+    addLog('← HTTP ' + res.status);
+
+    if (!res.ok) {
+      const text = await res.text();
+      addLog('Error body: ' + text.slice(0,200));
+      badge.textContent = 'ERROR ' + res.status;
+      badge.className = 'badge b-red';
+      box.textContent = 'HTTP ' + res.status + ': ' + text.slice(0,100);
+      return;
+    }
+
+    const data = await res.json();
+    addLog('Response: ' + JSON.stringify(data));
+
+    if (data.connected) {
+      badge.textContent = 'CONNECTED';
+      badge.className = 'badge b-grn';
+      card.style.borderLeftColor = 'var(--grn)';
+      box.innerHTML = '<span style="color:var(--grn)">✓ Connected</span> · Shop: ' + data.shop + ' · ' + data.plan + ' · ' + data.currency;
+      Store.updateIntegration('shopify', { connected: true, store: data.shop, lastSync: new Date().toISOString() });
+    } else {
+      badge.textContent = 'NOT CONNECTED';
+      badge.className = 'badge b-red';
+      card.style.borderLeftColor = 'var(--red)';
+      box.innerHTML = '<span style="color:var(--red)">✗ ' + (data.message||'Not connected') + '</span>';
+    }
+  } catch(err) {
+    addLog('Exception: ' + err.message);
+    badge.textContent = 'NETWORK ERROR';
+    badge.className = 'badge b-red';
+    box.textContent = 'Network error: ' + err.message;
+  }
+}
+
+async function runShopifySync() {
+  const box = document.getElementById('shopify-status-box');
+  const log = document.getElementById('shopify-log');
+  if(log) { log.style.display='block'; log.textContent='Starting full sync...'; }
+  if(box) box.textContent = 'Syncing...';
+
+  try {
+    const result = await Store.syncFromShopify();
+    if(box) box.textContent = result.synced
+      ? '✓ Sync complete · ' + result.matched + ' products matched'
+      : '✗ Sync skipped: ' + result.reason;
+    toast(result.synced ? 'Shopify sync complete' : 'Sync skipped: '+result.reason, result.synced?'success':'warning');
+    navigate('integrations');
+  } catch(err) {
+    if(box) box.textContent = 'Sync error: ' + err.message;
+    toast('Sync error: ' + err.message, 'error');
+  }
+}
+
 
 function igTab(i){[0,1,2,3].forEach(j=>{$('ig-t'+j)?.classList.toggle('on',j===i);$('ig-p'+j)?.classList.toggle('on',j===i);});}
 function syncShopify(){
