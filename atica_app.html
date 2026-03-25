@@ -9959,6 +9959,7 @@ function buildFacts() {
  return rows;
 }
 function aggRows(rows) {
+ const _ax = window._ax;
  if (!rows.length) return {stock:0,vel:0,adjVel:0,sell:0,cover:0,xRate:0,salesWk:0,lostSales:0,oosRate:0,oosLocs:0,fobVal:0,retVal:0,margin:0,inc:0,skuCount:0};
  const n = rows.length;
  const totalStock = rows.reduce((s,r)=>s+r.stock,0);
@@ -9999,6 +10000,18 @@ function getVal(row, dim) {
  const v = row[dim];
  return v !== undefined ? String(v) : '—';
 }
+// ── Analytics drill state ──────────────────────────────────────────
+if (!window._ax) window._ax = {
+  dims: ['cat','product'],
+  metric: 'stock',
+  sort: 'stock',
+  sortDir: -1,
+  expanded: new Set(),
+  search: '',
+  savedViews: [],
+};
+
+
 function renderAnalytics(){
  const prods=Store.getProducts();
  const season=Store.getCurrentSeason();
@@ -10107,6 +10120,7 @@ function renderAnalytics(){
  drawMatrix();
 }
 function axRenderDimRow() {
+ const _ax = window._ax;
  const row = $('ax-dims-row'); if (!row) return;
  row.innerHTML = `<div class="drill-path" style="margin-bottom:0">${_ax.dims.map((d, i) => {
  const dim = AX_DIMS.find(x=>x.id===d) || {label:d};
@@ -10121,25 +10135,30 @@ function axRenderDimRow() {
  </div>`;
 }
 function axAddDim(id) {
+ const _ax = window._ax;
  if (!_ax.dims.includes(id)) { _ax.dims.push(id); _ax.expanded=new Set(); }
  axRenderDimRow(); drawMatrix();
 }
 function axRemoveDim(i) {
+ const _ax = window._ax;
  _ax.dims.splice(i,1); _ax.expanded=new Set();
  axRenderDimRow(); drawMatrix();
 }
 function axPreset(dimStr, metric) {
+ const _ax = window._ax;
  _ax.dims = dimStr.split(',');
  _ax.expanded = new Set();
  if(metric){_ax.metric=metric;_ax.sort=metric;}
  axRenderDimRow(); drawMatrix();
 }
 function axReset() {
+ const _ax = window._ax;
  _ax.dims=['cat','product','fit'];_ax.metric='stock';_ax.sort='stock';_ax.sortDir=-1;
  _ax.expanded=new Set();_ax.search='';
  renderAnalytics();
 }
 function axSaveView() {
+ const _ax = window._ax;
  const name=prompt('Name this view:');
  if(!name)return;
  if(!_ax.savedViews) _ax.savedViews=[];
@@ -10147,6 +10166,7 @@ function axSaveView() {
  renderAnalytics();
 }
 function axLoadView(idx) {
+ const _ax = window._ax;
  if(idx==='')return;
  const v=_ax.savedViews[parseInt(idx)];
  if(!v)return;
@@ -10155,6 +10175,7 @@ function axLoadView(idx) {
  axRenderDimRow(); drawMatrix();
 }
 function drawMatrix() {
+ const _ax = window._ax;
  const container = $('ax-matrix'); if (!container) return;
  const totalsBar = $('ax-totals');
  const search = $('ax-search');
@@ -10198,6 +10219,7 @@ function drawMatrix() {
  }
 }
 function renderLevel(rows, dims, depth, ancestors) {
+ const _ax = window._ax;
  if (!dims.length || depth >= dims.length) return '';
  const dim = dims[depth];
  const hasChildren = depth < dims.length - 1;
@@ -10298,6 +10320,7 @@ function renderLevel(rows, dims, depth, ancestors) {
  return html;
 }
 function axToggle(path) {
+ const _ax = window._ax;
  if (_ax.expanded.has(path)) _ax.expanded.delete(path);
  else _ax.expanded.add(path);
  drawMatrix();
