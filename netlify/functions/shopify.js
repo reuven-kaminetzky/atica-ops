@@ -120,6 +120,21 @@ async function webhooksSetup(client, { body }) {
   return { message: 'Webhooks configured', webhooks: created };
 }
 
+
+async function listTitles(client) {
+  const { products } = await client.getProducts();
+  return {
+    count: products.length,
+    titles: products.map(p => ({
+      title: p.title,
+      productType: p.productType,
+      status: p.status,
+      variants: p.variants.length,
+      price: p.variants[0]?.price || '0',
+    })).sort((a,b) => a.title.localeCompare(b.title))
+  };
+}
+
 // ── Route table ─────────────────────────────────────────────
 
 const ROUTES = [
@@ -138,6 +153,7 @@ const ROUTES = [
   { method: 'PATCH', path: 'sku-map/:sku',        handler: updateSKU,      noClient: true },
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU,  noClient: true },
   { method: 'POST',  path: 'webhooks/setup',      handler: webhooksSetup },
+  { method: 'GET',   path: 'titles',              handler: listTitles },
 ];
 
 function matchRoute(method, path) {
@@ -196,3 +212,6 @@ exports.handler = async (event) => {
     return json(500, { error: err.message });
   }
 };
+
+// ── Diagnostic: list all Shopify product titles ──────────────
+// Remove this endpoint after setup is complete
