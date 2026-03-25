@@ -124,6 +124,10 @@
 
  <div class="sb-section" data-roles="admin,finance"></div>
  <div class="nav-item" id="nav-bookkeeping" onclick="navigate('bookkeeping')" data-roles="admin,finance">Finance</div>
+
+ <div class="sb-section" data-roles="all"></div>
+ <div class="nav-item" id="nav-operations" onclick="navigate('operations')" data-roles="admin,ops">Operations</div>
+ <div class="nav-item" id="nav-integrations" onclick="navigate('integrations')" data-roles="all">Integrations</div>
  </div>
 
  <div class="sb-foot">
@@ -2848,7 +2852,8 @@ function renderHome(){
  <div onclick="navigate('inventory')" class="atile at-gold"><div class="atile-icon" style="background:var(--gold)">▤</div><div><div class="atile-label">Inventory</div><div class="atile-sub">Stock & movement</div></div></div>
  <div onclick="navigate('retail')" class="atile at-teal"><div class="atile-icon" style="background:#288878">◐</div><div><div class="atile-label">Retail</div><div class="atile-sub">Stores & sales</div></div></div>
  <div onclick="navigate('wholesale')" class="atile at-slate"><div class="atile-icon" style="background:#586878">◧</div><div><div class="atile-label">Wholesale</div><div class="atile-sub">Accounts & orders</div></div></div>
- <div onclick="navigate('bookkeeping')" class="atile at-green"><div class="atile-icon" style="background:#1a5830">◎</div><div><div class="atile-label">Finance</div><div class="atile-sub">Cash & bookkeeping</div></div></div>
+ <div onclick="navigate('integrations')" class="atile at-teal"><div class="atile-icon" style="background:#1a7868">⚙</div><div><div class="atile-label">Integrations</div><div class="atile-sub">Shopify · QB · POS</div></div></div>
+    <div onclick="navigate('bookkeeping')" class="atile at-green"><div class="atile-icon" style="background:#1a5830">◎</div><div><div class="atile-label">Finance</div><div class="atile-sub">Cash & bookkeeping</div></div></div>
  </div>
 
  ${notifs.length?`
