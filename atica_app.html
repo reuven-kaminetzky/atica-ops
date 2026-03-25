@@ -562,21 +562,78 @@ const getNotifs=()=>load(KEYS.NOTIFICATIONS,SEED_NOTIF);
  return po;
  };
 
- const advanceStage=(poId)=>{
+ const _checkStageGate=(po,from,to)=>{
+ // Helper to read po data keyed in localStorage
+ const plKey='am_po_pl_'+po.id;
+ const photoKey='am_photos';
+ const dnaKey='am_dna_'+po.id;
+ let pl={};try{pl=JSON.parse(localStorage.getItem(plKey)||'{}');}catch(e){}
+ let allPhotos={};try{allPhotos=JSON.parse(localStorage.getItem(photoKey)||'{}');}catch(e){}
+ const samplePhotos=(allPhotos['sample_'+po.id]||[]).length;
+ const receivingPhotos=(allPhotos['recv_'+po.id]||[]).length;
+ const plFilled=Object.keys(pl).length>0;
+
+ if(from===3&&to===4){
+  // Approved → Cutting: need FOB confirmed + deposit paid
+  if(!po.fob||po.fob<=0) return {ok:false,reason:'FOB cost not confirmed on PO. Enter FOB before cutting starts.'};
+  const deposit=(po.payments||[]).find(pm=>pm.desc&&pm.desc.toLowerCase().includes('deposit'));
+  if(!deposit||deposit.status!=='paid') return {ok:false,reason:'Deposit payment not recorded as paid. Mark 50% deposit paid before production begins.'};
+ }
+ if(from===4&&to===5){
+  // Cutting → Shipping docs: need pre-production sample photo + bin location
+  if(samplePhotos===0) return {ok:false,reason:'No pre-production sample photo uploaded. Upload photo via PO → Photos before shipping docs stage.'};
+  if(!po.sampleBin&&!po.binLocation) return {ok:false,reason:'Warehouse bin location not set for PP sample. Add bin location to PO before filing shipping docs.'};
+ }
+ if(from===5&&to===6){
+  // Shipping docs → At sea (in-transit): need PL, container, vessel, ETD
+  if(!plFilled) return {ok:false,reason:'Packing list not uploaded/confirmed. Complete the PL comparison before marking as shipped.'};
+  if(!po.container||po.container==='TBC') return {ok:false,reason:'Container number required before marking in transit. Enter container # on PO.'};
+  if(!po.vessel||po.vessel==='TBC') return {ok:false,reason:'Vessel name required. Enter vessel name before marking as shipped.'};
+  if(!po.etd) return {ok:false,reason:'ETD (departure date) not set. Set ETD before marking in transit.'};
+ }
+ if(from===6&&to===7){
+  // At sea → Customs: need ETA + ISF filed
+  if(!po.eta) return {ok:false,reason:'ETA not confirmed. Set ETA from vessel tracking before customs stage.'};
+  const checks={};try{Object.assign(checks,JSON.parse(localStorage.getItem('am_po_checks_'+po.id)||'{}'));}catch(e){}
+  if(!checks['wire_4']&&!po.isfFiled) return {ok:false,reason:'ISF 10+2 not confirmed filed. Mark ISF as filed (stage 5 checklist) before customs stage.'};
+ }
+ if(from===7&&to===8){
+  // Customs → Receiving: need customs entry number
+  if(!po.customsEntry&&!po.cbpEntry) return {ok:false,reason:'Customs entry number not recorded. Enter CBP entry # before receiving stage.'};
+ }
+ if(from===8&&to===9){
+  // Receiving → Complete: need receiving photo + actual unit count reconciled
+  if(receivingPhotos===0) return {ok:false,reason:'No receiving photo uploaded. Photograph received goods before marking PO complete.'};
+  if(!plFilled) return {ok:false,reason:'Received quantities not entered in packing list. Complete the receiving worksheet first.'};
+  const balance=(po.payments||[]).find(pm=>pm.desc&&pm.desc.toLowerCase().includes('balance'));
+  if(balance&&balance.status!=='paid') return {ok:false,reason:'Balance payment not recorded as paid. Mark final payment before closing PO.'};
+ }
+ return {ok:true};
+};
+
+advanceStage=(poId)=>{
  const pos=getPOs();const idx=pos.findIndex(p=>p.id===poId);
  if(idx<0||pos[idx].stage>=9)return null;
- pos[idx].stage++;
- pos[idx].stageLabel=['','Concept','Development','Sampling','Breakdown','Shipping','Invoicing','Cost accounting','Distribution','Marketing'][pos[idx].stage];
- if(!pos[idx].stageHistory)pos[idx].stageHistory={};
- pos[idx].stageHistory[pos[idx].stage]={done:true,date:new Date().toISOString().split('T')[0]};
- if(pos[idx].stage===5) pos[idx].status='in-transit'; // auto-set status
- if(pos[idx].stage===9) pos[idx].status='complete';
- save(KEYS.POS,pos);
- addNotif('info','All departments',`PO ${poId} advanced to Stage ${pos[idx].stage}: ${pos[idx].stageLabel}`,'pos');
- if(pos[idx].stage===5){
- autoCreateShipment(pos[idx]);
+ const po=pos[idx];
+ const fromStage=po.stage;
+ const toStage=fromStage+1;
+ // ── GATE CHECK ────────────────────────────────────────────────
+ const gate=_checkStageGate(po,fromStage,toStage);
+ if(!gate.ok){
+  if(typeof toast==='function') toast('Cannot advance: '+gate.reason,'error',5000);
+  else alert('Cannot advance: '+gate.reason);
+  return null;
  }
- return pos[idx];
+ po.stage=toStage;
+ po.stageLabel=['','Quote request','Sample review','Approved to produce','Cutting / production','Shipping docs','At sea','Customs clearance','Receiving / QC','Complete'][toStage];
+ if(!po.stageHistory)po.stageHistory={};
+ po.stageHistory[toStage]={done:true,date:new Date().toISOString().split('T')[0]};
+ if(toStage===6) po.status='in-transit';
+ if(toStage===9) po.status='complete';
+ save(KEYS.POS,pos);
+ addNotif('info','All departments',`PO ${poId} → Stage ${toStage}: ${po.stageLabel}`,'pos');
+ if(toStage===6){ autoCreateShipment(po); }
+ return po;
  };
 
  const SHIPMENT_KEY='am_shipments';
@@ -7423,19 +7480,92 @@ function renderPOs(){
  <button class="btn btn-sm" onclick="navigate('po-detail','${po.id}')">Open</button>
  <button class="btn btn-sm" onclick="navigate('po-stages','${po.id}')">Stages</button>
  <button class="btn btn-sm" onclick="navigate('product-detail','${po.mpId}')">Product</button>
- ${po.stage<9?`<button class="btn btn-sm btn-p" onclick="
- const p=Store.getPOs();const idx=p.findIndex(x=>x.id==='${po.id}');
- if(idx>=0){p[idx].stage=Math.min(9,p[idx].stage+1);const lb=['','Quote','Sample','Approved','Cutting','Shipping','At sea','Customs','Receiving','Complete'];p[idx].stageLabel=lb[p[idx].stage];
- if(p[idx].stage>=5&&p[idx].status==='active')p[idx].status='in-transit';if(p[idx].stage===9)p[idx].status='complete';
- if(!p[idx].stageHistory)p[idx].stageHistory={};p[idx].stageHistory[p[idx].stage]={done:true,date:new Date().toISOString().split('T')[0]};
- try{localStorage.setItem('am_pos',JSON.stringify(p));}catch(e){}toast('Stage '+(p[idx].stage),'success');navigate('pos');}
- ">→ Stage ${po.stage+1}</button>`:''}
+ ${po.stage<9?`<button class="btn btn-sm btn-p" onclick="advanceStageUI('${po.id}');navigate('pos')">→ Stage ${po.stage+1}</button>`:''}
  </div>
  </div>`:''}
  </div>`;
  }).join('')}
  </div>`;
 }
+function advanceStageUI(poId){
+ const po=Store.getPO(poId); if(!po) return;
+ const from=po.stage; const to=from+1;
+ const gate=Store._checkStageGate(po,from,to);
+ if(gate.ok){
+  Store.advanceStage(poId);
+  navigate('po-detail',poId);
+  return;
+ }
+ // Show what's blocking with actionable options
+ const stage=to;
+ const labels=['','Quote request','Sample review','Approved to produce','Cutting / production','Shipping docs','At sea','Customs clearance','Receiving / QC','Complete'];
+ openModal('Cannot advance to Stage '+to+': '+labels[to],`
+  <div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.25);border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;font-weight:600;color:var(--brick)">
+   ⛔ ${gate.reason}
+  </div>
+  <div style="font-size:12px;color:var(--txt3);margin-bottom:16px">Complete the requirement below, then try advancing again.</div>
+  ${_stageGateForm(po,from,to)}
+  <div style="margin-top:16px;display:flex;gap:8px">
+   <button class="btn btn-sm" onclick="closeModal()">Close</button>
+   <button class="btn btn-sm btn-p" onclick="_saveGateData('${poId}',${from},${to});closeModal();advanceStageUI('${poId}')">Save & retry</button>
+  </div>`,null);
+}
+
+function _stageGateForm(po,from,to){
+ if(from===3&&to===4) return `
+  <div class="dfield"><span class="dfield-l">FOB per unit ($)</span>
+   <input id="gf-fob" type="number" value="${po.fob||''}" placeholder="Enter FOB" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px;font-family:var(--mono)"/></div>
+  <div class="dfield" style="margin-top:8px"><span class="dfield-l">Deposit payment</span>
+   <span style="font-size:12px;color:var(--txt3)">Go to <b onclick="closeModal();navigate('po-payments','${po.id}')" style="color:var(--gold);cursor:pointer">Payments tab</b> and mark deposit as paid</span></div>`;
+ if(from===4&&to===5) return `
+  <div class="dfield"><span class="dfield-l">Sample bin location</span>
+   <input id="gf-bin" value="${po.sampleBin||po.binLocation||''}" placeholder="e.g. Rack B-12 / Reserve shelf 4" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px;width:200px"/></div>
+  <div class="dfield" style="margin-top:8px"><span class="dfield-l">Sample photo</span>
+   <span style="font-size:12px;color:var(--txt3)">Upload via <b onclick="closeModal();navigate('po-stages','${po.id}')" style="color:var(--gold);cursor:pointer">Stage 4 checklist</b> → Add photo</span></div>`;
+ if(from===5&&to===6) return `
+  <div class="dfield"><span class="dfield-l">Container #</span>
+   <input id="gf-container" value="${po.container&&po.container!=='TBC'?po.container:''}" placeholder="e.g. MSCU1234567" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px;font-family:var(--mono);width:180px"/></div>
+  <div class="dfield" style="margin-top:6px"><span class="dfield-l">Vessel</span>
+   <input id="gf-vessel" value="${po.vessel&&po.vessel!=='TBC'?po.vessel:''}" placeholder="e.g. MSC ANNA" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px;width:180px"/></div>
+  <div class="dfield" style="margin-top:6px"><span class="dfield-l">ETD</span>
+   <input id="gf-etd" type="date" value="${po.etd||''}" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px"/></div>
+  <div class="dfield" style="margin-top:8px"><span class="dfield-l">Packing list</span>
+   <span style="font-size:12px;color:var(--txt3)">Enter received qty via <b onclick="closeModal();navigate('po-pl-compare','${po.id}')" style="color:var(--gold);cursor:pointer">Packing List tab</b></span></div>`;
+ if(from===6&&to===7) return `
+  <div class="dfield"><span class="dfield-l">ETA</span>
+   <input id="gf-eta" type="date" value="${po.eta||''}" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px"/></div>
+  <div class="dfield" style="margin-top:6px"><span class="dfield-l">ISF filed</span>
+   <span style="font-size:12px;color:var(--txt3)">Confirm ISF 10+2 via <b onclick="closeModal();navigate('po-stages','${po.id}')" style="color:var(--gold);cursor:pointer">Stage 5 checklist</b></span></div>`;
+ if(from===7&&to===8) return `
+  <div class="dfield"><span class="dfield-l">CBP Entry #</span>
+   <input id="gf-entry" value="${po.customsEntry||po.cbpEntry||''}" placeholder="e.g. 2025-1234567-8" style="border:1px solid var(--brd);border-radius:4px;padding:4px 8px;font-size:13px;font-family:var(--mono);width:200px"/></div>`;
+ if(from===8&&to===9) return `
+  <div class="dfield"><span class="dfield-l">Balance payment</span>
+   <span style="font-size:12px;color:var(--txt3)">Mark balance paid in <b onclick="closeModal();navigate('po-payments','${po.id}')" style="color:var(--gold);cursor:pointer">Payments tab</b></span></div>
+  <div class="dfield" style="margin-top:6px"><span class="dfield-l">Receiving photo</span>
+   <span style="font-size:12px;color:var(--txt3)">Upload photo in <b onclick="closeModal();navigate('po-receiving','${po.id}')" style="color:var(--gold);cursor:pointer">Receiving worksheet</b></span></div>
+  <div class="dfield" style="margin-top:6px"><span class="dfield-l">Unit count</span>
+   <span style="font-size:12px;color:var(--txt3)">Complete packing list in <b onclick="closeModal();navigate('po-pl-compare','${po.id}')" style="color:var(--gold);cursor:pointer">PL Compare</b></span></div>`;
+ return '<div style="color:var(--txt3);font-size:12px">Check requirement and try again.</div>';
+}
+
+function _saveGateData(poId,from,to){
+ const pos=Store.getPOs(); const idx=pos.findIndex(p=>p.id===poId); if(idx<0) return;
+ const po=pos[idx];
+ const g=(id)=>{const el=document.getElementById(id);return el?el.value.trim():'';};
+ if(from===3) { if(g('gf-fob')) po.fob=parseFloat(g('gf-fob'))||po.fob; }
+ if(from===4) { if(g('gf-bin')) po.sampleBin=g('gf-bin'); }
+ if(from===5) {
+  if(g('gf-container')) po.container=g('gf-container');
+  if(g('gf-vessel')) po.vessel=g('gf-vessel');
+  if(g('gf-etd')) po.etd=g('gf-etd');
+ }
+ if(from===6) { if(g('gf-eta')) po.eta=g('gf-eta'); }
+ if(from===7) { if(g('gf-entry')) po.customsEntry=g('gf-entry'); po.cbpEntry=g('gf-entry'); }
+ try{localStorage.setItem('am_pos',JSON.stringify(pos));}catch(e){}
+ toast('Data saved','success');
+}
+
 function renderPODetail(poId){
  const po=Store.getPO(poId);if(!po){$('page').innerHTML='<div style="padding:40px;color:var(--faded)">PO not found.</div>';return;}
  const p=Store.getProduct(po.mpId);
@@ -7478,7 +7608,7 @@ function renderPODetail(poId){
  </div>
  <div style="display:flex;gap:2px;margin-bottom:8px">${stages.map((s,i)=>`<div style="flex:1;height:6px;border-radius:3px;background:${i<po.stage?'var(--grn)':i===po.stage?'var(--amb)':'var(--brd)'};transition:background .2s"></div>`).join('')}</div>
  <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:7px;color:var(--faded)">${stages.map(s=>`<span>${s}</span>`).join('')}</div>
- ${po.status!=='complete'?`<div style="margin-top:10px"><button class="btn btn-sm btn-p" onclick="Store.advanceStage('${poId}');navigate('po-detail','${poId}')">Advance to ${stages[po.stage]||'next'}</button></div>`:''}
+ ${po.status!=='complete'?`<div style="margin-top:10px"><button class="btn btn-sm btn-p" onclick="advanceStageUI('${poId}')">Advance to ${stages[po.stage]||'next'}</button></div>`:''}
  </div>
 
  
