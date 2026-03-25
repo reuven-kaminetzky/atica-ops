@@ -2112,13 +2112,28 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
        for (const v of velData.velocity) velBySku[(v.sku || '').toUpperCase()] = v;
      }
 
+     // Normalize Shopify location names to our internal LOCS
+     const ATICA_LOCS = ['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve','Wholesale'];
+     const normalizeLoc = (name) => {
+       const n = (name || '').toLowerCase().trim();
+       if (n.includes('lakewood'))       return 'Lakewood';
+       if (n.includes('flatbush') || n.includes('brooklyn')) return 'Flatbush';
+       if (n.includes('crown') || n.includes('ch'))          return 'Crown Heights';
+       if (n.includes('monsey') || n.includes('spring valley')) return 'Monsey';
+       if (n.includes('online') || n.includes('web') || n.includes('shopify')) return 'Online';
+       if (n.includes('reserve') || n.includes('warehouse') || n.includes('storage')) return 'Reserve';
+       if (n.includes('wholesale'))      return 'Wholesale';
+       return name; // keep original if no match
+     };
+
      // Inventory by inventoryItemId Ã¢ÂÂ { locationName: available }
      const invByItemId = {};
      if (invData && invData.locations) {
        for (const loc of invData.locations) {
          for (const lvl of loc.levels) {
            if (!invByItemId[lvl.inventoryItemId]) invByItemId[lvl.inventoryItemId] = {};
-           invByItemId[lvl.inventoryItemId][loc.locationName] = lvl.available || 0;
+           const normLoc = normalizeLoc(loc.locationName);
+           invByItemId[lvl.inventoryItemId][normLoc] = (invByItemId[lvl.inventoryItemId][normLoc] || 0) + (lvl.available || 0);
          }
        }
      }
@@ -2173,32 +2188,56 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
 
        // Ã¢ÂÂÃ¢ÂÂ Build live styles from ALL matching Shopify product variants Ã¢ÂÂÃ¢ÂÂ
        const seedStyles = styles[prod.id] || [];
-       // Group variants by style name (first option = color/fit) to avoid one card per size
-       const styleGroups = {};
-       const COLOR_PALETTE = ['#1a2a4a','#4a4a4a','#c8c8c8','#2a4a2a','#8a3a2a','#3a5a78','#6a5a4a','#4a3a6a','#7a6a5a','#2a3a5a','#5a3a2a','#3a6a5a'];
+       // Group Shopify variants by COLOR (style) — ignore fit and size dimensions
+       // Fit names: Lorenzo=slim, Alexander=regular, etc. Size: "34x30", "40R", "S/M/L/XL"
+       const FIT_NAMES = /^(lorenzo|alexander|classic|modern|slim|regular|relaxed|tailored|standard|athletic|comfort|straight|traditional|contemporary|fitted)$/i;
+       const SIZE_PATTERN = /^(\d{1,2}[xX]\d{2}|\d{2}[SRLT]|[xX]{0,2}[sSmMlLxX]{1,3}[lL]?|\d{2,3}(\.\d)?(\/\d+)?)$/;
+
+       const extractColor = (variantTitle, productOptions) => {
+         const parts = (variantTitle || '').split(' / ').map(p => p.trim()).filter(Boolean);
+         // If product has named options (e.g. option[0].name='Fit', option[1].name='Color')
+         // use the Color option value directly
+         if (productOptions && productOptions.length > 0) {
+           const colorOpt = productOptions.find(o => /color|colour|fabric|style/i.test(o.name));
+           if (colorOpt && parts.length >= productOptions.indexOf(colorOpt) + 1) {
+             const colorIdx2 = productOptions.indexOf(colorOpt);
+             if (parts[colorIdx2]) return parts[colorIdx2];
+           }
+         }
+         // Fallback: remove size parts and fit parts — what remains is the color/style
+         const colorParts = parts.filter(p => !SIZE_PATTERN.test(p) && !FIT_NAMES.test(p));
+         return colorParts.length > 0 ? colorParts.join(' / ') : (parts.filter(p => !SIZE_PATTERN.test(p))[0] || parts[0] || 'Default');
+       };
+
+       const COLOR_PALETTE = ['#1a2a4a','#4a4a4a','#c8c8c8','#2a4a2a','#8a3a2a','#3a5a78','#6a5a4a','#4a3a6a','#7a6a5a','#2a3a5a','#5a3a2a','#3a6a5a','#6a4a3a','#2a5a4a'];
        let colorIdx = 0;
+       const styleGroups = {}; // colorName -> aggregated style
+
        for (const mp of matchedShopify) {
          for (const sv of mp.variants) {
            const skuUpper = (sv.sku || '').toUpperCase();
            const existing = seedStyles.find(s => s.sku && s.sku.toUpperCase() === skuUpper);
            const vel = velBySku[skuUpper] || {};
-           const varTitle = sv.title || '';
-           const styleName = varTitle.includes(' / ') ? varTitle.split(' / ')[0].trim() : varTitle;
-           const groupKey = (mp.title !== sp.title ? mp.title + ' — ' : '') + styleName;
+           // Derive color — the true style dimension
+           const colorName = extractColor(sv.title, mp.options);
+           // Prefix product title if multiple Shopify products map to same seed product
+           const groupKey = (mp.title !== sp.title ? mp.title + ' — ' : '') + colorName;
            if (!styleGroups[groupKey]) {
-             const existingStyle = seedStyles.find(s => s.name && s.name.toLowerCase().includes(styleName.toLowerCase()));
+             // Try to match to an existing seed style by color name
+             const existingStyle = seedStyles.find(s =>
+               s.name && s.name.toLowerCase().includes(colorName.toLowerCase())
+             ) || existing;
              styleGroups[groupKey] = {
-               id: existing ? existing.id : ('sg-' + prod.id + '-' + groupKey.replace(/[^a-z0-9]/gi,'').toLowerCase().slice(0,12)),
-               code: existing ? existing.code : styleName.slice(0,4).toUpperCase().replace(/\s/g,''),
-               name: groupKey,
-               color: existing ? existing.color : (existingStyle ? existingStyle.color : COLOR_PALETTE[colorIdx++ % COLOR_PALETTE.length]),
-               skus: [], status: 'active', shopify: true,
-               shopifyProductTitle: mp.title,
-               price: parseFloat(sv.price) || 0,
+               id: existingStyle ? existingStyle.id : ('sc-' + prod.id + '-' + colorName.replace(/[^a-z0-9]/gi,'').toLowerCase().slice(0,10)),
+               code: existingStyle ? existingStyle.code : colorName.slice(0,4).toUpperCase().replace(/\s/g,''),
+               name: (mp.title !== sp.title ? mp.title + ' — ' : '') + colorName,
+               color: existingStyle ? existingStyle.color : COLOR_PALETTE[colorIdx++ % COLOR_PALETTE.length],
+               skus: [], fits: new Set(), status: 'active', shopify: true,
+               shopifyProductTitle: mp.title, price: parseFloat(sv.price) || 0,
                inventoryQty: 0, inventoryItemIds: [],
-               sell: existing ? existing.sell : 50, vel: 0,
-               grade: existing ? existing.grade : 'C',
-               colorFamily: existing ? existing.colorFamily : 'dark',
+               sell: existingStyle ? existingStyle.sell : 50, vel: 0,
+               grade: existingStyle ? existingStyle.grade : 'C',
+               colorFamily: existingStyle ? existingStyle.colorFamily : 'dark',
              };
            }
            const g = styleGroups[groupKey];
@@ -2206,10 +2245,16 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
            if (sv.inventoryItemId) g.inventoryItemIds.push(sv.inventoryItemId);
            g.inventoryQty += (sv.inventoryQty || 0);
            if (vel.unitsPerDay) g.vel += Math.round(vel.unitsPerDay * 30 * 10) / 10;
+           // Track fits within this color
+           const fitParts = (sv.title || '').split(' / ').filter(p => FIT_NAMES.test(p.trim()));
+           fitParts.forEach(f => g.fits.add(f.trim()));
          }
        }
        const liveStyles = Object.values(styleGroups).map(g => ({
-         ...g, sku: g.skus[0] || '', vel: Math.round(g.vel * 10) / 10,
+         ...g,
+         sku: g.skus[0] || '',
+         vel: Math.round(g.vel * 10) / 10,
+         fits: Array.from(g.fits), // e.g. ['Lorenzo', 'Alexander']
        }));
        if (liveStyles.length > 0) styles[prod.id] = liveStyles;
 
@@ -2227,7 +2272,8 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
          for (const sv of mp.variants) {
            if (sv.inventoryItemId && invByItemId[sv.inventoryItemId]) {
              for (const [locName, avail] of Object.entries(invByItemId[sv.inventoryItemId])) {
-               liveInv[locName] = (liveInv[locName] || 0) + avail;
+               const nl = normalizeLoc(locName);
+               liveInv[nl] = (liveInv[nl] || 0) + avail;
              }
            }
          }
