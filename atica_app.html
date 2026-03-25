@@ -259,21 +259,21 @@ const API = {
  async getNotifications() { return this._fetch('/api/notifications'); },
  async getActivity(limit) { return this._fetch('/api/activity?limit=' + (limit || 100)); },
  async health() { return this._fetch('/api/health'); },
- async shopifyStatus() { return this._fetch('/api/status'); },
+ async shopifyStatus() { return this._fetch('/api/shopify/status'); },
  async shopifyConnect(data) { return this._fetch('/api/shopify/connect', { method: 'POST', body: data }); },
  async shopifyDisconnect() { return this._fetch('/api/shopify/disconnect', { method: 'POST' }); },
- async shopifySyncProducts() { return this._fetch('/api/products/sync', { method: 'POST' }); },
- async shopifySyncOrders(since) { return this._fetch('/api/orders/sync', { method: 'POST', body: { since } }); },
- async shopifySyncInventory() { return this._fetch('/api/inventory/sync', { method: 'POST' }); },
- async shopifySnapshot() { return this._fetch('/api/ledger/snapshot', { method: 'POST' }); },
- async shopifySetupWebhooks(baseUrl) { return this._fetch('/api/status/webhooks', { method: 'POST', body: { base_url: baseUrl } }); },
- async shopifyVelocity(days) { return this._fetch('/api/orders/velocity?days=' + (days || 30)); },
- async shopifyLedger(params) { return this._fetch('/api/ledger?' + new URLSearchParams(params || {})); },
- async shopifySales(params) { return this._fetch('/api/orders/sales?' + new URLSearchParams(params || {})); },
- async shopifySnapshots(params) { return this._fetch('/api/ledger/snapshots?' + new URLSearchParams(params || {})); },
- async shopifySKUMap(filter) { return this._fetch('/api/products/sku-map?filter=' + (filter || 'all')); },
- async shopifyMapSKU(sku, data) { return this._fetch('/api/products/sku-map/' + encodeURIComponent(sku), { method: 'PATCH', body: data }); },
- async shopifyConfirmAllSKU() { return this._fetch('/api/products/sku-map/confirm-all', { method: 'POST' }); },
+ async shopifySyncProducts() { return this._fetch('/api/shopify/sync/products', { method: 'POST' }); },
+ async shopifySyncOrders(since) { return this._fetch('/api/shopify/sync/orders', { method: 'POST', body: { since } }); },
+ async shopifySyncInventory() { return this._fetch('/api/shopify/sync/inventory', { method: 'POST' }); },
+ async shopifySnapshot() { return this._fetch('/api/shopify/snapshot', { method: 'POST' }); },
+ async shopifySetupWebhooks(baseUrl) { return this._fetch('/api/shopify/webhooks/setup', { method: 'POST', body: { base_url: baseUrl } }); },
+ async shopifyVelocity(days) { return this._fetch('/api/shopify/velocity?days=' + (days || 30)); },
+ async shopifyLedger(params) { return this._fetch('/api/shopify/ledger?' + new URLSearchParams(params || {})); },
+ async shopifySales(params) { return this._fetch('/api/shopify/sales?' + new URLSearchParams(params || {})); },
+ async shopifySnapshots(params) { return this._fetch('/api/shopify/snapshots?' + new URLSearchParams(params || {})); },
+ async shopifySKUMap(filter) { return this._fetch('/api/shopify/sku-map?filter=' + (filter || 'all')); },
+ async shopifyMapSKU(sku, data) { return this._fetch('/api/shopify/sku-map/' + encodeURIComponent(sku), { method: 'PATCH', body: data }); },
+ async shopifyConfirmAllSKU() { return this._fetch('/api/shopify/sku-map/confirm-all', { method: 'POST' }); },
  async qbStatus() { return this._fetch('/api/qb/status'); },
  async qbAuth() { return this._fetch('/api/qb/auth'); },
  async qbDisconnect() { return this._fetch('/api/qb/disconnect', { method: 'POST' }); },
@@ -2126,7 +2126,7 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
  async function syncFromShopify() {
    try {
      // 1. Check connectivity
-     const statusRes = await fetch('/api/status');
+     const statusRes = await fetch('/api/shopify/status');
      if (!statusRes.ok) return { synced: false, reason: 'API unavailable' };
      const statusData = await statusRes.json();
      if (!statusData.connected) return { synced: false, reason: 'Not connected' };
@@ -2134,12 +2134,12 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
 
      // 2. Fetch products, inventory, velocity, sales, and orders in parallel
      const [prodRes, invRes, velRes, salesRes, ordersRes, treesRes] = await Promise.all([
-       fetch('/api/products/sync', { method: 'POST' }),
-       fetch('/api/inventory/sync', { method: 'POST' }),
-       fetch('/api/orders/velocity?days=30'),
-       fetch('/api/orders/sales?days=30'),
-       fetch('/api/orders/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
-       fetch('/api/products/trees'),
+       fetch('/api/shopify/sync/products', { method: 'POST' }),
+       fetch('/api/shopify/sync/inventory', { method: 'POST' }),
+       fetch('/api/shopify/velocity?days=30'),
+       fetch('/api/shopify/sales?days=30'),
+       fetch('/api/shopify/sync/orders', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
+       fetch('/api/shopify/product-trees'),
      ]);
      const prodData  = prodRes.ok  ? await prodRes.json()  : null;
      const treesData = treesRes && treesRes.ok ? await treesRes.json() : null;
@@ -5255,6 +5255,9 @@ function renderStyleDetail(combined){
  const styles = Store.getStyles(mpId);
  const s = styles.find(x=>x.id===styleId);
  if (!s) { $('page').innerHTML='<div style="padding:40px;color:var(--faded)">Style not found.</div>'; return; }
+ const sn = s._shopifyNode || null;
+ const realFits = sn ? sn.fits.filter(f=>f.name&&f.name!=='—') : null;
+ const realSizes = sn ? [...new Set(sn.fits.flatMap(f=>f.sizes))] : null;
 
  const sizes = Store.SIZE_SETS[p.sizes] || [];
  const core = Store.CORE[p.sizes] || [];
@@ -6496,9 +6499,9 @@ async function syncShopifyPOData(poId){
  toast('Syncing from Shopify...','info',2000);
  try{
   const [prodRes,invRes,draftRes]=await Promise.all([
-   fetch('/api/products/sync',{method:'POST'}),
-   fetch('/api/inventory/sync',{method:'POST'}),
-   fetch('/api/orders/drafts'),
+   fetch('/api/shopify/sync/products',{method:'POST'}),
+   fetch('/api/shopify/sync/inventory',{method:'POST'}),
+   fetch('/api/shopify/draft-orders'),
   ]);
   const lines=[];
 
@@ -11228,39 +11231,70 @@ function npCatChange(){
  if(vSel&&vOther){vSel.onchange=()=>{vOther.style.display=vSel.value===''?'block':'none';};}
 }
 function getProductStack(id) {
-  const p=Store.getProduct(id);if(!p)return null;
-  const styles=Store.getStyles(id);const pos=Store.getPOs().filter(po=>po.mpId===id);
-  const stock=Store.totalStock(id);const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();
-  const dna=(()=>{try{return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}');}catch(e){return{};}})();
-  const constr=dna.construction||{};const qc=dna.qc||{};
-  const catSpecs=Object.values(Store.CATEGORY_COMPONENTS[p.cat]||{}).flat();
-  const hasVendor=p.vendor&&p.vendor!=='—';const hasFob=p.fob>0;const hasHts=p.hts&&p.hts.length>=4;
-  const mk=(id2,label,done,val,action,actionLabel)=>({id:id2,label,done,val:val||'',action:action||'',actionLabel:actionLabel||''});
-  const phases=[
-    {id:'brief',label:'Brief',icon:'1',desc:'Product identity',sections:{
-      'Identity':[mk('name','Product name',p.name?.length>2,p.name),mk('code','Code',p.code?.length>=3,p.code),mk('cat','Category',p.cat&&p.cat!=='Uncategorized',p.cat),mk('desc','Description',p.description?.length>=20,(p.description?.length||0)+' chars'),mk('retail','Retail price',p.retail>0,'$'+p.retail,"navigate('pd-edit','"+id+"')"),mk('img','Hero image',!!p.heroImg,p.heroImg?'Set':'Missing')]
-    }},
-    {id:'sourcing',label:'Sourcing',icon:'2',desc:'Vendor & materials',sections:{
-      'Vendor':[mk('vendor','Vendor assigned',hasVendor,p.vendor,"navigate('pd-dna','"+id+"')"),mk('fob','FOB price',hasFob,'$'+p.fob),mk('lead','Lead time',p.lead>0,p.lead+'d'),mk('moq','MOQ',p.moq>0,p.moq+'u')]
-    }},
-    {id:'development',label:'Dev',icon:'3',desc:'Specs & samples',sections:{
-      'Construction':catSpecs.map(s=>mk(s.id,s.label,!!constr[s.id],constr[s.id]||'—',"navigate('pd-dna','"+id+"')")),
-      'Approval':[mk('sample','Sample approved',!!st.sampleApproved,st.sampleApproved||'Pending',"stackAction('"+id+"','sampleApproved')","Approve"),mk('fit','Fit approved',!!st.fitApproved,st.fitApproved||'Pending',"stackAction('"+id+"','fitApproved')","Approve")]
-    }},
-    {id:'costing',label:'Costing',icon:'4',desc:'Margin & pricing',sections:{
-      'Cost':[mk('hts','HTS code',hasHts,p.hts||'—'),mk('duty','Duty rate',p.duty>0,p.duty+'%'),mk('margin','Margin check',p.retail>0&&hasFob,Math.round((p.retail-p.fob*1.34)/p.retail*100)+'%'),mk('marginOk','Margin approved',!!st.marginApproved,st.marginApproved||'Pending',"stackAction('"+id+"','marginApproved')","Approve")]
-    }},
-    {id:'content',label:'Content',icon:'5',desc:'Photos & copy',sections:{
-      'Content':[mk('hero','Hero image',!!p.heroImg,p.heroImg?'Set':'Missing'),mk('desc2','Description 50+ chars',p.description?.length>=50,(p.description?.length||0)+' chars'),mk('shopify','Shopify listing',!!p.shopifyUrl,p.shopifyUrl?'Live':'No')]
-    }},
-    {id:'launch',label:'Launch',icon:'6',desc:'Go live',sections:{
-      'Inventory':[mk('stock','Stock received',stock>0,stock+' units'),mk('dist','Distributed',Store.LOCS.filter(l=>(Store.getInventoryFor(id)||{})[l]>0).length>1,Store.LOCS.filter(l=>(Store.getInventoryFor(id)||{})[l]>0).length+' locations'),mk('live','Go live',p.status==='active',p.status||'dev',"stackAction('"+id+"','goLive')","Go Live")]
-    }}
+  const p = Store.getProduct(id); if (!p) return null;
+
+  // ── Try to get real styles from am_product_trees (synced from Shopify) ──
+  const _trees = (() => { try { return JSON.parse(localStorage.getItem('am_product_trees')||'[]'); } catch(e) { return []; } })();
+  const _tree  = _trees.find(t => t.shopifyId === p.shopifyId) || null;
+
+  let styles;
+  if (_tree && _tree.styles && _tree.styles.length > 0) {
+    // Map Stallon's StyleNode → shape renderProductStack/renderStyleDetail expects
+    styles = _tree.styles.map(sn => ({
+      id:           (p.id + '-' + sn.name.replace(/[^a-z0-9]/gi,'_').toLowerCase()),
+      code:         sn.sku ? sn.sku.split('-').pop() : sn.name.slice(0,3).toUpperCase(),
+      name:         sn.name,
+      color:        sn.color || '#888',
+      colorFamily:  sn.name.toLowerCase().includes('navy')||sn.name.toLowerCase().includes('blue') ? 'dark' :
+                    sn.name.toLowerCase().includes('white')||sn.name.toLowerCase().includes('cream') ? 'light' : 'dark',
+      sku:          sn.sku || '',
+      status:       'active',
+      shopify:      true,
+      vel:          0, // real vel comes from getRealVelocity by style id
+      sell:         0,
+      grade:        null,
+      inventoryQty: sn.totalQty,
+      fits:         sn.fits.map(f => f.name).filter(n => n && n !== '—'),
+      sizes:        [...new Set(sn.fits.flatMap(f => f.sizes))],
+      _shopifyNode: sn, // keep raw data for detail view
+    }));
+  } else {
+    styles = Store.getStyles(id);
+  }
+
+  const pos     = Store.getPOs().filter(po => po.mpId === id);
+  const inv     = Store.getInventoryFor(id) || {};
+  const stock   = Store.totalStock(id);
+  const sizes   = Store.SIZE_SETS[p.sizes] || [];
+  const core    = Store.CORE[p.sizes] || [];
+  const catComps = Store.CATEGORY_COMPONENTS[p.cat] || {};
+  const st  = (() => { try { return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}'); } catch(e) { return {}; } })();
+  const dna = (() => { try { return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}'); } catch(e) { return {}; } })();
+  const constr = dna.construction || {};
+  const realVel  = getRealVelocity(id, 30);
+  const vel      = realVel > 0 ? realVel : (p.vel || 0);
+  const cover    = vel > 0 ? Math.round(stock / vel) : 999;
+  const lnd      = p.fob ? Math.round(p.fob * 1.34 * 100) / 100 : 0;
+  const margin   = p.retail && lnd ? Math.round((p.retail - lnd) / p.retail * 100) : 0;
+  const sold30   = (getSalesByProduct(getSalesSince(30))[id] || {}).units || 0;
+  const openPOs  = pos.filter(po => po.status !== 'complete');
+  const incoming = openPOs.reduce((s, po) => s + (po.units || 0), 0);
+  const activeLocs = Store.LOCS.filter(l => (inv[l] || 0) > 0);
+  const oosLocs    = Store.LOCS.filter(l => l !== 'Reserve' && (inv[l] || 0) === 0);
+  const allSpecs   = Object.values(catComps).flat();
+  const filledSpecs = allSpecs.filter(s => constr[s.id]);
+  const specPct    = allSpecs.length > 0 ? Math.round(filledSpecs.length / allSpecs.length * 100) : 0;
+  const approvals  = [
+    { id:'sampleApproved', label:'Initial sample', date: st.sampleApproved },
+    { id:'fitApproved',    label:'Fit sample',     date: st.fitApproved    },
+    { id:'ppApproved',     label:'Pre-production', date: st.ppApproved     },
+    { id:'marginApproved', label:'Margin sign-off',date: st.marginApproved },
   ];
-  phases.forEach(ph=>{const reqs=Object.values(ph.sections).flat();ph.total=reqs.length;ph.done=reqs.filter(r=>r.done).length;ph.pct=ph.total>0?Math.round(ph.done/ph.total*100):0;ph.complete=ph.pct===100;});
-  const totalReqs=phases.reduce((s,ph)=>s+ph.total,0);const totalDone=phases.reduce((s,ph)=>s+ph.done,0);
-  const totalPct=totalReqs>0?Math.round(totalDone/totalReqs*100):0;
-  return{phases,totalDone,totalReqs,totalPct,p,styles,pos,stock};
+  const fromShopify = !!(_tree && _tree.styles && _tree.styles.length > 0);
+
+  return { p, styles, pos, openPOs, inv, stock, sizes, core, catComps, constr,
+           vel, cover, lnd, margin, sold30, incoming, specPct, filledSpecs, allSpecs,
+           approvals, st, fromShopify, _tree };
 }
 
 function stackAction(productId, action) {
@@ -11293,12 +11327,25 @@ function stackAction(productId, action) {
 function renderProductStack(id) {
   const data=getProductStack(id);
   if(!data){$('page').innerHTML='<div style="padding:40px;color:var(--faded)">Product not found.</div>';return;}
-  const {phases,totalDone,totalReqs,totalPct,p,styles,pos,stock}=data;
+  const {p,styles,pos,openPOs,inv,stock,sizes,core,catComps,constr,
+         vel,cover,lnd,margin,sold30,incoming,specPct,filledSpecs,allSpecs,
+         approvals,st,fromShopify,_tree}=data;
   const season=Store.getCurrentSeason();
-  const adjVel=(()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:Math.round((p.vel||0)*season.multiplier*10)/10;})();
-  const coverWk=adjVel>0?Math.round(stock/adjVel):999;
-  const landed=Math.round(p.fob*1.34*100)/100;
-  const margin=p.retail>0?Math.round((p.retail-landed)/p.retail*100):0;
+  // Rebuild phase compat vars for the render template
+  const phases=[
+    {id:'identity',label:'Identity',pct:p.name&&p.code&&p.cat?100:50,complete:!!(p.name&&p.code&&p.cat&&p.heroImg)},
+    {id:'sourcing', label:'Sourcing', pct:p.vendor&&p.fob&&p.hts?100:p.vendor||p.fob?60:0,complete:!!(p.vendor&&p.fob&&p.hts&&p.duty)},
+    {id:'dna',      label:'DNA',     pct:specPct,complete:specPct===100},
+    {id:'pos',      label:'POs',     pct:pos.length>0?Math.min(100,pos.length*25):0,complete:pos.filter(po=>po.status==='complete').length>0},
+    {id:'live',     label:'Live',    pct:stock>0&&vel>0?100:stock>0?50:0,complete:p.status==='active'&&stock>0&&vel>0},
+  ];
+  const totalReqs=phases.length*100;
+  const totalDone=phases.reduce((s,ph)=>s+ph.pct,0);
+  const totalPct=Math.round(totalDone/phases.length);
+  // Compat aliases
+  const adjVel=vel;
+  const coverWk=cover;
+  const landed=lnd;
   const vendorId=(()=>{const vs=Store.getVendors();const f=vs.find(v=>p.vendor.includes(v.short||v.name));return f?f.id:null;})();
   const vendor=vendorId?Store.getVendor(vendorId):null;
   const comps=(()=>{try{return JSON.parse(localStorage.getItem('am_components_v2')||'{}');}catch(e){return{};}})();
@@ -13205,7 +13252,7 @@ async function loadDraftOrders() {
   const status = document.getElementById('drafts-status');
   if(badge) badge.textContent = 'LOADING...';
   try {
-    const res = await fetch('/api/orders/drafts');
+    const res = await fetch('/api/shopify/draft-orders');
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const count = data.count || 0;
@@ -13238,14 +13285,14 @@ async function testShopifyConnection() {
 
   badge.textContent = 'TESTING...';
   badge.className = 'badge b-gry';
-  box.textContent = 'Calling /api/status...';
+  box.textContent = 'Calling /api/shopify/status...';
   if(log) { log.style.display='block'; log.textContent=''; }
 
   const addLog = (msg) => { if(log){ log.textContent += '\n' + msg; log.scrollTop=log.scrollHeight; } };
 
   try {
-    addLog('→ GET /api/status');
-    const res = await fetch('/api/status');
+    addLog('→ GET /api/shopify/status');
+    const res = await fetch('/api/shopify/status');
     addLog('← HTTP ' + res.status);
 
     if (!res.ok) {
@@ -13289,7 +13336,7 @@ async function runShopifySync() {
   try {
     const [syncResult, draftResult] = await Promise.all([
       Store.syncFromShopify(),
-      fetch('/api/orders/drafts').then(r=>r.ok?r.json():{count:0,error:'unavailable'}),
+      fetch('/api/shopify/draft-orders').then(r=>r.ok?r.json():{count:0,error:'unavailable'}),
     ]);
     const draftMsg = draftResult.count !== undefined ? ' · '+draftResult.count+' draft orders' : '';
     if(box) box.textContent = syncResult.synced
