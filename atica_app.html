@@ -3638,20 +3638,6 @@ function renderFinAP(){
  const fin=Store.getRealFinancials();
  const invoices=(fin.invoices||[]);
  const orders=(fin.orders||[]);
- // Augment with real PO payments from Store.getPOs()
- const realPOs=Store.getPOs();
- const realPayments=realPOs.flatMap(po=>(po.payments||[]).map(pm=>({
-   ...pm,
-   vendor: po.vendor||'—',
-   desc: (po.mpName||po.num||'')+(pm.desc?' — '+pm.desc:''),
-   poId: po.id,
-   poNum: po.num||po.id,
-   mpId: po.mpId,
- })));
- const realOverdue=realPayments.filter(pm=>pm.status==='overdue');
- const realDue=realPayments.filter(pm=>pm.status==='due'||pm.status==='projected');
- const realPaid=realPayments.filter(pm=>pm.status==='paid');
- const realUnpaid=realPayments.filter(pm=>pm.status!=='paid').reduce((s,pm)=>s+(pm.amount||0),0);
  const pos=Store.getPOs();
  const prods=Store.getProducts();
  const vendors=Store.getVendors();
@@ -3685,9 +3671,8 @@ function renderFinAP(){
  $('page').innerHTML=`
  <div style="max-width:860px">
  <div class="back-link" onclick="navigate('bookkeeping')">← Finance</div>
- <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px"><div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px">Accounts Payable</div><div style="font-family:var(--mono);font-size:10px;color:var(--faded)">Seed invoices + ${realPOs.length} live POs</div></div>
- <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--brick);margin-bottom:16px">${fmt(totalAP)} outstanding</div>
- ${realDue.length+realOverdue.length>0?`<div style='background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px'><div style='padding:10px 14px;border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3)'><span>Live PO Payments — ${realPOs.length} POs</span><span style='color:var(--brick);font-family:var(--mono)'>${'$'}${Math.round(realUnpaid).toLocaleString()} unpaid</span></div>${[...realOverdue,...realDue].slice(0,15).map(pm=>`<div onclick='navigate("po-detail","${pm.poId}")' style='padding:9px 14px;border-bottom:1px solid var(--brd);display:grid;grid-template-columns:1fr 90px 90px;gap:8px;cursor:pointer;font-size:11px' class='row-hover'><div><div style='font-weight:600'>${pm.vendor}</div><div style='color:var(--txt3);font-size:10px;margin-top:1px'>${pm.poNum} — ${pm.desc}</div></div><div style='font-family:var(--mono);text-align:right;font-weight:700;color:${pm.status==='overdue'?'var(--brick)':'var(--txt2)'}'>$${Math.round(pm.amount||0).toLocaleString()}</div><div style='text-align:right'><span class='badge ${pm.status==='overdue'?'b-red':pm.status==='paid'?'b-grn':'b-amb'}'>${pm.status}</span></div></div>`).join('')}</div>`:''}
+ <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:8px">Accounts Payable</div>
+ <div style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--brick);margin-bottom:24px">${fmt(totalAP)} outstanding</div>
 
  ${sortedVendors.map(([vendor,data],vi)=>{
  const vk='ap_'+vi;const expanded=X[vk];
@@ -3935,9 +3920,6 @@ function renderFinValuation(){
   const LOCS=Store.LOCS;
   const season=Store.getCurrentSeason();
 
-  const intgV=Store.getIntegrations();
-  const lastSyncV=intgV.shopify?.lastSync?new Date(intgV.shopify.lastSync):null;
-  const isRealInventory=!!lastSyncV; // true if we've synced from Shopify
   const data=prods.map(p=>{
     const stock=Store.totalStock(p.id);
     const inv=Store.getInventoryFor(p.id)||{};
@@ -4947,18 +4929,6 @@ function renderTransferDetail(xferId){
  const idx=all.findIndex(x=>x.id==='${xf.id}');
  if(idx>=0){
  all[idx].status='complete';localStorage.setItem('am_transfers',JSON.stringify(all));
- // Write inventory adjustment to Shopify for both locations
- (async()=>{
-   const xf=all[idx];
-   try{
-     const styles=Store.getStyles(xf.mpId||xf.productId||'');
-     const style=styles&&styles[0];
-     if(style&&style.inventoryItemIds&&style.inventoryItemIds.length){
-       // deduct from source, add to dest — best effort
-       console.log('[Transfer] Shopify inventory adjustment queued for',xf.id);
-     }
-   }catch(e){console.warn('[Transfer] Shopify write-back failed:',e);}
- })();
  ${xf.styleId&&xf.size?`adjustVariant('${xf.mpId}','${xf.styleId}','${xf.size}','${xf.from}',-${xf.qty||0});adjustVariant('${xf.mpId}','${xf.styleId}','${xf.size}','${xf.to}',${xf.qty||0});`:`adjustInventory('${xf.mpId}','${xf.from}',-${xf.qty||0});adjustInventory('${xf.mpId}','${xf.to}',${xf.qty||0});`}
  toast('Transfer complete — inventory updated','success');navigate('transfer-detail','${xf.id}');
  }
@@ -6796,18 +6766,16 @@ function renderAnVelocity(){
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
- const realVel=getRealVelocity(p.id,30);
- const adjVel=realVel>0?realVel:Math.round((p.vel||0)*season.multiplier*10)/10;
+ const adjVel=Math.round(p.vel*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const weeklyRev=Math.round(adjVel*p.retail);
  const annualRev=weeklyRev*52;
  const landed=Math.round(p.fob*1.34*100)/100;
  const margin=p.retail>0?Math.round((p.retail-landed)/p.retail*100):0;
- const soldUnits=(getSalesByProduct(getSalesSince(30))[p.id]||{}).units||0;
- const sellThru=adjVel>0&&stock>0?Math.round(adjVel/(adjVel+stock/52)*100):p.sell;
+ const sellThru=p.sell;
  const annualTurns=stock>0&&adjVel>0?Math.round(adjVel*52/stock*10)/10:0;
  const inv=Store.getInventoryFor(p.id)||{};
- return{...p,stock,styles,adjVel,cover,weeklyRev,annualRev,landed,margin,sellThru,annualTurns,inv,soldUnits};
+ return{...p,stock,styles,adjVel,cover,weeklyRev,annualRev,landed,margin,sellThru,annualTurns,inv};
  });
 
  const cats=['all',...new Set(prods.map(p=>p.cat))];
@@ -8413,12 +8381,9 @@ function wizSubmit(){
 function renderInventory(){
   const prods=Store.getProducts();
   const LOCS=Store.LOCS;
-  const season=Store.getCurrentSeason();
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
-  // Use real velocity from orders; fall back to seed×season
-  const getVel=p=>{const r=getRealVelocity(p.id,30);return r>0?r:Math.round((p.vel||0)*season.multiplier*10)/10;};
-  const oos=prods.filter(p=>Store.totalStock(p.id)===0&&getVel(p)>0);
-  const lowStock=prods.filter(p=>{const v=getVel(p);return v>0&&Store.totalStock(p.id)/v<8;});
+  const oos=prods.filter(p=>Store.totalStock(p.id)===0&&p.vel>0);
+  const lowStock=prods.filter(p=>{const v=p.vel*Store.getCurrentSeason().multiplier;return v>0&&Store.totalStock(p.id)/v<8;});
 
   $('page').innerHTML=`
   <div style="max-width:940px">
@@ -8601,7 +8566,7 @@ function renderDistribution(){
   const data=prods.map(p=>{
     const inv=Store.getInventoryFor(p.id)||{};
     const stock=Store.totalStock(p.id);
-    const realV=getRealVelocity(p.id,30);const adjVel=realV>0?realV:Math.round((p.vel||0)*season.multiplier*10)/10;
+    const adjVel=Math.round(p.vel*season.multiplier*10)/10;
 
     // Store allocation weights (Lakewood=30%, Flatbush=20%, Crown Heights=15%, Monsey=25%, Online=10%)
     const weights={Lakewood:.30,Flatbush:.20,'Crown Heights':.15,Monsey:.25,Online:.10};
@@ -8692,7 +8657,7 @@ function renderStockouts(){
  prods.forEach(p=>{
  const inv=Store.getInventoryFor(p.id);
  const stock=Store.totalStock(p.id);
- const adjVel=Math.round((()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:(p.vel||0)*season.multiplier;})()*10)/10;
+ const adjVel=Math.round(p.vel*season.multiplier*10)/10;
  STORES.forEach(loc=>{
  if((inv[loc]||0)===0){
  oos.push({...p,loc,stock,adjVel,reserve:inv.Reserve||0,inv});
@@ -10374,198 +10339,240 @@ function renderRetailView(store){
  </div>`;
 }
 function renderProducts(){
-  // ── State ──────────────────────────────────────────────────────
-  if(!window._mp){window._mp={cat:'all',filter:'',sort:'vel',dir:-1,open:{}};}
-  const S = window._mp;
+ // ── State ─────────────────────────────────────────────────────────
+ if(!window._prod){window._prod={sort:'vel',dir:-1,filter:'',cat:'all',view:'grid',expand:{}};}
+ const S=window._prod;
 
-  // ── Data ───────────────────────────────────────────────────────
-  const mps      = Store.getProducts();
-  const season   = Store.getCurrentSeason();
-  const allCats  = ['all',...[...new Set(mps.map(p=>p.cat).filter(Boolean))].sort()];
-  const filtered = S.cat==='all' ? mps : mps.filter(p=>p.cat===S.cat);
-  const searched = S.filter
-    ? filtered.filter(p => [p.name,p.code,p.cat,p.vendor].join(' ').toLowerCase().includes(S.filter.toLowerCase()))
-    : filtered;
+ // ── Data ──────────────────────────────────────────────────────────
+ const intg=Store.getIntegrations();
+ const shopify=intg.shopify||{};
+ const lastSync=shopify.lastSync?new Date(shopify.lastSync):null;
+ const ageMin=lastSync?Math.round((Date.now()-lastSync.getTime())/60000):9999;
+ const stale=ageMin>240; // >4 hours = stale
 
-  const sales30  = getSalesSince(30);
-  const byProd   = getSalesByProduct(sales30);
+ const prods=Store.getProducts();
+ const cats=['all',...[...new Set(prods.map(p=>p.cat).filter(Boolean))].sort()];
+ const filtered=S.cat==='all'?prods:prods.filter(p=>p.cat===S.cat);
+ const searched=S.filter?filtered.filter(p=>{
+  const q=S.filter.toLowerCase();
+  return p.name.toLowerCase().includes(q)||(p.code||'').toLowerCase().includes(q)||(p.cat||'').toLowerCase().includes(q);
+ }):filtered;
 
-  const rows = searched.map(p => {
-    const styles  = Store.getStyles(p.id);
-    const stock   = Store.totalStock(p.id);
-    const realVel = getRealVelocity(p.id, 30);
-    const vel     = realVel > 0 ? realVel : Math.round((p.vel||0)*season.multiplier*10)/10;
-    const cover   = vel > 0 ? Math.round(stock/vel) : 999;
-    const lnd     = p.fob ? Math.round(p.fob*1.34*100)/100 : 0;
-    const mg      = p.retail && lnd ? Math.round((p.retail-lnd)/p.retail*100) : 0;
-    const sold    = (byProd[p.id]||{}).units||0;
-    const openPOs = Store.getPOs().filter(po=>po.mpId===p.id&&po.status!=='complete');
-    return {...p, styles, stock, vel, cover, lnd, mg, sold, openPOs};
-  }).sort((a,b)=>{
-    const va=a[S.sort]??0, vb=b[S.sort]??0;
-    return typeof va==='string' ? va.localeCompare(vb)*S.dir : (vb-va)*S.dir;
-  });
+ const sales30=getSalesSince(30);
+ const byProd=getSalesByProduct(sales30);
+ const season=Store.getCurrentSeason();
 
-  const sh = (label,key) => `<span onclick="window._mp.sort='${key}';window._mp.dir=${S.sort===key?-S.dir:-1};navigate('products')"
-    style="cursor:pointer;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:${S.sort===key?'var(--gold)':'var(--txt4)'};font-weight:${S.sort===key?700:500}">
-    ${label}${S.sort===key?(S.dir<0?' ▾':' ▴'):''}
-  </span>`;
+ const enriched=searched.map(p=>{
+  const styles=Store.getStyles(p.id);
+  const stock=Store.totalStock(p.id);
+  const inv=Store.getInventoryFor(p.id)||{};
+  const realVel=getRealVelocity(p.id,30);
+  const vel=realVel>0?realVel:Math.round((p.vel||0)*season.multiplier*10)/10;
+  const cover=vel>0?Math.round(stock/vel):999;
+  const lnd=p.fob?Math.round(p.fob*1.34*100)/100:0;
+  const mg=p.retail&&lnd?Math.round((p.retail-lnd)/p.retail*100):0;
+  const revMo=Math.round(vel*(p.retail||0)*4.33);
+  const sales=byProd[p.id]||{units:0,revenue:0};
+  const activeStyles=styles.filter(s=>s.status!=='discontinued');
+  // real stock per location if available
+  const locBreak=Store.LOCS.map(l=>({loc:l,qty:inv[l]||0})).filter(x=>x.qty>0);
+  return{...p,styles:activeStyles,stock,inv,vel,cover,lnd,mg,revMo,salesUnits:sales.units,salesRev:sales.revenue,locBreak,styleCount:activeStyles.length};
+ });
 
-  const totStock = rows.reduce((s,p)=>s+p.stock,0);
-  const totVel   = rows.reduce((s,p)=>s+p.vel,0);
-  const intg     = Store.getIntegrations();
-  const lastSync = intg.shopify?.lastSync ? new Date(intg.shopify.lastSync) : null;
-  const ageMin   = lastSync ? Math.round((Date.now()-lastSync.getTime())/60000) : 9999;
+ const sorted=[...enriched].sort((a,b)=>{
+  const va=a[S.sort]??0,vb=b[S.sort]??0;
+  return typeof va==='string'?(va.localeCompare(vb))*S.dir:(vb-va)*S.dir;
+ });
 
-  $('page').innerHTML = `
-  <div style="max-width:1000px">
+ const sortH=(label,key)=>`<span onclick="window._prod.sort='${key}';window._prod.dir=${S.sort===key?-S.dir:-1};navigate('products')"
+  style="cursor:pointer;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:${S.sort===key?'var(--gold)':'var(--faded)'};font-weight:${S.sort===key?700:500}">
+  ${label}${S.sort===key?(S.dir<0?' ▾':' ▴'):''}
+ </span>`;
 
-    <!-- HEADER -->
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;gap:12px;flex-wrap:wrap">
-      <div>
-        <div style="font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.4px">Master Products</div>
-        <div style="font-size:11px;color:var(--faded);margin-top:3px;font-family:var(--mono)">
-          ${rows.length} MPs · ${totStock.toLocaleString()} units · ${totVel.toFixed(1)} u/wk
-          <span style="margin-left:10px;color:${lastSync&&ageMin<240?'var(--grn)':'var(--amb)'}">● ${lastSync?'synced '+(ageMin<60?ageMin+'m':Math.round(ageMin/60)+'h')+' ago':'not synced'}</span>
-        </div>
+ const totStock=enriched.reduce((s,p)=>s+p.stock,0);
+ const totRev=enriched.reduce((s,p)=>s+p.revMo,0);
+ const totVel=enriched.reduce((s,p)=>s+p.vel,0);
+ const connected=shopify.connected;
+
+ $('page').innerHTML=`
+ <div style="max-width:980px">
+
+  <!-- HEADER -->
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;gap:12px;flex-wrap:wrap">
+   <div>
+    <div style="font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.4px">Products</div>
+    <div style="font-size:11px;color:var(--faded);margin-top:3px;font-family:var(--mono)">
+     ${searched.length} master products · ${totStock.toLocaleString()} units · $${Math.round(totRev/1000)}K/mo · ${totVel.toFixed(1)} u/wk
+    </div>
+   </div>
+   <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <!-- Sync status -->
+    <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:10px;cursor:pointer"
+     onclick="(async()=>{const btn=this;btn.textContent='Syncing…';try{const r=await Store.syncFromShopify();navigate('products');if(r.synced)toast('Synced '+r.totalProducts+' products','success');else toast(r.reason||'Sync failed','error');}catch(e){toast('Sync error','error');}})()"
+     title="${lastSync?'Last sync: '+lastSync.toLocaleTimeString():'Never synced'}">
+     <span style="width:6px;height:6px;border-radius:50%;background:${connected?stale?'var(--amb)':'var(--grn)':'var(--red)'};flex-shrink:0"></span>
+     <span style="font-family:var(--mono);color:var(--faded)">${connected?(stale?'Stale ':'Synced '+(ageMin<60?ageMin+'m':Math.round(ageMin/60)+'h')+' ago'):'Disconnected'}</span>
+    </div>
+    <button class="btn" onclick="navigate('purchasing')">Buying plan</button>
+    <button class="btn btn-p" onclick="showNewProductModal()">+ New MP</button>
+   </div>
+  </div>
+
+  <!-- SYNC NUDGE if stale -->
+  ${stale?`<div style="background:rgba(138,78,8,.06);border:1px solid rgba(138,78,8,.2);border-radius:var(--rl);padding:10px 14px;font-size:11px;color:var(--amb);margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+   <span>⚠ Data is ${ageMin>1440?Math.round(ageMin/1440)+'d':'~'+Math.round(ageMin/60)+'h'} old. Sync Shopify for live inventory &amp; velocity.</span>
+   <button class="btn btn-sm" style="border-color:var(--amb);color:var(--amb)" onclick="(async()=>{this.textContent='Syncing…';const r=await Store.syncFromShopify();navigate('products');toast(r.synced?'Synced '+r.totalProducts+' products':r.reason||'Sync failed',r.synced?'success':'error')})()">Sync now</button>
+  </div>`:''}
+
+  <!-- CATEGORY PILLS -->
+  <div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
+   ${cats.map(cat=>`<span onclick="window._prod.cat='${cat}';window._prod.expand={};navigate('products')"
+    style="cursor:pointer;padding:5px 12px;border-radius:14px;font-size:10px;font-family:var(--mono);border:1px solid ${S.cat===cat?'var(--gold)':'var(--brd)'};background:${S.cat===cat?'rgba(184,154,90,.12)':'var(--sur2)'};color:${S.cat===cat?'var(--gold)':'var(--txt2)'};font-weight:${S.cat===cat?700:400};transition:all .1s">
+    ${cat==='all'?'All ('+prods.length+')':cat}
+   </span>`).join('')}
+  </div>
+
+  <!-- SEARCH -->
+  <input type="text" placeholder="Search products, codes…" value="${S.filter||''}"
+   oninput="window._prod.filter=this.value;navigate('products')"
+   style="width:100%;border:1px solid var(--brd);border-radius:8px;padding:9px 14px;font-size:12px;background:var(--sur);margin-bottom:10px;font-family:var(--mono)"/>
+
+  <!-- COLUMN HEADERS -->
+  <div style="display:grid;grid-template-columns:1fr 52px 52px 58px 52px 52px 48px 52px;gap:3px;padding:4px 14px;align-items:center">
+   <span style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--faded)">MASTER PRODUCT</span>
+   ${sortH('STOCK','stock')}${sortH('VEL/W','vel')}${sortH('REV/MO','revMo')}${sortH('COVER','cover')}${sortH('MG%','mg')}${sortH('STYLES','styleCount')}${sortH('SOLD','salesUnits')}
+  </div>
+
+  <!-- PRODUCT ROWS -->
+  ${sorted.length===0?`<div style="padding:40px;text-align:center;color:var(--faded);font-size:13px">No products match "${S.filter}"</div>`:''}
+  ${sorted.map((p,i)=>{
+   const ek='p_'+i;
+   const exp=S.expand[ek];
+   const statusColor=p.status==='active'?'var(--grn)':p.status==='development'?'var(--amb)':'var(--faded)';
+   const coverColor=p.cover<6?'var(--brick)':p.cover<12?'var(--amb)':'var(--faded)';
+   const mgColor=p.mg>=70?'var(--grn)':p.mg>0?'var(--faded)':'var(--brick)';
+   const stockColor=p.stock<20?'var(--brick)':p.stock<50?'var(--amb)':'var(--ink)';
+   const hasPOs=Store.getPOs().filter(po=>po.mpId===p.id&&po.status!=='complete');
+
+   return`
+   <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);margin-bottom:2px;overflow:hidden;transition:border-color .1s" onmouseover="this.style.borderColor='var(--brd-s)'" onmouseout="this.style.borderColor='var(--brd)'">
+
+    <!-- ROW -->
+    <div onclick="window._prod.expand['${ek}']=!window._prod.expand['${ek}'];navigate('products')"
+     style="display:grid;grid-template-columns:1fr 52px 52px 58px 52px 52px 48px 52px;gap:3px;align-items:center;padding:10px 14px;cursor:pointer">
+
+     <!-- PRODUCT INFO -->
+     <div style="display:flex;align-items:center;gap:8px;min-width:0">
+      ${p.heroImg?`<img src="${p.heroImg}" style="width:26px;height:34px;object-fit:cover;border-radius:3px;flex-shrink:0;border:1px solid var(--brd)" alt=""/>`:'<div style="width:26px;height:34px;background:var(--bg);border-radius:3px;flex-shrink:0;border:1px solid var(--brd)"></div>'}
+      <div style="min-width:0">
+       <div style="display:flex;align-items:baseline;gap:5px;flex-wrap:wrap">
+        <span style="font-family:var(--display);font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</span>
+        ${hasPOs.length?`<span style="font-size:8px;font-weight:600;padding:1px 5px;border-radius:4px;background:rgba(26,68,144,.08);color:var(--blu);flex-shrink:0">${hasPOs.length} PO${hasPOs.length>1?'s':''}</span>`:''}
+        ${p.shopifyAutoCreated?'<span style="font-size:8px;padding:1px 5px;border-radius:4px;background:rgba(0,0,0,.05);color:var(--faded);flex-shrink:0">auto</span>':''}
+       </div>
+       <div style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-top:1px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <span style="color:${statusColor}">●</span>
+        <span>${p.code||'—'}</span>
+        <span>${p.cat||'—'}</span>
+        ${p.retail?`<span>$${p.retail}</span>`:''}
+        ${p.vendor?`<span style="overflow:hidden;text-overflow:ellipsis;max-width:100px;white-space:nowrap">${p.vendor}</span>`:''}
+       </div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <button class="btn btn-sm" onclick="(async()=>{this.textContent='Syncing…';const r=await Store.syncFromShopify();navigate('products');toast(r.synced?'Synced '+r.totalProducts+' products':r.reason||'Sync failed',r.synced?'success':'error')})()">↻ Sync</button>
-        <button class="btn btn-sm" onclick="navigate('purchasing')">Buying plan</button>
-        <button class="btn btn-p btn-sm" onclick="showNewProductModal()">+ New MP</button>
+     </div>
+
+     <!-- METRICS -->
+     <span style="font-family:var(--mono);font-size:12px;text-align:right;font-weight:700;color:${stockColor}">${p.stock}</span>
+     <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.vel>0?'var(--txt2)':'var(--faded)'}">${p.vel>0?p.vel:'—'}</span>
+     <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.revMo>0?'var(--grn)':'var(--faded)'}">${p.revMo>0?'$'+Math.round(p.revMo/1000)+'K':'—'}</span>
+     <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${coverColor}">${p.cover>99?'∞':p.cover+'w'}</span>
+     <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${mgColor}">${p.mg>0?p.mg+'%':'—'}</span>
+     <span style="font-family:var(--mono);font-size:11px;text-align:right;color:var(--faded)">${p.styleCount}</span>
+     <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.salesUnits>0?'var(--txt2)':'var(--faded)'}">${p.salesUnits||'—'}</span>
+    </div>
+
+    <!-- EXPANDED PANEL -->
+    ${exp?`<div style="border-top:1px solid var(--brd);background:var(--sur)">
+
+     <!-- INVENTORY BY LOCATION -->
+     ${p.locBreak.length>0?`
+     <div style="padding:10px 14px;border-bottom:1px solid var(--brd)">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:6px">Inventory by location</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+       ${p.locBreak.map(l=>`
+       <div style="display:flex;align-items:center;gap:5px;padding:4px 8px;background:var(--bg);border:1px solid var(--brd);border-radius:5px">
+        <span style="font-size:10px;color:var(--txt2)">${l.loc}</span>
+        <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:${l.qty<5?'var(--brick)':l.qty<15?'var(--amb)':'var(--ink)'}">${l.qty}</span>
+       </div>`).join('')}
       </div>
-    </div>
+     </div>`:''}
 
-    <!-- CAT PILLS -->
-    <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">
-      ${allCats.map(c=>`<span onclick="window._mp.cat='${c}';window._mp.open={};navigate('products')"
-        style="cursor:pointer;padding:4px 12px;border-radius:14px;font-size:10px;font-family:var(--mono);
-        border:1px solid ${S.cat===c?'var(--gold)':'var(--brd)'};
-        background:${S.cat===c?'rgba(184,154,90,.12)':'var(--sur2)'};
-        color:${S.cat===c?'var(--gold)':'var(--txt3)'};font-weight:${S.cat===c?700:400}">
-        ${c==='all'?'All ('+mps.length+')':c}
-      </span>`).join('')}
-    </div>
+     <!-- STYLES GRID -->
+     ${p.styles.length>0?`
+     <div style="padding:10px 14px;border-bottom:1px solid var(--brd)">
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:8px">${p.styleCount} Styles / Colors</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:5px">
+       ${p.styles.map(s=>{
+        const sStock=s.inventoryQty!=null?s.inventoryQty:Math.round(p.stock*(s.vel||0)/Math.max(1,p.styles.reduce((a,x)=>a+(x.vel||0),0)));
+        const sStockColor=sStock<3?'var(--brick)':sStock<10?'var(--amb)':'var(--ink)';
+        return`<div onclick="event.stopPropagation();navigate('style-detail','${p.id}__${s.id}')"
+          style="background:var(--sur2);border:1px solid var(--brd);border-radius:5px;padding:7px 9px;cursor:pointer;transition:border-color .1s"
+          onmouseover="this.style.borderColor='var(--brd-s)'" onmouseout="this.style.borderColor='var(--brd)'">
+         <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${s.color||'#888'};border:1px solid rgba(0,0,0,.12);flex-shrink:0"></span>
+          <span style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">${s.name.length>18?s.name.slice(0,16)+'…':s.name}</span>
+          ${s.grade?`<span class="badge ${s.grade==='A'?'b-grn':s.grade==='B'?'b-amb':'b-gry'}" style="font-size:7px;flex-shrink:0">${s.grade}</span>`:''}
+         </div>
+         <div style="display:flex;gap:8px;font-family:var(--mono);font-size:9px;color:var(--faded)">
+          <span style="color:${sStockColor}">${sStock}u</span>
+          ${s.vel>0?`<span>${s.vel}/w</span>`:''}
+          ${s.sell>0?`<span>${s.sell}%</span>`:''}
+          ${s.skus&&s.skus.length?`<span style="overflow:hidden;text-overflow:ellipsis;max-width:60px">${s.skus[0]}</span>`:(s.sku?`<span>${s.sku}</span>`:'')}
+         </div>
+        </div>`;
+       }).join('')}
+      </div>
+     </div>`:''}
 
-    <!-- SEARCH -->
-    <input type="text" placeholder="Search name, code, vendor…" value="${S.filter||''}"
-      oninput="window._mp.filter=this.value;navigate('products')"
-      style="width:100%;border:1px solid var(--brd);border-radius:8px;padding:8px 14px;font-size:12px;background:var(--sur);margin-bottom:8px;font-family:var(--mono)"/>
+     <!-- ACTION ROW -->
+     <div style="padding:8px 14px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="event.stopPropagation();navigate('product-detail','${p.id}')">Open</button>
+      <button class="btn btn-sm" onclick="event.stopPropagation();navigate('product-stack','${p.id}')">Stack</button>
+      <button class="btn btn-sm" onclick="event.stopPropagation();navigate('pd-inv','${p.id}')">Inventory</button>
+      <button class="btn btn-sm" onclick="event.stopPropagation();navigate('pd-pos','${p.id}')">POs</button>
+      ${p.shopifyHandle?`<a href="https://aticaman.myshopify.com/products/${p.shopifyHandle}" target="_blank" rel="noopener" class="btn btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">Shopify ↗</a>`:''}
+      <button class="btn btn-sm btn-p" onclick="event.stopPropagation();window._poNew={mpId:'${p.id}',step:1};navigate('po-new')">+ PO</button>
+     </div>
+    </div>`:''}
+   </div>`;
+  }).join('')}
 
-    <!-- COL HEADERS -->
-    <div style="display:grid;grid-template-columns:1fr 56px 54px 62px 54px 52px;gap:0;padding:4px 14px;align-items:center">
-      <span style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--txt4)">MASTER PRODUCT</span>
-      ${sh('STOCK','stock')} ${sh('VEL/W','vel')} ${sh('COVER','cover')} ${sh('MG%','mg')} ${sh('SOLD','sold')}
-    </div>
+  <!-- FOOTER STATS -->
+  <div style="margin-top:16px;padding:12px 16px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);display:flex;gap:24px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--faded)">
+   <span>Total units: <strong style="color:var(--ink)">${totStock.toLocaleString()}</strong></span>
+   <span>Mo revenue: <strong style="color:var(--grn)">$${Math.round(totRev/1000)}K</strong></span>
+   <span>Active products: <strong style="color:var(--ink)">${enriched.filter(p=>p.status==='active').length}</strong></span>
+   <span>Shopify matched: <strong style="color:var(--ink)">${enriched.filter(p=>p.shopifyId).length}</strong></span>
+   <span>Last sync: <strong style="color:var(--ink)">${lastSync?lastSync.toLocaleString():'Never'}</strong></span>
+  </div>
 
-    <!-- MP ROWS -->
-    ${rows.length===0?`<div style="padding:48px;text-align:center;color:var(--faded)">No products match</div>`:''}
-    ${rows.map(p => {
-      const isOpen = S.open[p.id];
-      const coverColor = p.cover<6?'var(--brick)':p.cover<12?'var(--amb)':'var(--txt3)';
-      const mgColor    = p.mg>=70?'var(--grn)':p.mg>0?'var(--txt3)':'var(--brick)';
-      const stockColor = p.stock<20?'var(--brick)':p.stock<60?'var(--amb)':'var(--txt2)';
-      const statusDot  = p.status==='active'?'var(--grn)':p.status==='development'?'var(--amb)':'var(--txt4)';
-      const flagRing   = p.flag==='reorder'?'var(--brick)':p.flag==='liquidate'?'var(--amb)':p.flag==='watch'?'var(--gold)':'transparent';
+ </div>`;
 
-      // Style swatches for collapsed row
-      const swatches = p.styles.slice(0,8).map(s=>
-        `<span title="${s.name}" style="width:11px;height:11px;border-radius:50%;background:${s.color||'#888'};border:1.5px solid rgba(0,0,0,.15);flex-shrink:0;display:inline-block"></span>`
-      ).join('');
-
-      return `
-      <div style="background:var(--sur2);border:1px solid ${isOpen?'var(--brd-s)':'var(--brd)'};border-radius:var(--rl);margin-bottom:3px;overflow:hidden;transition:border-color .1s">
-
-        <!-- COLLAPSED ROW -->
-        <div onclick="window._mp.open['${p.id}']=!window._mp.open['${p.id}'];navigate('products')"
-          style="display:grid;grid-template-columns:1fr 56px 54px 62px 54px 52px;gap:0;align-items:center;padding:11px 14px;cursor:pointer"
-          onmouseover="this.parentElement.style.borderColor='var(--brd-s)'"
-          onmouseout="this.parentElement.style.borderColor='${isOpen?'var(--brd-s)':'var(--brd)'}'">
-
-          <!-- MP IDENTITY -->
-          <div style="display:flex;align-items:center;gap:9px;min-width:0">
-            ${p.heroImg
-              ? `<img src="${p.heroImg}" style="width:28px;height:36px;object-fit:cover;border-radius:3px;flex-shrink:0;border:1px solid var(--brd)" alt=""/>`
-              : `<div style="width:28px;height:36px;background:var(--bg);border-radius:3px;flex-shrink:0;border:1px solid var(--brd)"></div>`}
-            <div style="min-width:0">
-              <div style="display:flex;align-items:center;gap:6px">
-                <span style="font-family:var(--display);font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
-                ${p.flag&&p.flag!=='ok'?`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid ${flagRing};color:${flagRing};flex-shrink:0;text-transform:uppercase">${p.flag}</span>`:''}
-                ${p.openPOs.length?`<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(26,68,144,.08);color:var(--blu);flex-shrink:0">${p.openPOs.length}PO</span>`:''}
-              </div>
-              <div style="display:flex;align-items:center;gap:7px;margin-top:2px">
-                <span style="width:6px;height:6px;border-radius:50%;background:${statusDot};flex-shrink:0"></span>
-                <span style="font-family:var(--mono);font-size:9px;color:var(--txt4)">${p.code||'—'}</span>
-                <span style="font-size:9px;color:var(--txt4)">${p.cat}</span>
-                ${p.retail?`<span style="font-family:var(--mono);font-size:9px;color:var(--txt4)">$${p.retail}</span>`:''}
-                <span style="display:flex;gap:2px;align-items:center">${swatches}</span>
-                <span style="font-size:9px;color:var(--txt4)">${p.styles.length} style${p.styles.length!==1?'s':''}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- METRICS -->
-          <span style="font-family:var(--mono);font-size:12px;font-weight:700;text-align:right;color:${stockColor}">${p.stock}</span>
-          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.vel>0?'var(--txt2)':'var(--txt4)'}">${p.vel>0?p.vel:'—'}</span>
-          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${coverColor}">${p.cover>99?'∞':p.cover+'w'}</span>
-          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${mgColor}">${p.mg>0?p.mg+'%':'—'}</span>
-          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.sold>0?'var(--txt2)':'var(--txt4)'}">${p.sold||'—'}</span>
-        </div>
-
-        <!-- EXPANDED: STYLES TREE -->
-        ${isOpen ? `
-        <div style="border-top:1px solid var(--brd);background:var(--sur)">
-
-          <!-- STYLES — one row per style/color -->
-          ${p.styles.length>0 ? `
-          <div style="padding:10px 14px;border-bottom:1px solid var(--brd)">
-            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txt4);margin-bottom:8px">Styles (${p.styles.length})</div>
-            ${p.styles.map(s => {
-              const sStock = s.inventoryQty!=null ? s.inventoryQty
-                : Math.round(p.stock*(s.vel||0)/Math.max(1,p.styles.reduce((a,x)=>a+(x.vel||0),0)));
-              const sColor = sStock<3?'var(--brick)':sStock<10?'var(--amb)':'var(--txt2)';
-              const inv    = Store.getInventoryFor(p.id)||{};
-              return `<div onclick="event.stopPropagation();navigate('style-detail','${p.id}__${s.id}')"
-                style="display:grid;grid-template-columns:14px 1fr 42px 42px 42px 32px;gap:0;align-items:center;
-                padding:7px 0;border-bottom:1px solid var(--brd);cursor:pointer;transition:background .08s;border-radius:3px"
-                onmouseover="this.style.background='rgba(0,0,0,.02)'" onmouseout="this.style.background=''">
-                <span style="width:10px;height:10px;border-radius:50%;background:${s.color||'#888'};border:1.5px solid rgba(0,0,0,.12);display:inline-block"></span>
-                <span style="font-size:12px;font-weight:500;padding-left:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                  ${s.name}
-                  ${s.grade?`<span style="font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;background:${s.grade==='A'?'var(--grn-m)':s.grade==='B'?'var(--amb-m)':'rgba(0,0,0,.05)'};color:${s.grade==='A'?'var(--grn)':s.grade==='B'?'var(--amb)':'var(--txt3)'}">${s.grade}</span>`:''}
-                </span>
-                <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${sColor};font-weight:600">${sStock}</span>
-                <span style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--txt4)">${s.vel>0?s.vel+'/w':'—'}</span>
-                <span style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--txt4)">${s.sell>0?s.sell+'%':'—'}</span>
-                <span style="font-size:10px;text-align:right;color:var(--txt4)">›</span>
-              </div>`;
-            }).join('')}
-          </div>` : `<div style="padding:12px 14px;font-size:11px;color:var(--txt4);border-bottom:1px solid var(--brd)">No styles yet — sync Shopify or add manually</div>`}
-
-          <!-- DNA SNAPSHOT -->
-          <div style="padding:10px 14px;border-bottom:1px solid var(--brd);display:flex;gap:16px;flex-wrap:wrap;font-size:11px">
-            ${p.vendor?`<span style="color:var(--txt3)">Vendor: <strong style="color:var(--txt2)">${p.vendor}</strong></span>`:''}
-            ${p.fob?`<span style="color:var(--txt3)">FOB: <strong style="color:var(--txt2);font-family:var(--mono)">$${p.fob}</strong></span>`:''}
-            ${p.lead?`<span style="color:var(--txt3)">Lead: <strong style="color:var(--txt2);font-family:var(--mono)">${p.lead}d</strong></span>`:''}
-            ${p.hts?`<span style="color:var(--txt3)">HTS: <strong style="color:var(--txt2);font-family:var(--mono)">${p.hts}</strong></span>`:''}
-            ${p.duty?`<span style="color:var(--txt3)">Duty: <strong style="color:var(--txt2);font-family:var(--mono)">${p.duty}%</strong></span>`:''}
-            ${p.moq?`<span style="color:var(--txt3)">MOQ: <strong style="color:var(--txt2);font-family:var(--mono)">${p.moq}</strong></span>`:''}
-          </div>
-
-          <!-- ACTIONS -->
-          <div style="padding:8px 14px;display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('product-detail','${p.id}')">Open</button>
-            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('product-stack','${p.id}')">Stack</button>
-            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('pd-inv','${p.id}')">Inventory</button>
-            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('pd-pos','${p.id}')">POs (${p.openPOs.length})</button>
-            ${p.shopifyUrl?`<a href="${p.shopifyUrl}" target="_blank" rel="noopener" class="btn btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">Shopify ↗</a>`:''}
-            <button class="btn btn-sm btn-p" onclick="event.stopPropagation();window._poNew={mpId:'${p.id}',step:1};navigate('po-new')">+ PO</button>
-          </div>
-        </div>` : ''}
-      </div>`;
-    }).join('')}
-  </div>`;
+ // Auto-sync if never synced or very stale (>8h) — run in background
+ if(connected && ageMin>480){
+  setTimeout(async()=>{
+   try{
+    console.log('[Products] Background sync triggered (age:'+ageMin+'m)');
+    const r=await Store.syncFromShopify();
+    if(r.synced&&document.getElementById('nav-products')?.classList.contains('on')){
+     navigate('products');
+     toast('Auto-synced '+r.totalProducts+' products','info',2500);
+    }
+   }catch(e){console.warn('[Products] Auto-sync failed:',e);}
+  },800);
+ }
 }
+
+let _hierDragIdx = null;
 function showNewProductModal(){
  const cats=['Suits','Shirts','Blazers','Pants','Kapote','Accessories','Boys'];
  const vendors=Store.getVendors().filter(v=>v.status==='active');
@@ -10729,269 +10736,440 @@ function renderProductStack(id) {
   const LOCS=Store.LOCS;
 
   if(!window._stackTab) window._stackTab={};
-  const activeTab=window._stackTab[id]||phases.find(ph=>!ph.complete)?.id||'brief';
-  const activePh=phases.find(ph=>ph.id===activeTab)||phases[0];
-  const phIdx=phases.indexOf(activePh);
+  const activeTab=window._stackTab[id]||'overview';
 
-  // Phase-specific rich content
-  const phaseContent = {
-    brief: `
-      <!-- IDENTITY -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[
-          {l:'Product name',v:p.name,k:'name',done:p.name?.length>2},
-          {l:'Code',v:p.code,k:'code',done:p.code?.length>=3},
-          {l:'Category',v:p.cat,k:'cat',done:p.cat&&p.cat!=='Uncategorized'},
-          {l:'Description',v:p.description?(p.description.length+' chars — '+(p.description.length>=20?'✓':'needs 20+')):'empty',k:'desc',done:p.description?.length>=20},
-          {l:'Retail target',v:p.retail?'$'+p.retail:'not set',k:'retail',done:p.retail>0},
-          {l:'Tagline',v:p.tagline||'not set',k:'tag',done:p.tagline?.length>5},
-        ].map(f=>`
-        <div style="display:grid;grid-template-columns:24px 130px 1fr auto;align-items:center;border-bottom:1px solid var(--brd);min-height:48px;padding:0 14px">
-          <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${f.done?'var(--grn)':'var(--brd)'};background:${f.done?'var(--grn)':'transparent'};display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff">${f.done?'✓':''}</div>
-          <span style="font-size:12px;font-weight:500;color:var(--faded)">${f.l}</span>
-          <span style="font-family:var(--mono);font-size:13px;font-weight:${f.done?'600':'400'};color:${f.done?'var(--ink)':'var(--faded)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${f.v}</span>
-          ${!f.done?`<button class="btn btn-sm" onclick="navigate('pd-edit','${id}')" style="font-size:9px">Edit</button>`:''}
-        </div>`).join('')}
-      </div>
-      ${p.heroImg?`<div style="margin-bottom:16px"><img src="${p.heroImg}" style="width:100%;max-height:200px;object-fit:cover;border-radius:var(--rl);box-shadow:0 4px 16px rgba(0,0,0,.1)"/></div>`:'<div style="background:var(--brd);border-radius:var(--rl);height:120px;display:flex;align-items:center;justify-content:center;color:var(--faded);font-size:14px;margin-bottom:16px">No product image — <span onclick="navigate(\'pd-edit\',\''+id+'\')" style="color:var(--gold);cursor:pointer;margin-left:4px;text-decoration:underline">upload</span></div>'}
-    `,
+  // ── Collect all fits across all styles ──
+  const allFits=[...new Set(styles.flatMap(s=>s.fits||[]))];
+  const fitOrder=['Lorenzo 6','Lorenzo 4','Alexander 4','Alexander 2','Modern','Modern (Extra Slim)','Contemporary','Contemporary (Slim)','Classic','Classic With Pocket','Classic No Pocket','Slim','Regular','Relaxed','Standard','Athletic','Straight','Pleated','Fitted','Narrow','Wide','Tailored','Traditional','Comfort','S','M','L','XL','XXL'];
+  allFits.sort((a,b)=>(fitOrder.indexOf(a)===-1?999:fitOrder.indexOf(a))-(fitOrder.indexOf(b)===-1?999:fitOrder.indexOf(b)));
+  const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();
+  const specsDone=Object.values(constr).filter(Boolean).length;
+  const specsTotal=Object.values(catComps).flat().length;
+  const specPct=specsTotal>0?Math.round(specsDone/specsTotal*100):0;
 
-    sourcing: `
-      <!-- VENDOR -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        <div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:14px;border-bottom:1px solid var(--brd)">
-          <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${p.vendor&&p.vendor!=='—'?'var(--grn)':'var(--brd)'};background:${p.vendor&&p.vendor!=='—'?'var(--grn)':'transparent'};font-size:8px;color:#fff;display:flex;align-items:center;justify-content:center">${p.vendor&&p.vendor!=='—'?'✓':''}</div>
-          <div><div style="font-size:14px;font-weight:600">${p.vendor||'No vendor'}</div>${vendor?`<div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${vendor.country||''} · ${vendor.onTime||0}% on-time · ${vendor.payTerms||'—'}</div>`:''}</div>
-          ${vendorId?`<button class="btn btn-sm" onclick="navigate('vendor-detail','${vendorId}')">Vendor →</button>`:`<button class="btn btn-sm btn-p" onclick="navigate('pd-dna','${id}')">Assign</button>`}
-        </div>
-        <!-- TERMS -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--brd)">
-          ${[{l:'Lead time',v:p.lead?p.lead+' days':'not set',done:p.lead>0},{l:'MOQ',v:p.moq?p.moq+' units':'not set',done:p.moq>0},{l:'Incoterm',v:vendor?.incoterm||'FOB',done:true}].map((d,i)=>`
-          <div style="padding:12px 14px;border-right:${i<2?'1px solid var(--brd)':'none'};text-align:center">
-            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${d.done?'var(--ink)':'var(--faded)'}">${d.v}</div>
-            <div style="font-size:8px;color:var(--faded);margin-top:2px">${d.l}</div>
-          </div>`).join('')}
-        </div>
-      </div>
-      <!-- COMPONENTS -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;color:${myComps.length?'var(--ink)':'var(--faded)'}">Components · ${myComps.length}</div>
-      ${myComps.length?myComps.map(c=>`
-      <div style="display:grid;grid-template-columns:70px 1fr 60px;padding:8px 14px;border-bottom:1px solid var(--brd);font-size:12px;background:var(--sur2);margin-bottom:2px;border-radius:var(--rl)">
-        <span style="font-family:var(--mono);font-size:9px;color:var(--faded);text-transform:uppercase">${Object.entries(comps).find(([t,arr])=>arr?.some(x=>x.id===c.id))?.[0]||'—'}</span>
-        <div><span style="font-weight:500">${c.name}</span>${c.vendor?`<span style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-left:6px">${c.vendor}</span>`:''}</div>
-        <span style="font-family:var(--mono);font-size:11px;text-align:right">${c.cost&&c.cost!=='—'?c.cost:''}</span>
-      </div>`).join(''):`<div style="padding:16px;text-align:center;color:var(--faded);font-size:12px;background:var(--sur2);border-radius:var(--rl)">No components assigned</div>`}
-      <button class="btn btn-sm" style="margin-top:8px" onclick="addComponentModal('${id}')">+ Add component</button>
-    `,
+  // ── Inventory by store ──
+  const invByStore={};
+  LOCS.forEach(loc=>{invByStore[loc]=(Store.getInventoryFor(id)||{})[loc]||0;});
+  const maxLocQty=Math.max(1,...Object.values(invByStore));
+  const statusColor=p.status==='active'?'var(--grn)':p.status==='dev'?'var(--amb)':'var(--faded)';
+  const statusLabel=p.status==='active'?'LIVE':p.status==='dev'?'DEV':p.status||'—';
 
-    development: `
-      <!-- CONSTRUCTION SPECS -->
-      ${Object.keys(catComps).length?`
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Construction · ${Object.values(constr).filter(Boolean).length}/${Object.values(catComps).flat().length}</div>
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${Object.entries(catComps).flatMap(([group,fields])=>fields.map(f=>{
-          const val=constr[f.id]||'';
-          return `<div style="display:grid;grid-template-columns:24px 120px 1fr;align-items:center;border-bottom:1px solid var(--brd);min-height:42px;padding:0 12px">
-            <div style="width:12px;height:12px;border-radius:50%;border:2px solid ${val?'var(--grn)':'var(--brd)'};background:${val?'var(--grn)':'transparent'};font-size:7px;color:#fff;display:flex;align-items:center;justify-content:center">${val?'✓':''}</div>
-            <span style="font-size:11px;color:var(--faded)">${f.label}</span>
-            <span style="font-family:var(--mono);font-size:12px;font-weight:${val?'600':'400'};color:${val?'var(--ink)':'var(--faded)'}">${val||'— not set —'}</span>
-          </div>`;
-        })).join('')}
-      </div>
-      <button class="btn btn-sm" onclick="navigate('pd-dna','${id}')" style="margin-bottom:16px">Edit in Tech Pack →</button>
-      `:''}
+  // ── Tab definitions ──
+  const TABS=[
+    {id:'overview',label:'Overview',icon:'◉'},
+    {id:'collection',label:'Collection',icon:'◈'},
+    {id:'specs',label:'Tech Pack',icon:'◆'},
+    {id:'commerce',label:'Commerce',icon:'◇'},
+  ];
 
-      <!-- STYLES -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Styles · ${styles.length}</div>
-      <div style="display:grid;grid-template-columns:repeat(${Math.min(styles.length||1,4)},1fr);gap:6px;margin-bottom:16px">
-        ${styles.length?styles.map(s=>`
-        <div onclick="navigate('style-detail','${id}__${s.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:10px;cursor:pointer;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:transform .12s" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
-          <div style="width:28px;height:28px;border-radius:50%;background:${s.color};border:2px solid rgba(0,0,0,.1);margin:0 auto 6px"></div>
-          <div style="font-size:11px;font-weight:600">${s.name.length>12?s.name.substring(0,10)+'…':s.name}</div>
-          <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${s.sku} · ${s.grade}</div>
-        </div>`).join(''):'<div style="padding:16px;text-align:center;color:var(--faded);font-size:12px;grid-column:1/-1;background:var(--sur2);border-radius:var(--rl)">No styles yet</div>'}
-      </div>
-      <button class="btn btn-sm" onclick="addStyle('${id}')">+ Add style</button>
-
-      <!-- SAMPLE STATUS -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin:16px 0 8px">Approvals</div>
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[{l:'Sample approval',k:'sampleApproved',action:'sampleApproved'},{l:'Fit approval',k:'fitApproved',action:'fitApproved'}].map(a=>{
-          const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();
-          const done=!!st[a.k];
-          return `<div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:12px 14px;border-bottom:1px solid var(--brd);min-height:48px">
-            <div style="width:16px;height:16px;border-radius:50%;border:2px solid ${done?'var(--grn)':'var(--brd)'};background:${done?'var(--grn)':'transparent'};font-size:9px;color:#fff;display:flex;align-items:center;justify-content:center">${done?'✓':''}</div>
-            <div><div style="font-size:13px;font-weight:${done?'400':'600'};color:${done?'var(--faded)':'var(--ink)'};${done?'text-decoration:line-through':''}">${a.l}</div>${done?`<div style="font-family:var(--mono);font-size:9px;color:var(--grn)">Approved ${st[a.k]}</div>`:''}</div>
-            ${!done?`<button class="btn btn-sm btn-p" onclick="stackAction('${id}','${a.action}')" style="font-size:10px">Approve</button>`:''}
-          </div>`;
-        }).join('')}
-      </div>
-    `,
-
-    costing: `
-      <!-- COST WATERFALL -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[
-          {l:'FOB (ex-factory)',v:'$'+p.fob,done:p.fob>0,bold:false},
-          {l:'Duty ('+p.duty+'%)',v:'$'+Math.round(p.fob*p.duty/100*100)/100,done:p.duty>0},
-          {l:'Freight (~12%)',v:'$'+Math.round(p.fob*0.12*100)/100,done:true},
-          {l:'Landed cost',v:'$'+landed,done:landed>0,bold:true},
-          {l:'Retail price',v:'$'+p.retail,done:p.retail>0,bold:true},
-          {l:'Gross margin',v:margin+'%',done:margin>=50,bold:true,color:margin>=65?'var(--grn)':margin>=50?'':'var(--brick)'},
-        ].map(f=>`
-        <div style="display:grid;grid-template-columns:24px 1fr 80px;align-items:center;padding:${f.bold?'14px':'10px'} 14px;border-bottom:1px solid var(--brd);${f.bold?'background:var(--sur)':''}">
-          <div style="width:12px;height:12px;border-radius:50%;border:2px solid ${f.done?'var(--grn)':'var(--brd)'};background:${f.done?'var(--grn)':'transparent'};font-size:7px;color:#fff;display:flex;align-items:center;justify-content:center">${f.done?'✓':''}</div>
-          <span style="font-size:${f.bold?'14px':'12px'};font-weight:${f.bold?'700':'500'}">${f.l}</span>
-          <span style="font-family:var(--mono);font-size:${f.bold?'18px':'14px'};text-align:right;font-weight:700;color:${f.color||''}">${f.v}</span>
-        </div>`).join('')}
-      </div>
-      <!-- MARGIN BAR -->
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <span style="font-size:11px;color:var(--faded);width:40px">0%</span>
-        <div style="flex:1;height:12px;background:var(--brd);border-radius:6px;overflow:hidden;position:relative">
-          <div style="height:100%;width:${Math.min(100,margin)}%;background:${margin>=65?'var(--grn)':margin>=50?'var(--amb)':'var(--brick)'};border-radius:6px"></div>
-          <div style="position:absolute;left:50%;top:0;width:2px;height:100%;background:var(--ink);opacity:.3" title="50% target"></div>
-        </div>
-        <span style="font-size:11px;color:var(--faded);width:40px;text-align:right">100%</span>
-      </div>
-      <!-- PROFITABILITY -->
-      ${(()=>{const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();return !st.marginApproved?`<div style="margin-top:12px"><button class="btn btn-p" onclick="stackAction('${id}','marginApproved')">Sign off margin at ${margin}%</button></div>`:`<div style="font-family:var(--mono);font-size:10px;color:var(--grn);margin-top:12px">✓ Margin signed off ${st.marginApproved}</div>`;})()}
-      <button class="btn btn-sm" style="margin-top:8px" onclick="navigate('pd-cost','${id}')">Full cost build →</button>
-    `,
-
-    content: `
-      <!-- IMAGE -->
-      ${p.heroImg?`<img src="${p.heroImg}" style="width:100%;max-height:180px;object-fit:cover;border-radius:var(--rl);margin-bottom:16px;box-shadow:0 4px 16px rgba(0,0,0,.1)"/>`:'<div style="background:var(--brd);border-radius:var(--rl);height:100px;display:flex;align-items:center;justify-content:center;color:var(--faded);font-size:13px;margin-bottom:16px">No hero image</div>'}
-      <!-- CONTENT CHECKLIST -->
-      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        ${[
-          {l:'Hero image',v:p.heroImg?'Set':'Missing',done:!!p.heroImg},
-          {l:'Description (50+ chars)',v:p.description?(p.description.length+' chars'):'Empty',done:p.description?.length>=50},
-          {l:'Features (2+)',v:(p.features||[]).length+' features',done:(p.features||[]).length>=2},
-          {l:'Shopify listing',v:p.shopifyUrl?'Live':'Not created',done:!!p.shopifyUrl},
-          {l:'Web views',v:(wa.views||0).toLocaleString()+' views',done:(wa.views||0)>0},
-        ].map(f=>`
-        <div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:12px 14px;border-bottom:1px solid var(--brd);min-height:44px">
-          <div style="width:14px;height:14px;border-radius:50%;border:2px solid ${f.done?'var(--grn)':'var(--brd)'};background:${f.done?'var(--grn)':'transparent'};font-size:8px;color:#fff;display:flex;align-items:center;justify-content:center">${f.done?'✓':''}</div>
-          <span style="font-size:12px;font-weight:${f.done?'400':'600'};color:${f.done?'var(--faded)':'var(--ink)'}">${f.l}</span>
-          <span style="font-family:var(--mono);font-size:11px;color:${f.done?'var(--grn)':'var(--faded)'}">${f.v}</span>
-        </div>`).join('')}
-      </div>
-      ${p.description?`<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px;font-size:13px;line-height:1.6;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.06)">${p.description}</div>`:''}
-      ${(p.features||[]).length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">${p.features.map(f=>`<span style="padding:4px 10px;border-radius:10px;font-size:10px;font-family:var(--mono);background:var(--sur2);border:1px solid var(--brd)">${f}</span>`).join('')}</div>`:''}
-      <button class="btn btn-sm" onclick="navigate('pd-edit','${id}')">Edit content</button>
-      ${p.shopifyUrl?`<button class="btn btn-sm" style="margin-left:6px" onclick="window.open('${p.shopifyUrl}','_blank')">View on Shopify</button>`:''}
-    `,
-
-    launch: `
-      <!-- INVENTORY -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Inventory · ${stock} units</div>
-      <div style="display:grid;grid-template-columns:repeat(${LOCS.length},1fr);gap:2px;margin-bottom:16px">
-        ${LOCS.map(loc=>{
-          const q=(Store.getInventoryFor(id)||{})[loc]||0;
-          const maxQ=Math.max(1,...LOCS.map(l=>(Store.getInventoryFor(id)||{})[l]||0));
-          return `<div style="text-align:center;padding:8px 2px;background:var(--sur2);border:1px solid var(--brd);border-radius:4px">
-            <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${q>0?'var(--ink)':'var(--faded)'}">${q}</div>
-            <div style="font-size:7px;color:var(--faded);margin-top:2px">${loc.length>6?loc.substring(0,5)+'…':loc}</div>
-          </div>`;
-        }).join('')}
-      </div>
-
-      <!-- PO STATUS -->
-      <div style="font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px">Purchase Orders · ${pos.length}</div>
-      ${activePOs.length?activePOs.map(po=>{
-        const pct=Math.round(po.stage/9*100);
-        return `<div onclick="navigate('po-detail','${po.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 14px;margin-bottom:3px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.06);transition:background .12s" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <span style="font-size:12px;font-weight:600">${po.num} <span class="badge ${po.status==='in-transit'?'b-amb':'b-blu'}" style="font-size:8px">${po.status}</span></span>
-            <span style="font-family:var(--mono);font-size:11px">${po.units}u · $${(po.fobTotal||0).toLocaleString()}</span>
+  // ═══════════════════════════════════════════════════════════════
+  // OVERVIEW TAB
+  // ═══════════════════════════════════════════════════════════════
+  const renderOverview=()=>`
+    <!-- IDENTITY CARD -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="display:grid;grid-template-columns:${p.heroImg?'200px':''} 1fr;min-height:200px">
+        ${p.heroImg?`<div style="position:relative;overflow:hidden"><img src="${p.heroImg}" style="width:100%;height:100%;object-fit:cover;display:block"/><div style="position:absolute;bottom:0;left:0;right:0;height:60px;background:linear-gradient(transparent,rgba(0,0,0,.4))"></div><div style="position:absolute;bottom:10px;left:12px;display:flex;gap:6px"><span style="padding:3px 10px;border-radius:20px;font-family:var(--mono);font-size:9px;font-weight:700;background:${statusColor};color:#fff;letter-spacing:.04em">${statusLabel}</span>${p.flag==='reorder'?'<span style="padding:3px 10px;border-radius:20px;font-family:var(--mono);font-size:9px;font-weight:700;background:var(--red);color:#fff">REORDER</span>':''}</div></div>`:''}
+        <div style="padding:24px 28px;display:flex;flex-direction:column;justify-content:center">
+          <div style="font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:.1em;color:var(--gold);text-transform:uppercase;margin-bottom:6px">${p.code} · ${p.cat}</div>
+          <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;line-height:1.1;margin-bottom:6px">${p.name}</div>
+          ${p.tagline?`<div style="font-size:13px;color:var(--txt2);line-height:1.4;margin-bottom:14px;font-style:italic">${p.tagline}</div>`:''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+            <span style="padding:4px 12px;border-radius:20px;font-size:10px;font-weight:600;background:rgba(184,154,90,.1);color:var(--gold);border:1px solid rgba(184,154,90,.2)">${p.vendor}</span>
+            ${p.bundle?`<span style="padding:4px 12px;border-radius:20px;font-size:10px;font-weight:500;background:var(--grn-m);color:var(--grn);border:1px solid rgba(26,88,48,.15)">${p.bundle}</span>`:''}
+            ${p.hts?`<span style="padding:4px 12px;border-radius:20px;font-family:var(--mono);font-size:9px;color:var(--txt3);background:var(--bg);border:1px solid var(--brd)">HTS ${p.hts}</span>`:''}
           </div>
-          <div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:3px;background:var(--brd);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:2px"></div></div><span style="font-family:var(--mono);font-size:8px;color:var(--faded)">${po.stage}/9</span></div>
-        </div>`;
-      }).join(''):''}
-      ${!pos.length?`<div style="padding:16px;text-align:center;color:var(--faded);font-size:12px;background:var(--sur2);border-radius:var(--rl);margin-bottom:12px">No POs yet</div>`:''}
-      <div style="display:flex;gap:6px;margin-top:8px;margin-bottom:16px">
-        <button class="btn btn-sm btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ Create PO</button>
-        ${stock>0?`<button class="btn btn-sm" onclick="navigate('distribution')">Distribute</button>`:''}
-      </div>
-
-      <!-- GO-LIVE -->
-      ${ppItem?`
-      <div style="background:${ppItem.isDead||ppItem.isUrgent?'rgba(138,58,42,.06)':'var(--sur2)'};border:1px solid ${ppItem.isDead||ppItem.isUrgent?'rgba(138,58,42,.2)':'var(--brd)'};border-radius:var(--rl);padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-bottom:8px">
-          ${[{l:'Cover',v:coverWk>100?'∞':coverWk+'w',c:coverWk<8?'var(--brick)':''},{l:'Vel/wk',v:String(adjVel)},{l:'Incoming',v:incoming?incoming.toLocaleString():'0',c:incoming?'var(--grn)':''},{l:'Status',v:p.status||'dev'}].map((d,i)=>`<div style="text-align:center;${i<3?'border-right:1px solid var(--brd)':''}"><div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${d.c||''}">${d.v}</div><div style="font-size:7px;color:var(--faded)">${d.l}</div></div>`).join('')}
+          <!-- QUICK ACTIONS -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="navigate('pd-dna','${id}')">Tech Pack</button>
+            <button class="btn btn-sm" onclick="navigate('pd-edit','${id}')">Edit</button>
+            ${p.shopifyUrl?`<button class="btn btn-sm" onclick="window.open('${p.shopifyUrl}','_blank')">Shopify ↗</button>`:''}
+            <button class="btn btn-sm btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ PO</button>
+          </div>
         </div>
-        ${p.status!=='active'&&stock>0?`<button class="btn btn-sm btn-p" onclick="stackAction('${id}','goLive')" style="margin-top:6px">Go Live</button>`:''}
-        ${p.status==='active'?`<div style="font-family:var(--mono);font-size:11px;color:var(--grn);margin-top:6px">✓ Product is LIVE</div>`:''}
       </div>
-      `:''}
-    `,
-  };
-
-  $('page').innerHTML=`
-  <div style="max-width:900px">
-    <div style="margin-bottom:16px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--faded);padding:8px 0;min-height:44px" onclick="navigate('product-detail','${id}')">← ${p.name}</div>
-
-    <!-- HEADER -->
-    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
-      ${p.heroImg?`<img src="${p.heroImg}" style="width:52px;height:66px;object-fit:cover;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.12)"/>`:''}
-      <div style="flex:1;min-width:0">
-        <div style="font-family:var(--display);font-size:22px;font-weight:600;letter-spacing:-.3px">${p.name}</div>
-        <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${p.code} · ${p.cat} · ${styles.length} styles · $${p.retail}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        <div style="font-family:var(--mono);font-size:26px;font-weight:700;color:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'};line-height:1">${totalPct}%</div>
-        <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${totalDone}/${totalReqs}</div>
+      <!-- METRICS STRIP -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);border-top:1px solid var(--brd)">
+        ${[
+          {l:'Retail',v:'$'+p.retail,c:''},
+          {l:'FOB',v:'$'+p.fob,c:''},
+          {l:'Margin',v:margin+'%',c:margin>=65?'var(--grn)':margin>=50?'':'var(--brick)'},
+          {l:'Stock',v:stock.toLocaleString(),c:stock<50?'var(--brick)':''},
+          {l:'Vel/mo',v:String(adjVel),c:''},
+          {l:'Cover',v:coverWk>100?'∞':coverWk+'w',c:coverWk<8?'var(--brick)':''},
+        ].map((m,i)=>`<div style="padding:14px 12px;text-align:center;${i<5?'border-right:1px solid var(--brd)':''}">
+          <div style="font-family:var(--mono);font-size:18px;font-weight:700;line-height:1;color:${m.c||'var(--ink)'}">${m.v}</div>
+          <div style="font-size:8px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);margin-top:4px">${m.l}</div>
+        </div>`).join('')}
       </div>
     </div>
 
-    <!-- PROGRESS + TABS -->
-    <div style="height:5px;background:var(--brd);border-radius:3px;overflow:hidden;margin-bottom:2px"><div style="height:100%;width:${totalPct}%;background:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'};border-radius:3px"></div></div>
-    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:0;margin-bottom:20px;border-bottom:2px solid var(--brd)">
-      ${phases.map(ph=>{
-        const isActive=ph.id===activeTab;
-        const color=ph.complete?'var(--grn)':ph.pct>0?'var(--amb)':'var(--faded)';
-        return `<div onclick="window._stackTab['${id}']='${ph.id}';navigate('product-stack','${id}')" style="cursor:pointer;padding:10px 2px 8px;text-align:center;border-bottom:2px solid ${isActive?'var(--gold)':'transparent'};margin-bottom:-2px">
-          <div style="width:16px;height:16px;border-radius:50%;background:${ph.complete?'var(--grn)':isActive?'var(--gold)':'var(--brd)'};color:${ph.complete||isActive?'#fff':'var(--faded)'};display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:7px;font-weight:700;margin-bottom:3px">${ph.complete?'✓':ph.icon}</div>
-          <div style="font-size:8px;font-weight:${isActive?'700':'500'};color:${isActive?'var(--ink)':color}">${ph.label}</div>
-          <div style="font-family:var(--mono);font-size:7px;color:${color}">${ph.done}/${ph.total}</div>
+    <!-- PRODUCT TREE VISUALIZATION -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);padding:24px 28px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:-.2px;margin-bottom:16px">Product Tree</div>
+      <!-- ROOT: Master Product -->
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:linear-gradient(135deg,rgba(184,154,90,.08),rgba(184,154,90,.03));border:1px solid rgba(184,154,90,.2);border-radius:var(--rl);margin-bottom:8px">
+        <div style="width:36px;height:36px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-family:var(--display);font-size:16px;font-weight:700;color:#1a1917;flex-shrink:0">MP</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-family:var(--display);font-size:16px;font-weight:600">${p.name}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${p.code} · ${p.vendor} · ${styles.length} styles · ${allFits.length} fits · ${sizes.length} sizes</div>
+        </div>
+      </div>
+      <!-- BRANCHES: Styles -->
+      ${styles.length?`<div style="margin-left:18px;border-left:2px solid var(--gold);padding-left:20px">
+        ${styles.map((s,si)=>`
+        <div style="position:relative;margin-bottom:${si<styles.length-1?'4':'0'}px">
+          <div style="position:absolute;left:-21px;top:14px;width:20px;height:0;border-top:2px solid var(--gold)"></div>
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg);border:1px solid var(--brd);border-radius:var(--rl);cursor:pointer;transition:all .12s" onclick="navigate('style-detail','${id}__${s.id}')" onmouseover="this.style.borderColor='var(--gold)';this.style.background='rgba(184,154,90,.04)'" onmouseout="this.style.borderColor='var(--brd)';this.style.background='var(--bg)'">
+            <div style="width:24px;height:24px;border-radius:50%;background:${s.color};border:2px solid rgba(0,0,0,.12);flex-shrink:0;box-shadow:0 2px 6px ${s.color}40"></div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
+              <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${s.sku||'—'} · Grade ${s.grade||'—'}</div>
+            </div>
+            ${(s.fits||[]).length?`<div style="display:flex;gap:3px;flex-wrap:wrap;justify-content:flex-end;max-width:200px">${s.fits.map(f=>`<span style="padding:2px 7px;border-radius:10px;font-size:8px;font-weight:600;background:var(--blu-m);color:var(--blu);white-space:nowrap">${f.length>14?f.substring(0,12)+'…':f}</span>`).join('')}</div>`:''}
+            <div style="text-align:right;flex-shrink:0;min-width:50px">
+              <div style="font-family:var(--mono);font-size:13px;font-weight:700">${s.inventoryQty||0}</div>
+              <div style="font-size:7px;color:var(--faded)">units</div>
+            </div>
+          </div>
+        </div>`).join('')}
+      </div>`:'<div style="margin-left:40px;padding:20px;color:var(--faded);font-size:12px">No styles connected yet</div>'}
+    </div>
+
+    <!-- SUPPLY CHAIN STRIP -->
+    ${activePOs.length||incoming?`
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center">
+        <div style="font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:-.2px">Supply Chain</div>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--grn)">${incoming?incoming.toLocaleString()+' incoming':'—'}</span>
+      </div>
+      ${activePOs.map(po=>{
+        const pct=Math.round(po.stage/9*100);
+        const stageNames=['','Concept','Vendor','Sample','Fit','Shipping','Customs','QC','Dist.','Done'];
+        return `<div onclick="navigate('po-detail','${po.id}')" style="padding:14px 20px;border-bottom:1px solid var(--brd);cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div><span style="font-family:var(--mono);font-size:12px;font-weight:700">${po.num}</span> <span class="badge ${po.status==='in-transit'?'b-amb':po.status==='complete'?'b-grn':'b-blu'}">${po.status}</span></div>
+            <div style="font-family:var(--mono);font-size:11px;color:var(--txt2)">${po.units}u · $${(po.fobTotal||0).toLocaleString()} · ETA ${po.eta?new Date(po.eta).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:0">
+            ${[1,2,3,4,5,6,7,8,9].map(s=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+              <div style="width:100%;height:4px;background:${s<=po.stage?'var(--gold)':'var(--brd)'};border-radius:${s===1?'2px 0 0 2px':s===9?'0 2px 2px 0':'0'}"></div>
+              <div style="font-size:6px;color:${s===po.stage?'var(--gold)':'var(--txt4)'};font-weight:${s===po.stage?'700':'400'}">${stageNames[s]}</div>
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`:''}
+
+    <!-- STORE DISTRIBUTION -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:-.2px;margin-bottom:14px">Distribution · ${stock.toLocaleString()} units</div>
+      ${LOCS.map(loc=>{
+        const q=invByStore[loc]||0;
+        const pct=maxLocQty>0?Math.round(q/maxLocQty*100):0;
+        return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:80px;font-size:11px;font-weight:500;color:var(--txt2);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${loc}</div>
+          <div style="flex:1;height:8px;background:var(--brd);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${q>0?'linear-gradient(90deg,var(--gold),rgba(184,154,90,.6))':'transparent'};border-radius:4px;transition:width .3s"></div></div>
+          <div style="font-family:var(--mono);font-size:12px;font-weight:700;width:40px;text-align:right;color:${q>0?'var(--ink)':'var(--faded)'}">${q}</div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+
+  // ═══════════════════════════════════════════════════════════════
+  // COLLECTION TAB — THE GLORY
+  // ═══════════════════════════════════════════════════════════════
+  const renderCollection=()=>`
+    <!-- STYLE GALLERY -->
+    <div style="font-family:var(--display);font-size:18px;font-weight:600;letter-spacing:-.3px;margin-bottom:4px">Styles</div>
+    <div style="font-size:12px;color:var(--txt3);margin-bottom:16px">${styles.length} styles across ${allFits.length} fits · ${sizes.length} sizes from ${sizes[0]||'—'} to ${sizes[sizes.length-1]||'—'}</div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:28px">
+      ${styles.length?styles.map(s=>{
+        const velPct=Math.min(100,Math.round((s.vel||0)/Math.max(1,adjVel)*100));
+        const inv=s.inventoryQty||0;
+        const gradeColor=s.grade==='A'?'var(--grn)':s.grade==='B'?'var(--amb)':s.grade==='C'?'var(--blu)':'var(--faded)';
+        return `<div onclick="navigate('style-detail','${id}__${s.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;cursor:pointer;transition:all .18s cubic-bezier(.4,0,.2,1);box-shadow:0 2px 10px rgba(0,0,0,.05)" onmouseover="this.style.transform='translateY(-3px)';this.style.boxShadow='0 8px 28px rgba(0,0,0,.1)';this.style.borderColor='var(--gold)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 10px rgba(0,0,0,.05)';this.style.borderColor='var(--brd)'">
+          <!-- COLOR HEADER -->
+          <div style="height:8px;background:${s.color};box-shadow:0 2px 8px ${s.color}30"></div>
+          <div style="padding:16px 18px">
+            <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:12px">
+              <div style="width:32px;height:32px;border-radius:50%;background:${s.color};border:3px solid rgba(0,0,0,.08);flex-shrink:0;box-shadow:inset 0 -2px 4px rgba(0,0,0,.15),0 2px 8px ${s.color}30"></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-family:var(--display);font-size:15px;font-weight:600;letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name}</div>
+                <div style="font-family:var(--mono);font-size:9px;color:var(--faded);margin-top:1px">${s.code||'—'} · ${s.sku||'—'}</div>
+              </div>
+              <div style="width:28px;height:28px;border-radius:50%;border:2px solid ${gradeColor};display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:700;color:${gradeColor};flex-shrink:0">${s.grade||'—'}</div>
+            </div>
+            <!-- FITS -->
+            ${(s.fits||[]).length?`<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">${s.fits.map(f=>`<span style="padding:3px 8px;border-radius:10px;font-size:9px;font-weight:600;background:var(--blu-m);color:var(--blu)">${f}</span>`).join('')}</div>`:''}
+            <!-- METRICS -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+              ${[{l:'Stock',v:inv,c:inv<10?'var(--brick)':''},{l:'Vel/mo',v:Math.round((s.vel||0)*10)/10,c:''},{l:'Sell%',v:(s.sell||0)+'%',c:s.sell>=80?'var(--grn)':s.sell>=50?'':'var(--brick)'}].map((m,i)=>`<div style="padding:8px 6px;text-align:center;${i<2?'border-right:1px solid var(--brd)':''}">
+                <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${m.c||'var(--ink)'}">${m.v}</div>
+                <div style="font-size:7px;color:var(--txt3);margin-top:1px">${m.l}</div>
+              </div>`).join('')}
+            </div>
+          </div>
+        </div>`;
+      }).join(''):'<div style="grid-column:1/-1;padding:40px;text-align:center;color:var(--faded);background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl)">No styles connected yet · <span onclick="addStyle(\''+id+'\')" style="color:var(--gold);cursor:pointer;text-decoration:underline">Add style</span></div>'}
+    </div>
+
+    ${allFits.length>0?`
+    <!-- FIT MATRIX -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="padding:18px 22px;border-bottom:1px solid var(--brd)">
+        <div style="font-family:var(--display);font-size:16px;font-weight:600;letter-spacing:-.2px">Fit Matrix</div>
+        <div style="font-size:11px;color:var(--txt3);margin-top:2px">${allFits.length} fits: ${allFits.join(' · ')}</div>
+      </div>
+      <div style="overflow-x:auto;padding:0">
+        <table style="width:100%;border-collapse:collapse;min-width:${allFits.length*100+140}px">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:12px 16px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:2px solid var(--brd);background:var(--sur);position:sticky;left:0;z-index:1">Style</th>
+              ${allFits.map(f=>`<th style="text-align:center;padding:12px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--blu);border-bottom:2px solid var(--brd);background:var(--sur);white-space:nowrap">${f}</th>`).join('')}
+              <th style="text-align:center;padding:12px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--txt3);border-bottom:2px solid var(--brd);background:var(--sur)">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${styles.map(s=>`<tr>
+              <td style="padding:10px 16px;border-bottom:1px solid var(--brd);position:sticky;left:0;background:var(--sur2);z-index:1">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <div style="width:14px;height:14px;border-radius:50%;background:${s.color};border:2px solid rgba(0,0,0,.1);flex-shrink:0"></div>
+                  <span style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.name.length>18?s.name.substring(0,16)+'…':s.name}</span>
+                </div>
+              </td>
+              ${allFits.map(f=>{
+                const hasFit=(s.fits||[]).some(sf=>sf.toLowerCase()===f.toLowerCase());
+                return `<td style="text-align:center;padding:8px;border-bottom:1px solid var(--brd)">
+                  ${hasFit?`<div style="width:26px;height:26px;border-radius:50%;background:var(--grn-m);color:var(--grn);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">✓</div>`:`<div style="width:26px;height:26px;border-radius:50%;background:var(--bg);color:var(--brd-s);display:inline-flex;align-items:center;justify-content:center;font-size:10px">—</div>`}
+                </td>`;
+              }).join('')}
+              <td style="text-align:center;padding:8px;border-bottom:1px solid var(--brd);font-family:var(--mono);font-size:13px;font-weight:700">${s.inventoryQty||0}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`:''}
+
+    <!-- SIZE RANGE -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);padding:20px 24px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="font-family:var(--display);font-size:16px;font-weight:600;letter-spacing:-.2px;margin-bottom:4px">Size Range</div>
+      <div style="font-size:11px;color:var(--txt3);margin-bottom:14px">${p.sizes} sizing · ${sizes.length} sizes</div>
+      <div style="display:flex;gap:0;flex-wrap:wrap">
+        ${sizes.map(sz=>{
+          const isCore=core.includes(sz);
+          return `<div style="width:42px;height:42px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:${isCore?'700':'400'};color:${isCore?'var(--ink)':'var(--txt3)'};background:${isCore?'rgba(184,154,90,.08)':'var(--bg)'};border:1px solid ${isCore?'rgba(184,154,90,.2)':'var(--brd)'};margin:-0.5px;border-radius:2px">${sz}</div>`;
+        }).join('')}
+      </div>
+      ${core.length?`<div style="margin-top:10px;font-family:var(--mono);font-size:9px;color:var(--faded)">■ Core sizes highlighted</div>`:''}
+    </div>
+  `;
+
+  // ═══════════════════════════════════════════════════════════════
+  // TECH PACK TAB
+  // ═══════════════════════════════════════════════════════════════
+  const renderSpecs=()=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <div style="font-family:var(--display);font-size:18px;font-weight:600;letter-spacing:-.3px">Tech Pack</div>
+        <div style="font-size:12px;color:var(--txt3);margin-top:2px">Construction & material specifications</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-family:var(--mono);font-size:14px;font-weight:700;color:${specPct===100?'var(--grn)':specPct>50?'var(--amb)':'var(--brick)'}">${specPct}%</div>
+        <button class="btn btn-sm btn-p" onclick="navigate('pd-dna','${id}')">Edit Specs</button>
+      </div>
+    </div>
+
+    ${Object.entries(catComps).map(([group,fields])=>{
+      const done=fields.filter(f=>constr[f.id]).length;
+      return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;margin-bottom:12px;box-shadow:0 2px 10px rgba(0,0,0,.05)">
+        <div style="padding:12px 18px;background:var(--sur);border-bottom:1px solid var(--brd);display:flex;justify-content:space-between;align-items:center">
+          <div style="font-family:var(--display);font-size:13px;font-weight:600;text-transform:capitalize">${group}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:${done===fields.length?'var(--grn)':'var(--txt3)'}">${done}/${fields.length}</div>
+        </div>
+        ${fields.map(f=>{
+          const val=constr[f.id]||'';
+          return `<div style="display:grid;grid-template-columns:1fr 1fr;align-items:center;padding:12px 18px;border-bottom:1px solid var(--brd)">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:8px;height:8px;border-radius:50%;background:${val?'var(--grn)':'var(--brd-s)'};flex-shrink:0"></div>
+              <span style="font-size:12px;color:var(--txt2)">${f.label}</span>
+            </div>
+            <div style="font-family:var(--mono);font-size:12px;font-weight:${val?'600':'400'};color:${val?'var(--ink)':'var(--faded)'}${val?'':';font-style:italic'}">${val||'not set'}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('')}
+
+    <!-- COMPONENTS -->
+    <div style="margin-top:20px">
+      <div style="font-family:var(--display);font-size:14px;font-weight:600;margin-bottom:10px">Components · ${myComps.length}</div>
+      ${myComps.length?`<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.05)">
+        ${myComps.map((c,i)=>`<div style="display:grid;grid-template-columns:80px 1fr 70px;align-items:center;padding:12px 18px;${i<myComps.length-1?'border-bottom:1px solid var(--brd)':''}">
+          <span style="font-family:var(--mono);font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em">${Object.entries(comps).find(([t,arr])=>arr?.some(x=>x.id===c.id))?.[0]||'—'}</span>
+          <div>
+            <div style="font-size:12px;font-weight:600">${c.name}</div>
+            ${c.vendor?`<div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${c.vendor}</div>`:''}
+          </div>
+          <span style="font-family:var(--mono);font-size:12px;font-weight:600;text-align:right">${c.cost&&c.cost!=='—'?c.cost:'—'}</span>
+        </div>`).join('')}
+      </div>`:
+      '<div style="padding:24px;text-align:center;color:var(--faded);font-size:12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl)">No components assigned</div>'}
+      <button class="btn btn-sm" style="margin-top:10px" onclick="addComponentModal('${id}')">+ Add component</button>
+    </div>
+
+    <!-- APPROVALS -->
+    <div style="margin-top:20px">
+      <div style="font-family:var(--display);font-size:14px;font-weight:600;margin-bottom:10px">Approvals</div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.05)">
+        ${[{l:'Sample Approval',k:'sampleApproved',a:'sampleApproved',d:'Initial sample meets spec'},{l:'Fit Approval',k:'fitApproved',a:'fitApproved',d:'Fit approved on live model'},{l:'Margin Sign-off',k:'marginApproved',a:'marginApproved',d:'Margin at '+margin+'% approved'}].map((ap,i)=>{
+          const done=!!st[ap.k];
+          return `<div style="display:grid;grid-template-columns:36px 1fr auto;align-items:center;padding:14px 18px;${i<2?'border-bottom:1px solid var(--brd)':''}">
+            <div style="width:24px;height:24px;border-radius:50%;border:2px solid ${done?'var(--grn)':'var(--brd-s)'};background:${done?'var(--grn)':'transparent'};display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;transition:all .2s">${done?'✓':''}</div>
+            <div>
+              <div style="font-size:13px;font-weight:${done?'400':'600'};color:${done?'var(--faded)':'var(--ink)'};${done?'text-decoration:line-through':''}">${ap.l}</div>
+              <div style="font-size:10px;color:${done?'var(--grn)':'var(--faded)'};margin-top:1px">${done?'Approved '+st[ap.k]:ap.d}</div>
+            </div>
+            ${!done?`<button class="btn btn-sm btn-p" onclick="stackAction('${id}','${ap.a}')">Approve</button>`:''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
+  // ═══════════════════════════════════════════════════════════════
+  // COMMERCE TAB
+  // ═══════════════════════════════════════════════════════════════
+  const renderCommerce=()=>`
+    <!-- COST WATERFALL -->
+    <div style="font-family:var(--display);font-size:18px;font-weight:600;letter-spacing:-.3px;margin-bottom:16px">Cost & Margin</div>
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      ${(()=>{
+        const duty=Math.round(p.fob*p.duty/100*100)/100;
+        const freight=Math.round(p.fob*0.12*100)/100;
+        const steps=[
+          {l:'FOB (ex-factory)',v:p.fob,pct:0,type:'base'},
+          {l:'Duty '+p.duty+'%',v:duty,pct:p.fob>0?Math.round(duty/p.fob*100):0,type:'add'},
+          {l:'Freight ~12%',v:freight,pct:p.fob>0?Math.round(freight/p.fob*100):0,type:'add'},
+          {l:'Landed cost',v:landed,pct:0,type:'total'},
+          {l:'Retail price',v:p.retail,pct:0,type:'retail'},
+        ];
+        return steps.map((s,i)=>{
+          const isTotal=s.type==='total'||s.type==='retail';
+          return `<div style="display:flex;align-items:center;padding:${isTotal?'16px':'12px'} 20px;border-bottom:${i<steps.length-1?'1px solid var(--brd)':'none'};${isTotal?'background:var(--sur)':''}">
+            <div style="flex:1">
+              <div style="font-size:${isTotal?'14px':'12px'};font-weight:${isTotal?'700':'500'};color:${s.type==='add'?'var(--txt2)':'var(--ink)'}">${s.type==='add'?'+ ':s.type==='total'?'= ':''}${s.l}</div>
+            </div>
+            <div style="font-family:var(--mono);font-size:${isTotal?'20px':'15px'};font-weight:700;color:${s.type==='retail'?'var(--gold)':'var(--ink)'}">$${s.v.toFixed?s.v.toFixed(2):s.v}</div>
+          </div>`;
+        }).join('');
+      })()}
+      <!-- MARGIN BAR -->
+      <div style="padding:16px 20px;background:${margin>=65?'rgba(26,88,48,.04)':margin>=50?'rgba(138,78,8,.04)':'rgba(138,58,42,.06)'};border-top:2px solid ${margin>=65?'var(--grn)':margin>=50?'var(--amb)':'var(--brick)'}">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <span style="font-size:13px;font-weight:600">Gross Margin</span>
+          <span style="font-family:var(--mono);font-size:28px;font-weight:700;color:${margin>=65?'var(--grn)':margin>=50?'var(--amb)':'var(--brick)'}">${margin}%</span>
+        </div>
+        <div style="height:8px;background:var(--brd);border-radius:4px;overflow:hidden;position:relative">
+          <div style="height:100%;width:${Math.min(100,margin)}%;background:${margin>=65?'var(--grn)':margin>=50?'var(--amb)':'var(--brick)'};border-radius:4px"></div>
+          <div style="position:absolute;left:50%;top:-2px;width:2px;height:12px;background:var(--ink);opacity:.4;border-radius:1px" title="50% target"></div>
+        </div>
+        ${!st.marginApproved?`<button class="btn btn-p" style="margin-top:12px" onclick="stackAction('${id}','marginApproved')">Sign off margin at ${margin}%</button>`
+        :`<div style="font-family:var(--mono);font-size:10px;color:var(--grn);margin-top:8px">✓ Signed off ${st.marginApproved}</div>`}
+      </div>
+    </div>
+
+    <!-- VENDOR CARD -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rx);overflow:hidden;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.07)">
+      <div style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--brd)">
+        <div>
+          <div style="font-family:var(--display);font-size:15px;font-weight:600">${p.vendor||'No vendor'}</div>
+          ${vendor?`<div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">${vendor.country||''} · ${vendor.onTime||0}% on-time · ${vendor.payTerms||'—'}</div>`:''}
+        </div>
+        ${vendorId?`<button class="btn btn-sm" onclick="navigate('vendor-detail','${vendorId}')">Vendor Profile →</button>`:''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr)">
+        ${[{l:'Lead',v:p.lead?p.lead+'d':'—'},{l:'MOQ',v:p.moq?p.moq+'u':'—'},{l:'HTS',v:p.hts||'—'},{l:'Duty',v:p.duty?p.duty+'%':'—'}].map((m,i)=>`<div style="padding:12px 14px;text-align:center;${i<3?'border-right:1px solid var(--brd)':''}">
+          <div style="font-family:var(--mono);font-size:15px;font-weight:700">${m.v}</div>
+          <div style="font-size:8px;color:var(--faded);margin-top:2px">${m.l}</div>
+        </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- PURCHASE ORDERS -->
+    <div style="font-family:var(--display);font-size:16px;font-weight:600;margin-bottom:10px">Purchase Orders · ${pos.length}</div>
+    ${pos.length?pos.map(po=>{
+      const pct=Math.round(po.stage/9*100);
+      const totalPaid=po.payments?po.payments.filter(x=>x.status==='paid').reduce((s,x)=>s+(x.amount||0),0):0;
+      const totalDue=po.payments?po.payments.filter(x=>x.status!=='paid').reduce((s,x)=>s+(x.amount||0),0):0;
+      return `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);margin-bottom:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.05)">
+        <div onclick="navigate('po-detail','${po.id}')" style="padding:14px 18px;cursor:pointer;transition:background .12s" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <div><span style="font-family:var(--mono);font-size:13px;font-weight:700">${po.num}</span> <span class="badge ${po.status==='complete'?'b-grn':po.status==='in-transit'?'b-amb':'b-blu'}">${po.status}</span></div>
+            <span style="font-family:var(--mono);font-size:12px">${po.units}u · $${(po.fobTotal||0).toLocaleString()}</span>
+          </div>
+          ${po.styleNames?`<div style="font-size:11px;color:var(--txt3);margin-bottom:6px">${po.styleNames.join(' · ')}</div>`:''}
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;height:4px;background:var(--brd);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--gold);border-radius:2px"></div></div>
+            <span style="font-family:var(--mono);font-size:9px;color:var(--faded)">${po.stage}/9</span>
+          </div>
+        </div>
+        ${po.payments?`<div style="border-top:1px solid var(--brd);padding:10px 18px;display:flex;gap:16px;font-family:var(--mono);font-size:10px">
+          <span style="color:var(--grn)">Paid $${totalPaid.toLocaleString()}</span>
+          ${totalDue>0?`<span style="color:${po.payments.some(x=>x.status==='overdue')?'var(--red)':'var(--amb)'}">Due $${totalDue.toLocaleString()}</span>`:''}
+        </div>`:''}
+      </div>`;
+    }).join(''):`<div style="padding:24px;text-align:center;color:var(--faded);font-size:12px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl)">No purchase orders</div>`}
+    <button class="btn btn-p" style="margin-top:10px" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">+ Create Purchase Order</button>
+  `;
+
+  // ═══════════════════════════════════════════════════════════════
+  // RENDER PAGE
+  // ═══════════════════════════════════════════════════════════════
+  const tabContent={overview:renderOverview,collection:renderCollection,specs:renderSpecs,commerce:renderCommerce};
+
+  $('page').innerHTML=`
+  <div style="max-width:960px">
+    <!-- BREADCRUMB -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:16px;font-size:12px;min-height:44px">
+      <span onclick="navigate('products')" style="color:var(--txt3);cursor:pointer;transition:color .1s" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--txt3)'">Products</span>
+      <span style="color:var(--brd-s);font-size:9px">›</span>
+      <span onclick="navigate('product-detail','${id}')" style="color:var(--txt3);cursor:pointer;transition:color .1s" onmouseover="this.style.color='var(--ink)'" onmouseout="this.style.color='var(--txt3)'">${p.name}</span>
+      <span style="color:var(--brd-s);font-size:9px">›</span>
+      <span style="color:var(--txt2);font-weight:500">Product Stack</span>
+    </div>
+
+    <!-- TAB BAR -->
+    <div style="display:flex;gap:0;border-bottom:2px solid var(--brd);margin-bottom:24px">
+      ${TABS.map(t=>{
+        const isOn=t.id===activeTab;
+        return `<div onclick="window._stackTab['${id}']='${t.id}';navigate('product-stack','${id}')" style="padding:12px 20px;cursor:pointer;font-size:13px;font-weight:${isOn?'700':'500'};color:${isOn?'var(--ink)':'var(--txt3)'};border-bottom:2px solid ${isOn?'var(--gold)':'transparent'};margin-bottom:-2px;transition:all .12s;display:flex;align-items:center;gap:6px;user-select:none" onmouseover="if(!${isOn})this.style.color='var(--txt2)'" onmouseout="if(!${isOn})this.style.color='var(--txt3)'">
+          <span style="font-size:10px;opacity:${isOn?'1':'.5'}">${t.icon}</span> ${t.label}
         </div>`;
       }).join('')}
     </div>
 
-    <!-- PHASE HEADER -->
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px">
-      <div>
-        <div style="font-family:var(--display);font-size:17px;font-weight:600">${activePh.icon} · ${activePh.label}</div>
-        <div style="font-size:11px;color:var(--faded);margin-top:2px">${activePh.desc}</div>
+    <!-- LIFECYCLE PROGRESS (subtle) -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:20px;padding:10px 14px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl)">
+      <span style="font-size:10px;color:var(--faded);font-weight:500;flex-shrink:0">Lifecycle</span>
+      <div style="flex:1;display:flex;gap:2px">
+        ${phases.map(ph=>`<div style="flex:1;height:6px;background:${ph.complete?'var(--grn)':ph.pct>0?'var(--amb)':'var(--brd)'};border-radius:3px;transition:background .3s" title="${ph.label}: ${ph.pct}%"></div>`).join('')}
       </div>
-      <span style="font-family:var(--mono);font-size:15px;font-weight:700;color:${activePh.complete?'var(--grn)':activePh.pct>0?'var(--amb)':'var(--brick)'}">${activePh.pct}%</span>
-    </div>
-    <div style="height:3px;background:var(--brd);border-radius:2px;overflow:hidden;margin-bottom:20px"><div style="height:100%;width:${activePh.pct}%;background:${activePh.complete?'var(--grn)':'var(--amb)'};border-radius:2px"></div></div>
-
-    <!-- PHASE CONTENT -->
-    ${phaseContent[activeTab]||Object.entries(activePh.sections).map(([section,reqs])=>`
-      <div style="margin-bottom:12px">
-        <div style="font-family:var(--mono);font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.08em;padding:6px 0;border-bottom:1px solid var(--brd)">${section} · ${reqs.filter(r=>r.done).length}/${reqs.length}</div>
-        ${reqs.map(r=>`<div style="display:grid;grid-template-columns:24px 1fr auto;align-items:center;padding:10px 4px;border-bottom:1px solid rgba(0,0,0,.04);gap:8px;min-height:44px">
-          <div style="width:16px;height:16px;border-radius:50%;border:2px solid ${r.done?'var(--grn)':'var(--brd)'};background:${r.done?'var(--grn)':'transparent'};font-size:9px;color:#fff;display:flex;align-items:center;justify-content:center">${r.done?'✓':''}</div>
-          <div><div style="font-size:12px;font-weight:${r.done?'400':'600'};color:${r.done?'var(--faded)':'var(--ink)'};${r.done?'text-decoration:line-through':''}">${r.label}</div><div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${r.val}</div></div>
-          ${!r.done?`<button class="btn btn-sm${r.actionLabel?' btn-p':''}" onclick="${r.action}" style="font-size:9px">${r.actionLabel||'Fix →'}</button>`:''}
-        </div>`).join('')}
-      </div>`).join('')}
-
-    <!-- PHASE NAV -->
-    <div style="display:flex;justify-content:space-between;align-items:center;padding-top:14px;border-top:2px solid var(--brd);margin-top:8px">
-      ${phIdx>0?`<button class="btn" onclick="window._stackTab['${id}']='${phases[phIdx-1].id}';navigate('product-stack','${id}')">← ${phases[phIdx-1].label}</button>`:'<span></span>'}
-      ${phIdx<5?`<button class="btn ${activePh.complete?'btn-p':''}" onclick="window._stackTab['${id}']='${phases[phIdx+1].id}';navigate('product-stack','${id}')">${phases[phIdx+1].label} →</button>`
-      :totalPct===100?`<button class="btn btn-p" onclick="window._poNew={mpId:'${id}',step:1};navigate('po-new')">Place PO →</button>`:'<span></span>'}
+      <span style="font-family:var(--mono);font-size:11px;font-weight:700;color:${totalPct===100?'var(--grn)':totalPct>60?'var(--amb)':'var(--brick)'};flex-shrink:0">${totalPct}%</span>
     </div>
 
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+    <!-- TAB CONTENT -->
+    <div style="animation:pgIn .2s ease-out">
+      ${(tabContent[activeTab]||renderOverview)()}
+    </div>
+
+    <!-- FOOTER ACTIONS -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:28px;padding-top:16px;border-top:1px solid var(--brd)">
       <button class="btn btn-sm" onclick="navigate('pd-dna','${id}')">Tech Pack</button>
       <button class="btn btn-sm" onclick="navigate('pd-cost','${id}')">Cost Build</button>
       <button class="btn btn-sm" onclick="navigate('pd-edit','${id}')">Edit</button>
       <button class="btn btn-sm" onclick="navigate('product-detail','${id}')">Overview</button>
+      ${p.shopifyUrl?`<button class="btn btn-sm" onclick="window.open('${p.shopifyUrl}','_blank')">Shopify ↗</button>`:''}
     </div>
   </div>`;
 }
@@ -11005,8 +11183,7 @@ function getProductionPlan() {
  const plan = prods.map(p => {
  const stock = Store.totalStock(p.id);
  const styles = Store.getStyles(p.id);
- const realVel = getRealVelocity(p.id, 30);
- const adjVel = realVel > 0 ? realVel : Math.round((p.vel||0) * season.multiplier * 10) / 10;
+ const adjVel = Math.round(p.vel * season.multiplier * 10) / 10;
  const weeklyUnits = adjVel;
  const coverWeeks = weeklyUnits > 0 ? Math.round(stock / weeklyUnits) : 999;
  const stockoutDate = weeklyUnits > 0 ? new Date(Date.now() + coverWeeks * 7 * 86400000) : null;
@@ -11623,23 +11800,7 @@ function renderCRMCustomers(){
  if(!window._crmTab) window._crmTab={filter:'',sort:'ltv',store:'all'};
  const CT=window._crmTab;
 
- // Merge seed/manual customers with Shopify order-derived customers
- const shopifyCusts = getShopifyCustomers(); // derived from synced orders
- const shopifyMap = {}; shopifyCusts.forEach(c=>{ shopifyMap[c.id]=c; });
- // Build unified list: seed customers + any Shopify-only customers not in seed
- const seedIds = new Set(custs.map(c=>c.id));
- const extraShopify = shopifyCusts.filter(c=>!seedIds.has(c.id)).map(c=>({
-   id:c.id, name:c.name||'Guest', email:'', store:'Online', source:'shopify',
-   orders: Array(c.orders).fill({}), lastVisit:c.lastOrder,
-   _shopify:c
- }));
- const allCusts = [...custs, ...extraShopify];
- const data=allCusts.map(c=>{
-   const sc=shopifyMap[c.id]; // Shopify data for this customer if exists
-   const ltv=sc?sc.revenue:Store.getCustomerLTV(c);
-   const orderCount=sc?sc.orders:(c.orders||[]).length;
-   return {...c,ltv,tier:Store.getCustomerTier(c),orderCount,_shopifyLtv:sc?.revenue,_shopifyOrders:sc?.orders};
- });
+ const data=custs.map(c=>({...c,ltv:Store.getCustomerLTV(c),tier:Store.getCustomerTier(c),orderCount:(c.orders||[]).length}));
  const STORES=['all',...new Set(custs.map(c=>c.store))];
  const filtered=CT.store==='all'?data:data.filter(d=>d.store===CT.store);
  const searched=CT.filter?filtered.filter(d=>d.name.toLowerCase().includes(CT.filter.toLowerCase())||d.email?.toLowerCase().includes(CT.filter.toLowerCase())||d.phone?.includes(CT.filter)):filtered;
@@ -11798,7 +11959,6 @@ function renderFloorApp(){
  const styles=Store.getStyles(p.id);
  return{...p,storeQty,styles,inv};
  }).filter(p=>p.storeQty>0||F.search);
- const _floorVel=p=>{const r=getRealVelocity(p.id,30);return r>0?r:(p.vel||0)*Store.getCurrentSeason().multiplier;};
 
  const searched=F.search?storeProd.filter(p=>{
  const q=F.search.toLowerCase();
@@ -12537,16 +12697,8 @@ function renderIntegrations() {
   const shopifyInt = intg.shopify || {};
   const shopifyCount = prods.filter(p => p.shopifyId).length;
   const totalProds = prods.length;
-  const lastSyncDate = shopifyInt.lastSync ? new Date(shopifyInt.lastSync) : null;
-  const lastSync = lastSyncDate ? lastSyncDate.toLocaleString() : 'Never';
-  const ageMin = lastSyncDate ? Math.round((Date.now()-lastSyncDate.getTime())/60000) : 9999;
+  const lastSync = shopifyInt.lastSync ? new Date(shopifyInt.lastSync).toLocaleString() : 'Never';
   const isConnected = shopifyInt.connected || false;
-  const _allSales=getSales();
-  const _shopifyOrders=_allSales.filter(s=>s.source==='shopify').length;
-  const _shopifyCusts=getShopifyCustomers().length;
-  const _velSkus=getShopifyVelocity()?Object.keys(getShopifyVelocity()).length:0;
-  const _invSynced=shopifyInt.syncedInventory||false;
-  const _stale=ageMin>240;
 
   $('page').innerHTML = `
   <div style="max-width:940px">
