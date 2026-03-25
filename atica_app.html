@@ -2146,20 +2146,29 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
      console.log('[Sync] Shopify connected:', statusData.shop, statusData.domain);
 
      // 2. Fetch products, inventory, velocity, sales, and orders in parallel
-     const [prodRes, invRes, velRes, salesRes, ordersRes, treesRes] = await Promise.all([
-       fetch('/api/products/sync', { method: 'POST' }),
-       fetch('/api/inventory/sync', { method: 'POST' }),
-       fetch('/api/orders/velocity?days=30'),
-       fetch('/api/orders/sales?days=30'),
-       fetch('/api/orders/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
-       fetch('/api/products/trees'),
+     // Per-fetch timeout — hung request won't block others
+     const _ft=(url,opts,ms=12000)=>{
+       const ac=new AbortController();
+       const t=setTimeout(()=>ac.abort(),ms);
+       return fetch(url,{...(opts||{}),signal:ac.signal}).finally(()=>clearTimeout(t));
+     };
+     const _results=await Promise.allSettled([
+       _ft('/api/products/sync',{method:'POST'},15000),
+       _ft('/api/inventory/sync',{method:'POST'},15000),
+       _ft('/api/orders/velocity?days=30',null,10000),
+       _ft('/api/orders/sales?days=30',null,10000),
+       _ft('/api/orders/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({since:new Date(Date.now()-90*86400000).toISOString()})},20000),
+       _ft('/api/products/trees',null,10000),
      ]);
-     const prodData  = prodRes.ok  ? await prodRes.json()  : null;
-     const treesData = treesRes && treesRes.ok ? await treesRes.json() : null;
-     const invData   = invRes.ok   ? await invRes.json()   : null;
-     const velData   = velRes.ok   ? await velRes.json()   : null;
-     const salesData = salesRes.ok ? await salesRes.json()  : null;
-     const ordersData = ordersRes.ok ? await ordersRes.json() : null;
+     const [prodRes,invRes,velRes,salesRes,ordersRes,treesRes]=
+       _results.map(r=>r.status==='fulfilled'?r.value:null);
+     // null-safe: allSettled may return null for timed-out fetches
+     const prodData   = prodRes?.ok   ? await prodRes.json()   : null;
+     const treesData  = treesRes?.ok  ? await treesRes.json()  : null;
+     const invData    = invRes?.ok    ? await invRes.json()    : null;
+     const velData    = velRes?.ok    ? await velRes.json()    : null;
+     const salesData  = salesRes?.ok  ? await salesRes.json()  : null;
+     const ordersData = ordersRes?.ok ? await ordersRes.json() : null;
 
      if (!prodData || !prodData.products) {
        console.warn('[Sync] No product data returned');
