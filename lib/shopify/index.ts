@@ -9,4 +9,6 @@ export {
   buildProductTree,
 } from './mappers';
 export { sinceDate, buildVelocity, buildSalesSummary } from './analytics';
+export { normalizeLocation, buildStoreInventory, ATICA_STORES } from './locations';
+export { fullSync, salesPulse, getProductInventory } from './sync';
 export type * from './types';
