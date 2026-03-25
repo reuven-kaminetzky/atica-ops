@@ -3905,7 +3905,7 @@ function renderFinMargins(){
     const landed=Math.round(p.fob*1.34*100)/100;
     const margin=p.retail>0?Math.round((p.retail-landed)/p.retail*100):0;
     const profitUnit=Math.round((p.retail-landed)*100)/100;
-    const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+    const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
     const weeklyProfit=Math.round(adjVel*profitUnit);
     const annualProfit=weeklyProfit*52;
     const markup=landed>0?Math.round(p.retail/landed*10)/10:0;
@@ -4006,9 +4006,12 @@ function renderFinCatRev(){
  const c=cats[p.cat];
  c.prods.push(p);
  c.stock+=Store.totalStock(p.id);
- const wRev=Math.round(p.vel*season.multiplier*p.retail);
+ const _vel=getRealVelocity(p.id,30)||Math.round((p.vel||0)*season.multiplier*10)/10;
+ const wRev=Math.round(_vel*p.retail);
  c.rev+=wRev*52;
- c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+ const _realRev=(getSalesByProduct(getSalesSince(30))[p.id]||{}).revenue||0;
+ c.realRev30=(_vel30Data=>(c.realRev30||0)+_realRev)();
+ c.cogs+=Math.round(_vel*season.multiplier*p.fob*1.34*52);
  c.margin+=(p.retail||0)>0?Math.round(((p.retail||0)-(p.fob||0)*1.34)/(p.retail||1)*100):0;
  });
  Object.values(cats).forEach(c=>{c.avgMargin=c.prods.length?Math.round(c.margin/c.prods.length):0;c.gross=c.rev-c.cogs;c.grossPct=c.rev>0?Math.round(c.gross/c.rev*100):0;});
@@ -4073,7 +4076,7 @@ function renderFinValuation(){
     const landed=Math.round(p.fob*1.34*100)/100;
     const costVal=Math.round(stock*landed);
     const retailVal=Math.round(stock*p.retail);
-    const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+    const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
     const cover=adjVel>0?Math.round(stock/adjVel):999;
     return{...p,stock,inv,landed,costVal,retailVal,adjVel,cover};
   });
@@ -4160,7 +4163,7 @@ function renderAnForecast(){
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const stockoutDate=adjVel>0?new Date(Date.now()+cover*7*86400000):null;
  const weeklyRev=Math.round(adjVel*p.retail);
@@ -4580,7 +4583,121 @@ function renderAnWeb(){
  }).join('')}
  </div>`;
 }
-function renderAnDemand(){navigate('demand');}
+function renderAnDemand(){
+  const prods = Store.getProducts();
+  const season = Store.getCurrentSeason();
+  const sales30 = getSalesSince(30);
+  const sales7  = getSalesSince(7);
+  const byProd30 = getSalesByProduct(sales30);
+  const byProd7  = getSalesByProduct(sales7);
+  const hasData  = sales30.length > 0;
+
+  const data = prods.map(p => {
+    const vel30 = getRealVelocity(p.id, 30);
+    const vel7  = getRealVelocity(p.id, 7);
+    const velSeed = Math.round((p.vel||0)*season.multiplier*10)/10;
+    const vel = vel30 > 0 ? vel30 : velSeed;
+    const trend = vel30 > 0 && vel7 > 0 ? (vel7 - vel30) / Math.max(vel30, 0.1) : 0;
+    const stock = Store.totalStock(p.id);
+    const cover = vel > 0 ? Math.round(stock/vel) : 999;
+    const sold30 = (byProd30[p.id]||{}).units||0;
+    const sold7  = (byProd7[p.id]||{}).units||0;
+    return {...p, vel, vel30, vel7, velSeed, trend, stock, cover, sold30, sold7};
+  }).filter(p => p.vel > 0 || p.sold30 > 0)
+    .sort((a,b) => b.vel - a.vel);
+
+  const trending_up   = data.filter(p => p.trend >  0.15).slice(0,5);
+  const trending_down = data.filter(p => p.trend < -0.15).slice(0,5);
+  const at_risk       = data.filter(p => p.cover < 6 && p.vel > 0).slice(0,8);
+
+  const fmt = n => '$'+(n>=1000?(n/1000).toFixed(1)+'K':Math.round(n));
+  const trendArrow = t => t > 0.15 ? '↑' : t < -0.15 ? '↓' : '→';
+  const trendColor = t => t > 0.15 ? 'var(--grn)' : t < -0.15 ? 'var(--brick)' : 'var(--faded)';
+
+  $('page').innerHTML = `
+  <div style="max-width:960px">
+    <div class="back-link" onclick="navigate('analytics')">← Analytics</div>
+    <div style="font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Demand Intelligence</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:20px">
+      ${hasData ? `${data.length} active products · ${sales30.length} orders / 30d · real velocity` : 'No order data — sync Shopify first'}
+    </div>
+
+    ${!hasData ? `<div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:32px;text-align:center;color:var(--faded)">
+      <div style="font-size:14px;margin-bottom:8px">No Shopify order data yet</div>
+      <button class="btn btn-p" onclick="(async()=>{this.textContent='Syncing…';const r=await Store.syncFromShopify();navigate('demand');toast(r.synced?'Synced':'Error',r.synced?'success':'error')})()">Sync Shopify Now</button>
+    </div>` : `
+
+    <!-- TRENDING UP -->
+    ${trending_up.length ? `
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--grn);margin-bottom:8px">↑ Accelerating</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:20px">
+      ${trending_up.map(p=>`
+      <div onclick="navigate('product-detail','${p.id}')" style="background:var(--sur2);border:1px solid rgba(26,88,48,.2);border-radius:var(--rl);padding:12px 14px;cursor:pointer" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background='var(--sur2)'">
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <span style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${p.vel}/w</span>
+          <span style="font-size:10px;color:var(--grn)">+${Math.round(p.trend*100)}%</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">${p.sold30} sold · ${p.cover>99?'∞':p.cover+'w'} cover</div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <!-- AT RISK -->
+    ${at_risk.length ? `
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--brick);margin-bottom:8px">⚠ Cover < 6 weeks</div>
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:20px">
+      ${at_risk.map((p,i)=>`
+      <div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:1fr 60px 60px 60px;align-items:center;padding:10px 14px;border-bottom:${i<at_risk.length-1?'1px solid var(--brd)':'none'};cursor:pointer" class="row-hover">
+        <div>
+          <div style="font-size:12px;font-weight:600">${p.name}</div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.cat}</div>
+        </div>
+        <div style="text-align:right"><div style="font-size:8px;color:var(--faded)">STOCK</div><div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--brick)">${p.stock}</div></div>
+        <div style="text-align:right"><div style="font-size:8px;color:var(--faded)">VEL</div><div style="font-family:var(--mono);font-size:12px">${p.vel}/w</div></div>
+        <div style="text-align:right"><div style="font-size:8px;color:var(--faded)">COVER</div><div style="font-family:var(--mono);font-size:12px;font-weight:700;color:var(--brick)">${p.cover}w</div></div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <!-- TRENDING DOWN -->
+    ${trending_down.length ? `
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--amb);margin-bottom:8px">↓ Decelerating</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:20px">
+      ${trending_down.map(p=>`
+      <div onclick="navigate('product-detail','${p.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 14px;cursor:pointer" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background='var(--sur2)'">
+        <div style="font-size:12px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</div>
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <span style="font-family:var(--mono);font-size:16px;font-weight:700">${p.vel}/w</span>
+          <span style="font-size:10px;color:var(--amb)">${Math.round(p.trend*100)}%</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--faded);margin-top:2px">${p.sold30} sold · ${p.stock}u stock</div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <!-- FULL VELOCITY TABLE -->
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:8px">All Active Products</div>
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden">
+      <div style="display:grid;grid-template-columns:1fr 56px 56px 56px 56px;padding:8px 14px;border-bottom:1px solid var(--brd)">
+        <span style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em">Product</span>
+        <span style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;text-align:right">7d</span>
+        <span style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;text-align:right">30d</span>
+        <span style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;text-align:right">Trend</span>
+        <span style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;text-align:right">Cover</span>
+      </div>
+      ${data.slice(0,30).map((p,i)=>`
+      <div onclick="navigate('product-detail','${p.id}')" style="display:grid;grid-template-columns:1fr 56px 56px 56px 56px;align-items:center;padding:9px 14px;border-bottom:${i<Math.min(data.length,30)-1?'1px solid var(--brd)':'none'};cursor:pointer" class="row-hover">
+        <div>
+          <div style="font-size:12px;font-weight:500">${p.name}</div>
+          <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.cat}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;text-align:right">${p.sold7||'—'}</div>
+        <div style="font-family:var(--mono);font-size:11px;text-align:right;font-weight:600">${p.vel>0?p.vel+'u':'—'}</div>
+        <div style="font-size:13px;text-align:right;color:${trendColor(p.trend)};font-weight:700">${p.vel30>0?trendArrow(p.trend):'—'}</div>
+        <div style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.cover<8?'var(--brick)':p.cover<16?'var(--amb)':'var(--faded)'}">${p.cover>99?'∞':p.cover+'w'}</div>
+      </div>`).join('')}
+    </div>
+    `}
+  </div>`;
+}
 function renderRetStore(){
  const prods=Store.getProducts();
  const STORES=Store.LOCS.filter(l=>l!=='Online'&&l!=='Reserve'&&l!=='Wholesale');
@@ -4594,7 +4711,7 @@ function renderRetStore(){
  const inv=Store.getInventoryFor(p.id)||{};
  const qty=inv[RS.store]||0;
  const styles=Store.getStyles(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  return{...p,qty,styles,adjVel};
  }).filter(p=>p.qty>0).sort((a,b)=>b.qty-a.qty);
 
@@ -5466,7 +5583,7 @@ function renderPdCost(id){
  const styles=Store.getStyles(id);
  const stock=Store.totalStock(id);
  const season=Store.getCurrentSeason();
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
 
  const fob=p.fob;
  const dutyPct=p.duty||17.5;
@@ -5694,7 +5811,7 @@ function renderPdWeb(id){
  const styles=Store.getStyles(id);
  const stock=Store.totalStock(id);
  const season=Store.getCurrentSeason();
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const conv=wa.views>0?Math.round(wa.purchased/wa.views*10000)/100:0;
  const cartRate=wa.views>0?Math.round(wa.addToCart/wa.views*10000)/100:0;
  const abandRate=wa.addToCart>0?Math.round((wa.addToCart-(wa.purchased||0))/wa.addToCart*100):0;
@@ -6039,7 +6156,7 @@ function renderVdProducts(vendorId){
 
     ${prods.sort((a,b)=>b.vel*b.retail-a.vel*a.retail).map(p=>{
       const stk=Store.totalStock(p.id);
-      const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+      const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
       const margin=p.retail>0?Math.round((p.retail-p.fob*1.34)/p.retail*100):0;
       return `
     <div onclick="navigate('product-detail','${p.id}')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 16px;margin-bottom:3px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.06);display:grid;grid-template-columns:${p.heroImg?'32px ':''} 1fr 50px 50px 40px;align-items:center;gap:8px;transition:background .12s" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
@@ -6915,7 +7032,7 @@ function renderAnVelocity(){
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const weeklyRev=Math.round(adjVel*p.retail);
  const annualRev=weeklyRev*52;
@@ -7046,7 +7163,7 @@ function renderVariantDetail(key){
  const isCore=core.includes(size);
  const styleFrac=style.vel/Math.max(1,styles.reduce((s2,x)=>s2+x.vel,0));
  const sizeFrac=isCore?1.5/sizes.length:0.5/sizes.length;
- const estVel=Math.round(p.vel*(()=>{try{return Store.getCurrentSeason().multiplier;}catch(e){return 1;}})() * styleFrac * sizeFrac * 100)/100;
+ const estVel=(()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:Math.round((p.vel||0)*Store.getCurrentSeason().multiplier*10)/10;})() * styleFrac * sizeFrac * 100)/100;
  const cover=estVel>0?Math.round(totalQty/estVel):999;
 
  $('page').innerHTML=`
@@ -7272,7 +7389,7 @@ function renderProductDetail(id) {
  const styles = Store.getStyles(id);
  const stock = Store.totalStock(id);
  const season = Store.getCurrentSeason();
- const adjVel = Math.round(p.vel * season.multiplier * 10) / 10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const cv = adjVel > 0 ? Math.round(stock / adjVel) : 999;
  const lnd = Math.round(p.fob * 1.34 * 100) / 100;
  const mg = p.retail > 0 ? Math.round((p.retail - lnd) / p.retail * 100) : 0;
@@ -7689,7 +7806,7 @@ function renderPODetail(poId){
  const overdue=payments.filter(pm=>pm.status==='overdue');
  const vendorId=(()=>{const vs=Store.getVendors();const f=vs.find(v=>po.vendor.includes(v.short||v.name));return f?f.id:null;})();
  const season=Store.getCurrentSeason();
- const adjVel=p?Math.round(p.vel*season.multiplier*10)/10:0;
+ const adjVel=p?(()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:Math.round((p.vel||0)*season.multiplier*10)/10;})():0;
  const stock=p?Store.totalStock(po.mpId):0;
  const coverWk=adjVel>0?Math.round(stock/adjVel):999;
 
@@ -7947,7 +8064,7 @@ function renderPONew(){
  ${prods.sort((a,b)=>a.name.localeCompare(b.name)).map(p=>{
  const stock=Store.totalStock(p.id);
  const isSelected=N.mpId===p.id;
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  return`
  <div onclick="window._poNew.mpId='${p.id}';window._poNew.fob=${p.fob};window._poNew.vendor='${p.vendor.replace(/'/g,"\\'")}';window._poNew.step=1;navigate('po-new')" style="background:${isSelected?'rgba(184,154,90,.1)':'var(--sur2)'};border:${isSelected?'2px solid var(--gold)':'1px solid var(--brd)'};border-radius:var(--rl);padding:14px 16px;margin-bottom:4px;cursor:pointer;display:grid;grid-template-columns:1fr 50px 50px 50px;align-items:center" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
@@ -8529,7 +8646,7 @@ function renderInventory(){
   const LOCS=Store.LOCS;
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
   const oos=prods.filter(p=>Store.totalStock(p.id)===0&&p.vel>0);
-  const lowStock=prods.filter(p=>{const v=p.vel*Store.getCurrentSeason().multiplier;return v>0&&Store.totalStock(p.id)/v<8;});
+  const lowStock=prods.filter(p=>{const _rv=getRealVelocity(p.id,30);const v=_rv>0?_rv:(p.vel||0)*Store.getCurrentSeason().multiplier;return v>0&&Store.totalStock(p.id)/v<8;});
 
   $('page').innerHTML=`
   <div style="max-width:940px">
@@ -8561,7 +8678,7 @@ function renderInvGrid(){
  const cats=['all',...[...new Set(prods.map(p=>p.cat))]];
  let data=prods.map(p=>{
  const inv=Store.getInventoryFor(p.id);const stock=Store.totalStock(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const oosLocs=LOCS.filter(l=>l!=='Reserve'&&(inv[l]||0)===0).length;
  const styles=Store.getStyles(p.id);
@@ -8712,7 +8829,7 @@ function renderDistribution(){
   const data=prods.map(p=>{
     const inv=Store.getInventoryFor(p.id)||{};
     const stock=Store.totalStock(p.id);
-    const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+    const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
 
     // Store allocation weights (Lakewood=30%, Flatbush=20%, Crown Heights=15%, Monsey=25%, Online=10%)
     const weights={Lakewood:.30,Flatbush:.20,'Crown Heights':.15,Monsey:.25,Online:.10};
@@ -8803,7 +8920,7 @@ function renderStockouts(){
  prods.forEach(p=>{
  const inv=Store.getInventoryFor(p.id);
  const stock=Store.totalStock(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  STORES.forEach(loc=>{
  if((inv[loc]||0)===0){
  oos.push({...p,loc,stock,adjVel,reserve:inv.Reserve||0,inv});
@@ -9400,8 +9517,9 @@ function buildFacts() {
  const oosLocCount = sellLocs.filter(l=>(inv[l]||0)===0).length;
  const oosRate = sellLocs.length>0 ? (oosLocCount/sellLocs.length*100) : 0;
  const adjData = Store.getAdjustedVelocity(p.id);
- const adjRatio = p.vel>0 ? (adjData?.adjustedVel||p.vel)/p.vel : 1;
- const lostVelWk = Math.max(0, (adjData?.adjustedVel||p.vel) - p.vel);
+ const _baseVel = getRealVelocity(p.id,30) || p.vel || 0;
+ const adjRatio = _baseVel>0 ? (adjData?.adjustedVel||_baseVel)/_baseVel : 1;
+ const lostVelWk = Math.max(0, (adjData?.adjustedVel||_baseVel) - _baseVel);
  const myFabric = comps.fabric?.find(c=>c.cats.includes(p.id))?.name || '—';
  const myConst = comps.construction?.find(c=>c.cats.includes(p.id))?.name || '—';
  const myLining = comps.lining?.find(c=>c.cats.includes(p.id))?.name || '—';
@@ -10720,7 +10838,7 @@ function renderRetailView(store){
  const inv=Store.getInventoryFor(p.id);
  const qty=isAll?Store.totalStock(p.id):(inv[store]||0);
  const styles=Store.getStyles(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  return{...p,inv,qty,styles,adjVel,reserve:inv.Reserve||0};
  }).sort((a,b)=>b.qty-a.qty);
 
@@ -11171,7 +11289,7 @@ function renderProductStack(id) {
   if(!data){$('page').innerHTML='<div style="padding:40px;color:var(--faded)">Product not found.</div>';return;}
   const {phases,totalDone,totalReqs,totalPct,p,styles,pos,stock}=data;
   const season=Store.getCurrentSeason();
-  const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+  const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
   const coverWk=adjVel>0?Math.round(stock/adjVel):999;
   const landed=Math.round(p.fob*1.34*100)/100;
   const margin=p.retail>0?Math.round((p.retail-landed)/p.retail*100):0;
@@ -11639,7 +11757,7 @@ function getProductionPlan() {
  const plan = prods.map(p => {
  const stock = Store.totalStock(p.id);
  const styles = Store.getStyles(p.id);
- const adjVel = Math.round(p.vel * season.multiplier * 10) / 10;
+ const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
  const weeklyUnits = adjVel;
  const coverWeeks = weeklyUnits > 0 ? Math.round(stock / weeklyUnits) : 999;
  const stockoutDate = weeklyUnits > 0 ? new Date(Date.now() + coverWeeks * 7 * 86400000) : null;
@@ -12948,7 +13066,7 @@ function renderDemandIntelligence(){
   const signals=prods.map(p=>{
     const stock=Store.totalStock(p.id);
     const styles=Store.getStyles(p.id);
-    const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+    const _rv=getRealVelocity(p.id,30);const adjVel=_rv>0?_rv:Math.round((p.vel||0)*season.multiplier*10)/10;
     const cover=adjVel>0?Math.round(stock/adjVel):999;
     const weeklyRev=Math.round(adjVel*p.retail);
     const wa=Store.getWebAnalyticsFor(p.id)||{};
