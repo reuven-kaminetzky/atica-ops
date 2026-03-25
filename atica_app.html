@@ -12078,7 +12078,7 @@ setTimeout(updateAPIStatus,500);
 // ── 3-minute Shopify sales pulse ────────────────────────────────
 async function runSalesPulse() {
   try {
-    const r = await fetch('/api/shopify/sales?days=1');
+    const r = await fetch('/api/orders/sales?days=1');
     if (!r.ok) return;
     const d = await r.json();
     if (!d || d.error) return;
