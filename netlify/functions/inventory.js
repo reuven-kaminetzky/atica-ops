@@ -61,12 +61,56 @@ async function adjustInventory(client, { body }) {
   return { adjusted: true, inventoryLevel: result.inventory_level };
 }
 
+/**
+ * Transfer stock between locations.
+ * Deducts from source, adds to destination in one call.
+ * body: { inventoryItemId, fromLocationId, toLocationId, quantity }
+ */
+async function transferInventory(client, { body }) {
+  const { inventoryItemId, fromLocationId, toLocationId, quantity } = body;
+  if (!inventoryItemId || !fromLocationId || !toLocationId || !quantity) {
+    throw new RouteError(400, 'inventoryItemId, fromLocationId, toLocationId, and quantity required');
+  }
+  if (quantity <= 0) throw new RouteError(400, 'quantity must be positive');
+  if (fromLocationId === toLocationId) throw new RouteError(400, 'source and destination must differ');
+
+  // Deduct from source
+  const deduct = await client._request('/inventory_levels/adjust.json', {
+    method: 'POST',
+    body: JSON.stringify({
+      inventory_item_id: inventoryItemId,
+      location_id: fromLocationId,
+      available_adjustment: -quantity,
+    }),
+  });
+
+  // Add to destination
+  const add = await client._request('/inventory_levels/adjust.json', {
+    method: 'POST',
+    body: JSON.stringify({
+      inventory_item_id: inventoryItemId,
+      location_id: toLocationId,
+      available_adjustment: quantity,
+    }),
+  });
+
+  cache.set(cache.makeKey('inventory', {}), null, 0);
+
+  return {
+    transferred: true,
+    quantity,
+    from: { locationId: fromLocationId, level: deduct.inventory_level },
+    to: { locationId: toLocationId, level: add.inventory_level },
+  };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
-  { method: 'GET',  path: '',       handler: listInventory },
-  { method: 'POST', path: 'sync',   handler: syncInventory },
-  { method: 'POST', path: 'adjust', handler: adjustInventory },
+  { method: 'GET',  path: '',         handler: listInventory },
+  { method: 'POST', path: 'sync',     handler: syncInventory },
+  { method: 'POST', path: 'adjust',   handler: adjustInventory },
+  { method: 'POST', path: 'transfer', handler: transferInventory },
 ];
 
 exports.handler = createHandler(ROUTES, 'inventory');

@@ -42,6 +42,11 @@
   to     = "/.netlify/functions/purchase-orders/:splat"
   status = 200
 
+[[redirects]]
+  from   = "/api/shipments/*"
+  to     = "/.netlify/functions/shipments/:splat"
+  status = 200
+
 # ── Legacy Shopify routes (keep alive) ───────────────────────────────
 [[redirects]]
   from   = "/api/shopify/*"
