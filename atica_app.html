@@ -10638,6 +10638,17 @@ const ASSET_STATUS = {
  'done': {label:'Done', color:'var(--grn)'},
  'blocked': {label:'Blocked', color:'var(--red)'}};
 function renderMarketing(){
+  const _s30=getSalesSince(30);
+  const _byCat={}; const _prods=Store.getProducts();
+  const _byProd=getSalesByProduct(_s30);
+  _prods.forEach(p=>{
+    const cat=p.cat||'Other';
+    if(!_byCat[cat])_byCat[cat]={rev:0,units:0};
+    const d=_byProd[p.id]||{};
+    _byCat[cat].rev+=(d.revenue||0); _byCat[cat].units+=(d.units||0);
+  });
+  const _rev30=getSalesRevenue(_s30);
+  const _hasReal=_s30.length>0;
   const prods=Store.getProducts();
   const camps=(()=>{try{return JSON.parse(localStorage.getItem('am_campaigns')||'[]');}catch(e){return[];}})();
   const active=camps.filter(c=>c.status==='active');
@@ -10806,6 +10817,12 @@ function editCopyModal(productId) {
  );
 }
 function renderOperations(){
+  const _s30=getSalesSince(30), _s7=getSalesSince(7);
+  const _byProd=getSalesByProduct(_s30);
+  const _rev30=getSalesRevenue(_s30), _rev7=getSalesRevenue(_s7);
+  const _hasReal=_s30.length>0;
+  const _posCache=(()=>{try{return JSON.parse(localStorage.getItem('am_pos_today')||'null');}catch(e){return null;}})();
+  const _todayRev=_posCache&&_posCache.stores?Object.values(_posCache.stores).reduce((s,x)=>s+(x.revenue||0),0):getSalesRevenue(getSalesSince(1));
   const pos=Store.getPOs();
   const openPOs=pos.filter(po=>po.status!=='complete');
   const shipments=(()=>{try{return Store.getShipments();}catch(e){return[];}})();
@@ -12039,19 +12056,65 @@ function markAllRead(){Store.markAllRead();updateNotifBadge();$('notifList').inn
 function updateAPIStatus(){
  const dot=$('api-dot'),label=$('api-label');
  if(!dot||!label)return;
- if(API._online&&API._user){
- dot.style.background='var(--grn)';
- label.textContent=API._user.name+' · '+API._user.role;
- } else if(API._online){
- dot.style.background='var(--amb)';
- label.textContent='Connected · not logged in';
+ // Show Shopify sync status
+ const intg=(()=>{try{const i=Store.getIntegrations();return i.shopify||null;}catch(e){return null;}})();
+ if(intg&&intg.connected&&intg.lastSync){
+  const mins=Math.round((Date.now()-new Date(intg.lastSync).getTime())/60000);
+  dot.style.background='var(--grn)';
+  label.textContent='Shopify · '+(mins<2?'just now':mins<60?mins+'m ago':Math.round(mins/60)+'h ago');
+ } else if(intg&&intg.connected){
+  dot.style.background='var(--amb)';
+  label.textContent='Shopify · syncing…';
  } else {
- dot.style.background='var(--sb-dim)';
- label.textContent='Standalone';
+  dot.style.background='var(--sb-dim)';
+  label.textContent='Not synced · tap to sync';
+  if(dot) dot.style.cursor='pointer';
+  if(dot) dot.onclick=()=>{Store.syncFromShopify().then(r=>r.synced?toast('Synced','success'):toast('Sync failed','error'));};
  }
 }
 setInterval(updateAPIStatus,3000);
 setTimeout(updateAPIStatus,500);
+
+// ── 3-minute Shopify sales pulse ────────────────────────────────
+async function runSalesPulse() {
+  try {
+    const r = await fetch('/api/shopify/sales?days=1');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d || d.error) return;
+    // Merge today's orders into am_sales
+    const existing = (() => { try { return JSON.parse(localStorage.getItem('am_sales')||'[]'); } catch(e) { return []; } })();
+    // Only add orders not already in am_sales
+    const today = new Date().toISOString().slice(0,10);
+    const todayExisting = new Set(existing.filter(s=>s.date===today).map(s=>s.id));
+    let added = 0;
+    if (d.dailySales) {
+      // Update the sync dot to show last pulse time
+      const dot = document.getElementById('api-dot');
+      if (dot) dot.style.background = 'var(--grn)';
+      const label = document.getElementById('api-label');
+      if (label) label.textContent = 'Shopify · synced ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      added = d.dailySales.reduce((s,ds)=>s+(ds.orders||0),0);
+    }
+    // Also refresh /api/pos/today cache
+    const posR = await fetch('/api/pos/today');
+    if (posR.ok) {
+      const posD = await posR.json();
+      if (posD && !posD.error) {
+        posD._ts = Date.now();
+        try { localStorage.setItem('am_pos_today', JSON.stringify(posD)); } catch(e) {}
+      }
+    }
+    // If currently on home page, refresh the store strip
+    if (typeof currentRoute !== 'undefined' && currentRoute === 'home') {
+      renderHome();
+    }
+  } catch(e) { /* silent fail — pulse is best-effort */ }
+}
+// Run pulse every 3 minutes
+setInterval(runSalesPulse, 3 * 60 * 1000);
+// First pulse after 30 seconds (give page time to load)
+setTimeout(runSalesPulse, 30000);
 function exportAll(){
  const data={products:Store.getProducts(),pos:Store.getPOs(),inventory:Store.getInventory(),exported:new Date().toISOString()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -12249,6 +12312,8 @@ function toggleLaunchStep(styleId,key){
  else if(currentRoute==='product-detail')navigate('product-detail',window._pdId);
 }
 function renderCRM(){
+  const _shopifyCusts=getShopifyCustomers();
+  const _hasShopify=_shopifyCusts.length>0;
   // Enrich customers with real Shopify order totals where available
   const sales30=getSalesSince(30);
   const sales365=getSalesSince(365);
@@ -12487,7 +12552,18 @@ function crmTab(i){[0,1,2,3,4].forEach(j=>{const t=$('crm-t'+j),p=$('crm-p'+j);i
 let _floorStore='Lakewood';
 function renderFloorApp(){
  const prods=Store.getProducts();
- const custs=Store.getCustomers();
+ // Real customers from Shopify order history
+ const _shopifyCusts=getShopifyCustomers();
+ const custs=_shopifyCusts.length>0?_shopifyCusts:Store.getCustomers();
+ // Today's live feed from POS
+ const _posCache=(()=>{try{return JSON.parse(localStorage.getItem('am_pos_today')||'null');}catch(e){return null;}})();
+ const todayFeed=(()=>{try{return JSON.parse(localStorage.getItem('am_pos_feed')||'null');}catch(e){return null;}})();
+ const todayRev=_posCache&&_posCache.stores?Object.values(_posCache.stores).reduce((s,x)=>s+(x.revenue||0),0):getSalesRevenue(getSalesSince(1));
+ // Refresh POS feed async
+ if(!_posCache||(Date.now()-(_posCache._ts||0))>60000){
+   fetch('/api/pos/today').then(r=>r.ok?r.json():null).then(d=>{if(d&&!d.error){d._ts=Date.now();try{localStorage.setItem('am_pos_today',JSON.stringify(d));}catch(e){}}}).catch(()=>{});
+   fetch('/api/pos/feed?limit=20').then(r=>r.ok?r.json():null).then(d=>{if(d&&!d.error){try{localStorage.setItem('am_pos_feed',JSON.stringify(d));}catch(e){}}}).catch(()=>{});
+ }
  const STORES=Store.LOCS.filter(l=>l!=='Online');
 
  if(!window._floor) window._floor={store:STORES[0],search:'',custSearch:'',mode:'browse',cart:[],custId:null};
