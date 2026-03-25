@@ -1,59 +1,58 @@
 [build]
   publish = "."
+  functions = "netlify/functions"
 
 [functions]
-  directory = "netlify/functions"
   node_bundler = "esbuild"
+  included_files = ["lib/**"]
 
-# ═══════════════════════════════════════════════════════════
-# NEW modular API routes — one function per Shopify stack
-# Run IN PARALLEL with legacy /api/shopify/* during migration
-# ═══════════════════════════════════════════════════════════
-
+# ── Modular API routes (new) ──────────────────────────────────────────
 [[redirects]]
-  from = "/api/products/*"
-  to = "/.netlify/functions/products/:splat"
+  from   = "/api/products/*"
+  to     = "/.netlify/functions/products/:splat"
   status = 200
 
 [[redirects]]
-  from = "/api/orders/*"
-  to = "/.netlify/functions/orders/:splat"
+  from   = "/api/orders/*"
+  to     = "/.netlify/functions/orders/:splat"
   status = 200
 
 [[redirects]]
-  from = "/api/inventory/*"
-  to = "/.netlify/functions/inventory/:splat"
+  from   = "/api/inventory/*"
+  to     = "/.netlify/functions/inventory/:splat"
   status = 200
 
 [[redirects]]
-  from = "/api/pos/*"
-  to = "/.netlify/functions/pos/:splat"
+  from   = "/api/pos/*"
+  to     = "/.netlify/functions/pos/:splat"
   status = 200
 
 [[redirects]]
-  from = "/api/ledger/*"
-  to = "/.netlify/functions/ledger/:splat"
+  from   = "/api/ledger/*"
+  to     = "/.netlify/functions/ledger/:splat"
   status = 200
 
 [[redirects]]
-  from = "/api/status/*"
-  to = "/.netlify/functions/status/:splat"
+  from   = "/api/status/*"
+  to     = "/.netlify/functions/status/:splat"
   status = 200
 
-# ═══════════════════════════════════════════════════════════
-# LEGACY routes — keep alive during migration, deprecate later
-# ═══════════════════════════════════════════════════════════
-
+# ── Legacy Shopify routes (keep alive) ───────────────────────────────
 [[redirects]]
-  from = "/api/shopify/*"
-  to = "/.netlify/functions/shopify/:splat"
+  from   = "/api/shopify/*"
+  to     = "/.netlify/functions/shopify/:splat"
   status = 200
 
 [[redirects]]
-  from = "/api/webhooks/*"
-  to = "/.netlify/functions/webhooks-shopify"
+  from   = "/api/webhooks/shopify"
+  to     = "/.netlify/functions/webhooks-shopify"
+  status = 200
+
+# ── SPA fallback (must be last) ───────────────────────────────────────
+[[redirects]]
+  from   = "/*"
+  to     = "/atica_app.html"
   status = 200
 
 [context.production.environment]
-  SKIP_AUTH = "true"
   NODE_VERSION = "18"
