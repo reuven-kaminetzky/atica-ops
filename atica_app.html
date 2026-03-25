@@ -2123,7 +2123,18 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
    'boys-shirt':     t => /boys.*(shirt|londoner)/i.test(t),
    'boys-blazer':    t => /boys.*blazer/i.test(t) && !/do not use/i.test(t),
    'boys-pant':      t => /boys.*(pant|trouser)/i.test(t) && !/do not use/i.test(t),
- };
+    // ── Seed-ID aliases (MP id != matcher key) ──
+    'bengal-stripe':    t => /bengal/i.test(t),
+    'oxford-btn':       t => /oxford\s+button/i.test(t),
+    'check-shirt':      t => /windowpane/i.test(t)||/check.*shirt/i.test(t),
+    'herring-shirt':    t => /herringbone/i.test(t),
+    'maggia-blazer':    t => /maggia/i.test(t),
+    'londoner-boys':    t => /boys.*(shirt|londoner)/i.test(t),
+    'wash-boys-blazer': t => /boys.*blazer/i.test(t)&&!/do not use/i.test(t),
+    'boys-pants':       t => /boys.*(pant|trouser)/i.test(t)&&!/do not use/i.test(t),
+    'shoes-ital':       t => /oxford/i.test(t)||/dress\s+shoe/i.test(t)||/brogue/i.test(t),
+    'shoes-lux':        t => /loafer/i.test(t)||/monk/i.test(t)||/chelsea/i.test(t),
+  };
 
  async function syncFromShopify() {
    try {
@@ -3826,7 +3837,7 @@ function renderFinAP(){
    }
   });
   if(!recon.length) return '<div style="background:rgba(26,120,56,.06);border:1px solid rgba(26,120,56,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--grn)">✓ All AP invoices matched to POs — no reconciliation issues</div>';
-  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate(&#39;pos&#39;)">View POs</button><button class="btn btn-sm" onclick="navigate(&#39;fin-cashflow&#39;)">Cash Flow</button></div></div>';
+  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate('pos')">View POs</button><button class="btn btn-sm" onclick="navigate('fin-cashflow')">Cash Flow</button></div></div>';
  })()}
 
  ${sortedVendors.map(([vendor,data],vi)=>{
@@ -4034,7 +4045,7 @@ function renderFinCatRev(){
  c.stock+=Store.totalStock(p.id);
  const wRev=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail);
  c.rev+=wRev*52;
- c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+ c.cogs+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34*52);
  c.margin+=(p.retail||0)>0?Math.round(((p.retail||0)-(p.fob||0)*1.34)/(p.retail||1)*100):0;
  });
  Object.values(cats).forEach(c=>{c.avgMargin=c.prods.length?Math.round(c.margin/c.prods.length):0;c.gross=c.rev-c.cogs;c.grossPct=c.rev>0?Math.round(c.gross/c.rev*100):0;});
@@ -4089,6 +4100,10 @@ function renderFinCatRev(){
  </div>`;
 }
 function renderFinValuation(){
+  const sales90=getSalesSince(90);
+  const rev90=getSalesRevenue(sales90);
+  const byProd90=getSalesByProduct(sales90);
+  const hasReal=sales90.length>0;
   const prods=Store.getProducts();
   const LOCS=Store.LOCS;
   const season=Store.getCurrentSeason();
@@ -4380,7 +4395,7 @@ function renderAnScorecard(){
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
   const weeklyRev=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*(p.retail||0)),0);
   const annualRev=weeklyRev*52;
-  const weeklyCOGS=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.fob*1.34),0);
+  const weeklyCOGS=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34),0);
   const grossProfit=(weeklyRev-weeklyCOGS)*52;
   const grossPct=annualRev>0?Math.round(grossProfit/annualRev*100):0;
   const invCost=prods.reduce((s,p)=>s+Store.totalStock(p.id)*(p.fob||0)*1.34,0);
@@ -4402,7 +4417,7 @@ function renderAnScorecard(){
     const c=cats[p.cat]; c.count++;
     c.stock+=Store.totalStock(p.id);
     c.rev+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail*52);
-    c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+    c.cogs+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34*52);
     c.styles+=Store.getStyles(p.id).length;
     if(Store.totalStock(p.id)===0&&p.vel>0) c.oos++;
   });
@@ -8043,7 +8058,7 @@ function renderPOs(){
 function advanceStageUI(poId){
  const po=Store.getPO(poId); if(!po) return;
  const from=po.stage; const to=from+1;
- const gate=Store._checkStageGate(po,from,to);
+ const gate=_checkStageGate(po,from,to);
  if(gate.ok){
   Store.advanceStage(poId);
   navigate('po-detail',poId);
@@ -8222,7 +8237,7 @@ function renderPODetail(poId){
   <div style="padding:10px 16px">
    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:6px">Stage gate status</div>
    ${po.stage<9?(()=>{
-    const gate=Store._checkStageGate(po,po.stage,po.stage+1);
+    const gate=_checkStageGate(po,po.stage,po.stage+1);
     return gate.ok
      ? '<div style="font-size:11px;color:var(--grn)">✓ Ready to advance to stage '+(po.stage+1)+'</div>'
      : '<div style="font-size:11px;color:var(--brick)">⛔ '+gate.reason+'</div>';
@@ -9045,6 +9060,10 @@ function wizSubmit(){
  navigate('po-detail',po.id);
 }
 function renderInventory(){
+  const _sales30=getSalesSince(30);
+  const _byProd=getSalesByProduct(_sales30);
+  const _rev30=getSalesRevenue(_sales30);
+  const _hasReal=_sales30.length>0;
   const prods=Store.getProducts();
   const LOCS=Store.LOCS;
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
@@ -12028,6 +12047,9 @@ function exportAll(){
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='atica_man_export.json';a.click();
 }
 function renderPurchasing(){
+  const _sales30=getSalesSince(30);
+  const _byProd=getSalesByProduct(_sales30);
+  const _hasReal=_sales30.length>0;
   const prods=Store.getProducts();
   const pos=Store.getPOs();
   const ppData=(window._ppCache||(window._ppCache=getProductionPlan()));
@@ -12275,6 +12297,11 @@ function renderCRM(){
   </div>`;
 }
 function renderCRMCustomers(){
+  // Merge seed customers with real Shopify customers
+  const _shopifyCusts = getShopifyCustomers();
+  const _seedCusts = Store.getCustomers();
+  const allCustomers = _shopifyCusts.length > 0 ? _shopifyCusts : _seedCusts;
+  const hasReal = _shopifyCusts.length > 0;
  // Merge seed + real Shopify customers from recent orders
  const _salesLive=getSalesSince(180);
  const _shopCusts={};
