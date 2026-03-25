@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Atica Man — Operations</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/odoo-layout.css">
+</head>
+<body>
+  <div class="app-shell">
+    <nav class="sidebar" id="sidebar"></nav>
+    <header class="topbar">
+      <div class="topbar-title" id="topbar-title">Point of Sale</div>
+      <div class="topbar-actions">
+        <div class="topbar-sync-indicator" id="sync-indicator">
+          <span class="sync-dot"></span>
+          <span id="sync-text">Connected</span>
+        </div>
+      </div>
+    </header>
+    <main class="content" id="content">
+      <!-- Modules render here -->
+    </main>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script type="module">
+    import { renderSidebar } from '/components/sidebar.js';
+    import { on, emit } from '/modules/event-bus.js';
+    import { loadModule } from '/modules/core.js';
+
+    // ── Route → Module mapping ────────────────────────
+    const ROUTE_TITLES = {
+      'pos':         'Point of Sale',
+      'cash-flow':   'Cash Flow',
+      'marketplace': 'Marketplace',
+      'stock':       'Stock',
+      'ledger':      'Ledger',
+      'settings':    'Settings',
+    };
+
+    // ── Init ──────────────────────────────────────────
+    const sidebar = document.getElementById('sidebar');
+    const content = document.getElementById('content');
+    const topbarTitle = document.getElementById('topbar-title');
+    const syncIndicator = document.getElementById('sync-indicator');
+    const syncDot = syncIndicator.querySelector('.sync-dot');
+    const syncText = document.getElementById('sync-text');
+    const toastContainer = document.getElementById('toast-container');
+
+    // Render sidebar
+    renderSidebar(sidebar);
+
+    // Load initial module
+    loadModule('pos', content);
+
+    // ── Navigation ────────────────────────────────────
+    on('nav:change', async ({ route }) => {
+      topbarTitle.textContent = ROUTE_TITLES[route] || route;
+      content.innerHTML = '';
+      try {
+        await loadModule(route, content);
+      } catch (err) {
+        console.error('Failed to load route:', route, err);
+      }
+    });
+
+    // ── Sync indicator ────────────────────────────────
+    on('sync:start', () => {
+      syncDot.classList.add('syncing');
+      syncText.textContent = 'Syncing...';
+      syncIndicator.classList.add('syncing');
+    });
+
+    on('sync:complete', () => {
+      syncDot.classList.remove('syncing');
+      syncText.textContent = 'Connected';
+      syncIndicator.classList.remove('syncing');
+    });
+
+    on('sync:error', ({ error }) => {
+      syncDot.classList.remove('syncing');
+      syncText.textContent = 'Error';
+      syncIndicator.classList.remove('syncing');
+    });
+
+    // ── Toast notifications ───────────────────────────
+    on('toast:show', ({ message, type = 'info' }) => {
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      toastContainer.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        toast.style.transition = 'all 0.3s';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    });
+
+    // ── Ready ─────────────────────────────────────────
+    emit('nav:ready');
+    console.log('[atica] App shell ready — modular v2');
+  </script>
+</body>
+</html>

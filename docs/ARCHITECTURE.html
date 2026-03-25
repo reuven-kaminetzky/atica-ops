@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atica Ops — Modular Architecture Game Plan</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0e12;
+  --surface: #14171e;
+  --surface2: #1a1e28;
+  --border: #2a2f3a;
+  --text: #e0e4ec;
+  --text-dim: #7a8194;
+  --green: #34d399;
+  --green-dim: rgba(52,211,153,0.12);
+  --blue: #60a5fa;
+  --blue-dim: rgba(96,165,250,0.12);
+  --orange: #fb923c;
+  --orange-dim: rgba(251,146,60,0.12);
+  --purple: #a78bfa;
+  --purple-dim: rgba(167,139,250,0.12);
+  --red: #f87171;
+  --red-dim: rgba(248,113,113,0.12);
+  --yellow: #fbbf24;
+  --yellow-dim: rgba(251,191,36,0.12);
+  --mono: 'JetBrains Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); line-height: 1.6; padding: 2rem; }
+h1 { font-family: var(--mono); font-size: 1.6rem; font-weight: 700; margin-bottom: 0.25rem; }
+h2 { font-family: var(--mono); font-size: 1.15rem; font-weight: 600; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+h3 { font-family: var(--mono); font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; }
+.subtitle { color: var(--text-dim); font-size: 0.9rem; margin-bottom: 2.5rem; }
+.grid { display: grid; gap: 1.5rem; margin-bottom: 2.5rem; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 900px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; }
+.card-header { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; }
+.badge { font-family: var(--mono); font-size: 0.7rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+.badge-green { background: var(--green-dim); color: var(--green); }
+.badge-blue { background: var(--blue-dim); color: var(--blue); }
+.badge-orange { background: var(--orange-dim); color: var(--orange); }
+.badge-purple { background: var(--purple-dim); color: var(--purple); }
+.badge-red { background: var(--red-dim); color: var(--red); }
+.badge-yellow { background: var(--yellow-dim); color: var(--yellow); }
+.file-tree { font-family: var(--mono); font-size: 0.78rem; line-height: 1.9; color: var(--text-dim); }
+.file-tree .dir { color: var(--blue); font-weight: 600; }
+.file-tree .file { color: var(--text); }
+.file-tree .owner { font-size: 0.65rem; padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.5rem; }
+.file-tree .new { color: var(--green); font-weight: 600; }
+.file-tree .keep { color: var(--text-dim); }
+p { margin-bottom: 0.6rem; font-size: 0.88rem; color: var(--text-dim); }
+p strong { color: var(--text); }
+ul { margin: 0.5rem 0 0.75rem 1.25rem; font-size: 0.85rem; color: var(--text-dim); }
+li { margin-bottom: 0.3rem; }
+li strong { color: var(--text); }
+code { font-family: var(--mono); font-size: 0.8rem; background: var(--surface2); padding: 0.15rem 0.4rem; border-radius: 3px; color: var(--green); }
+.section { margin-bottom: 2.5rem; }
+.problem-box { background: var(--red-dim); border: 1px solid rgba(248,113,113,0.3); border-radius: 10px; padding: 1.25rem; margin-bottom: 2rem; }
+.problem-box h3 { color: var(--red); }
+.rule-box { background: var(--yellow-dim); border: 1px solid rgba(251,191,36,0.2); border-radius: 10px; padding: 1.25rem; margin-bottom: 2rem; }
+.rule-box h3 { color: var(--yellow); }
+.step { display: flex; gap: 1rem; margin-bottom: 1rem; }
+.step-num { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; color: var(--green); min-width: 2.5rem; text-align: center; line-height: 1; padding-top: 0.2rem; }
+.step-body { flex: 1; }
+.dep-arrow { font-family: var(--mono); color: var(--text-dim); font-size: 0.8rem; text-align: center; padding: 0.5rem 0; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+th { font-family: var(--mono); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); text-align: left; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); }
+td { padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); color: var(--text-dim); vertical-align: top; }
+td strong { color: var(--text); }
+.comm-line { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; font-size: 0.82rem; }
+.comm-from { font-family: var(--mono); font-weight: 600; min-width: 7rem; }
+.comm-arrow { color: var(--text-dim); }
+.comm-to { font-family: var(--mono); color: var(--text-dim); }
+</style>
+</head>
+<body>
+
+<h1>ATICA OPS — MODULAR SPLIT GAME PLAN</h1>
+<p class="subtitle">How to break the 1MB monolith into modules that work on the same system and don't step on each other</p>
+
+<!-- PROBLEM STATEMENT -->
+<div class="problem-box">
+  <h3>THE PROBLEM RIGHT NOW</h3>
+  <ul>
+    <li><strong>atica_app.html</strong> is 1,030,873 bytes — everything in one file. Every edit risks breaking someone else's work.</li>
+    <li><strong>shopify.js</strong> function is a god-function — products, orders, inventory, ledger, velocity, POS all in one 230-line handler.</li>
+    <li><strong>No module boundaries</strong> — Shrek touching MPs can break Deshawn's cash flow, Stallon's API changes can break the frontend.</li>
+    <li><strong>localStorage only</strong> — no shared state, no persistence beyond the browser.</li>
+  </ul>
+</div>
+
+<!-- GOLDEN RULES -->
+<div class="rule-box">
+  <h3>GOLDEN RULES — DON'T BREAK EACH OTHER</h3>
+  <ul>
+    <li><strong>Own your file, only your file.</strong> Each module is a separate JS file. You edit yours, nobody else's.</li>
+    <li><strong>Communicate through the event bus.</strong> Never reach into another module's DOM or state directly.</li>
+    <li><strong>Shared data goes through lib/.</strong> The Shopify client, mappers, and types are shared — changes need everyone's sign-off.</li>
+    <li><strong>Every function gets its own Netlify function file.</strong> No more 200-line god-function.</li>
+    <li><strong>Test your endpoint before pushing.</strong> If your function breaks, it breaks for everyone.</li>
+  </ul>
+</div>
+
+<!-- THE TREE -->
+<div class="section">
+  <h2>THE TREE — MAPPED TO FILES</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="file-tree">
+        <div class="dir">atica-ops/</div>
+        <div>├── <span class="file">index.html</span> <span class="badge badge-green owner">SHELL ONLY</span></div>
+        <div>├── <span class="dir">modules/</span></div>
+        <div>│   ├── <span class="file new">core.js</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>│   ├── <span class="file new">event-bus.js</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>│   ├── <span class="file new">pos.js</span> <span class="badge badge-blue owner">DESHAWN</span></div>
+        <div>│   ├── <span class="file new">cash-flow.js</span> <span class="badge badge-blue owner">DESHAWN</span></div>
+        <div>│   ├── <span class="file new">marketplace.js</span> <span class="badge badge-green owner">SHREK</span></div>
+        <div>│   ├── <span class="file new">stock.js</span> <span class="badge badge-green owner">SHREK</span></div>
+        <div>│   ├── <span class="file new">ledger.js</span> <span class="badge badge-blue owner">DESHAWN</span></div>
+        <div>│   └── <span class="file new">settings.js</span> <span class="badge badge-purple owner">STALLON</span></div>
+        <div>├── <span class="dir">components/</span></div>
+        <div>│   ├── <span class="file new">sidebar.js</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>│   ├── <span class="file new">data-table.js</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>│   ├── <span class="file new">modal.js</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>│   └── <span class="file new">charts.js</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>├── <span class="dir">css/</span></div>
+        <div>│   ├── <span class="file new">base.css</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>│   └── <span class="file new">odoo-layout.css</span> <span class="badge badge-yellow owner">SHARED</span></div>
+        <div>├── <span class="dir">lib/</span> <span class="badge badge-purple owner">STALLON + OBOOSU</span></div>
+        <div>│   ├── <span class="file keep">shopify.js</span></div>
+        <div>│   ├── <span class="file keep">auth.js</span></div>
+        <div>│   ├── <span class="file keep">mappers.js</span></div>
+        <div>│   └── <span class="file keep">analytics.js</span></div>
+        <div>├── <span class="dir">netlify/functions/</span> <span class="badge badge-purple owner">STALLON</span></div>
+        <div>│   ├── <span class="file new">products.js</span></div>
+        <div>│   ├── <span class="file new">orders.js</span></div>
+        <div>│   ├── <span class="file new">inventory.js</span></div>
+        <div>│   ├── <span class="file new">pos.js</span></div>
+        <div>│   ├── <span class="file new">cash-flow.js</span></div>
+        <div>│   ├── <span class="file new">ledger.js</span></div>
+        <div>│   ├── <span class="file keep">shopify.js</span> <span style="color:var(--red);font-size:0.65rem;">→ LEGACY, DEPRECATE</span></div>
+        <div>│   └── <span class="file keep">webhooks-shopify.js</span></div>
+        <div>└── <span class="file keep">netlify.toml</span></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="color:var(--green);">🌱 ROOTS — Shopify Stacks (Stallon)</h3>
+        <p><code>netlify/functions/</code> — One function per Shopify resource. Each returns clean JSON. Frontend never talks to Shopify directly.</p>
+        <ul>
+          <li><strong>products.js</strong> → /api/products — sync, list, detail</li>
+          <li><strong>orders.js</strong> → /api/orders — sync, velocity, history</li>
+          <li><strong>inventory.js</strong> → /api/inventory — levels by location</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-bottom:1rem;">
+        <h3 style="color:var(--blue);">🪵 TRUNK — POS + Cash Flow (Deshawn)</h3>
+        <p><code>modules/pos.js</code> + <code>modules/cash-flow.js</code> — Two separate modules that share data via event bus. POS reads orders, Cash Flow reads POs + costs.</p>
+        <ul>
+          <li><strong>pos.js</strong> → Sales feed, transaction view, daily summary</li>
+          <li><strong>cash-flow.js</strong> → PO tracker, cost vs revenue, forecasting</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--orange);">🌿 BRANCHES — MPs + Stock (Shrek)</h3>
+        <p><code>modules/marketplace.js</code> + <code>modules/stock.js</code> — Product catalog and inventory management.</p>
+        <ul>
+          <li><strong>marketplace.js</strong> → Master products, styles, vendor cards</li>
+          <li><strong>stock.js</strong> → Levels by location, transfer, reorder queue</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- HOW MODULES COMMUNICATE -->
+<div class="section">
+  <h2>HOW MODULES TALK TO EACH OTHER</h2>
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>Event Bus Pattern</h3>
+      <p>Every module imports <code>event-bus.js</code>. Nobody reaches into another module's state. You publish events, others subscribe.</p>
+      <div style="background:var(--bg);border-radius:6px;padding:1rem;margin-top:0.75rem;font-family:var(--mono);font-size:0.75rem;line-height:1.8;overflow-x:auto;">
+        <span style="color:var(--text-dim);">// event-bus.js — shared communication layer</span><br>
+        <span style="color:var(--purple);">const</span> bus = {};<br>
+        <span style="color:var(--purple);">export function</span> <span style="color:var(--blue);">emit</span>(event, data) {<br>
+        &nbsp;&nbsp;(bus[event] || []).forEach(fn => fn(data));<br>
+        }<br>
+        <span style="color:var(--purple);">export function</span> <span style="color:var(--blue);">on</span>(event, fn) {<br>
+        &nbsp;&nbsp;(bus[event] ||= []).push(fn);<br>
+        }<br><br>
+        <span style="color:var(--text-dim);">// In pos.js (Deshawn publishes)</span><br>
+        bus.<span style="color:var(--blue);">emit</span>(<span style="color:var(--green);">'order:new'</span>, orderData);<br><br>
+        <span style="color:var(--text-dim);">// In cash-flow.js (Deshawn subscribes)</span><br>
+        bus.<span style="color:var(--blue);">on</span>(<span style="color:var(--green);">'order:new'</span>, (order) => {<br>
+        &nbsp;&nbsp;updateRevenueStream(order);<br>
+        });<br><br>
+        <span style="color:var(--text-dim);">// In marketplace.js (Shrek subscribes)</span><br>
+        bus.<span style="color:var(--blue);">on</span>(<span style="color:var(--green);">'order:new'</span>, (order) => {<br>
+        &nbsp;&nbsp;updateSellThrough(order);<br>
+        });
+      </div>
+    </div>
+    <div class="card">
+      <h3>Communication Map</h3>
+      <div style="margin-top:0.5rem;">
+        <div class="comm-line"><span class="comm-from" style="color:var(--purple);">Stallon API</span> <span class="comm-arrow">→</span> <span class="comm-to">ALL modules (data provider)</span></div>
+        <div class="comm-line"><span class="comm-from" style="color:var(--blue);">POS</span> <span class="comm-arrow">→</span> <span class="comm-to">Cash Flow (order:new, sale:complete)</span></div>
+        <div class="comm-line"><span class="comm-from" style="color:var(--blue);">Cash Flow</span> <span class="comm-arrow">→</span> <span class="comm-to">Stock (po:received, po:updated)</span></div>
+        <div class="comm-line"><span class="comm-from" style="color:var(--green);">Marketplace</span> <span class="comm-arrow">→</span> <span class="comm-to">Cash Flow (product:costUpdated)</span></div>
+        <div class="comm-line"><span class="comm-from" style="color:var(--green);">Stock</span> <span class="comm-arrow">→</span> <span class="comm-to">Marketplace (stock:low, stock:transfer)</span></div>
+      </div>
+
+      <h3 style="margin-top:1.5rem;">Events Registry</h3>
+      <table>
+        <tr><th>Event</th><th>Published By</th><th>Data</th></tr>
+        <tr><td><code>order:new</code></td><td>POS</td><td>order object</td></tr>
+        <tr><td><code>order:synced</code></td><td>API</td><td>orders array</td></tr>
+        <tr><td><code>po:created</code></td><td>Cash Flow</td><td>PO object</td></tr>
+        <tr><td><code>po:received</code></td><td>Cash Flow</td><td>PO + items</td></tr>
+        <tr><td><code>stock:updated</code></td><td>Stock</td><td>location + levels</td></tr>
+        <tr><td><code>stock:low</code></td><td>Stock</td><td>product + threshold</td></tr>
+        <tr><td><code>product:updated</code></td><td>Marketplace</td><td>product object</td></tr>
+        <tr><td><code>nav:change</code></td><td>Sidebar</td><td>route string</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- WHO OWNS WHAT -->
+<div class="section">
+  <h2>OWNERSHIP MAP — WHO TOUCHES WHAT</h2>
+  <div class="card">
+    <table>
+      <tr>
+        <th>Person</th>
+        <th>Owns (full control)</th>
+        <th>Can Read (never edit)</th>
+        <th>Never Touch</th>
+      </tr>
+      <tr>
+        <td><strong><span style="color:var(--green);">Shrek</span></strong><br><span style="font-size:0.7rem;color:var(--text-dim);">MPs + Products</span></td>
+        <td><code>modules/marketplace.js</code><br><code>modules/stock.js</code></td>
+        <td><code>event-bus.js</code>, <code>components/*</code>, API responses</td>
+        <td><code>modules/pos.js</code>, <code>modules/cash-flow.js</code>, <code>netlify/functions/*</code></td>
+      </tr>
+      <tr>
+        <td><strong><span style="color:var(--blue);">Deshawn</span></strong><br><span style="font-size:0.7rem;color:var(--text-dim);">Cash Flow + POs</span></td>
+        <td><code>modules/pos.js</code><br><code>modules/cash-flow.js</code><br><code>modules/ledger.js</code></td>
+        <td><code>event-bus.js</code>, <code>components/*</code>, API responses</td>
+        <td><code>modules/marketplace.js</code>, <code>modules/stock.js</code>, <code>netlify/functions/*</code></td>
+      </tr>
+      <tr>
+        <td><strong><span style="color:var(--purple);">Stallon</span></strong><br><span style="font-size:0.7rem;color:var(--text-dim);">API Layer</span></td>
+        <td><code>netlify/functions/*</code><br><code>lib/*</code><br><code>modules/settings.js</code></td>
+        <td>All modules (to understand what data they need)</td>
+        <td>Module UI code (never change how things render)</td>
+      </tr>
+      <tr>
+        <td><strong><span style="color:var(--orange);">Oboosu</span></strong><br><span style="font-size:0.7rem;color:var(--text-dim);">Backend / Infra</span></td>
+        <td><code>lib/*</code> (shared with Stallon)<br><code>components/*</code><br><code>event-bus.js</code>, <code>core.js</code></td>
+        <td>Everything — code review gatekeeper</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><strong><span style="color:var(--red);">Trump</span></strong><br><span style="font-size:0.7rem;color:var(--text-dim);">Max Usage</span></td>
+        <td colspan="3" style="color:var(--text-dim);">Oversight — makes sure everyone is pushing, reviews PRs, tests deployments</td>
+      </tr>
+    </table>
+  </div>
+</div>
+
+<!-- BACKEND SPLIT DETAIL -->
+<div class="section">
+  <h2>BACKEND SPLIT — THE ACTUAL WORK</h2>
+  <p>The current <code>netlify/functions/shopify.js</code> does 16 things. We break it into focused functions that each do one thing well.</p>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <div class="card-header">
+        <span class="badge badge-purple">Stallon</span>
+        <h3>products.js</h3>
+      </div>
+      <p>Replaces: <code>syncProducts</code>, <code>skuMap</code>, <code>listTitles</code></p>
+      <ul>
+        <li><code>GET /api/products</code> — list all</li>
+        <li><code>GET /api/products/:id</code> — single</li>
+        <li><code>POST /api/products/sync</code> — full sync</li>
+        <li><code>GET /api/products/sku-map</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="badge badge-purple">Stallon</span>
+        <h3>orders.js</h3>
+      </div>
+      <p>Replaces: <code>syncOrders</code>, <code>velocity</code>, <code>sales</code></p>
+      <ul>
+        <li><code>GET /api/orders</code> — list with filters</li>
+        <li><code>POST /api/orders/sync</code> — full sync</li>
+        <li><code>GET /api/orders/velocity</code></li>
+        <li><code>GET /api/orders/sales</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="badge badge-purple">Stallon</span>
+        <h3>inventory.js</h3>
+      </div>
+      <p>Replaces: <code>syncInventory</code></p>
+      <ul>
+        <li><code>GET /api/inventory</code> — all locations</li>
+        <li><code>GET /api/inventory/:loc</code> — single</li>
+        <li><code>POST /api/inventory/adjust</code></li>
+        <li><code>POST /api/inventory/sync</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="badge badge-blue">Deshawn</span>
+        <h3>cash-flow.js (function)</h3>
+      </div>
+      <p>NEW — no existing equivalent</p>
+      <ul>
+        <li><code>GET /api/cash-flow</code> — summary</li>
+        <li><code>GET /api/cash-flow/forecast</code></li>
+        <li><code>POST /api/cash-flow/po</code> — create PO</li>
+        <li><code>PATCH /api/cash-flow/po/:id</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="badge badge-purple">Stallon</span>
+        <h3>ledger.js (function)</h3>
+      </div>
+      <p>Replaces: <code>ledger</code>, <code>snapshot</code></p>
+      <ul>
+        <li><code>GET /api/ledger</code> — entries</li>
+        <li><code>POST /api/ledger/snapshot</code></li>
+        <li><code>GET /api/ledger/snapshots</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span class="badge badge-purple">Stallon</span>
+        <h3>pos.js (function)</h3>
+      </div>
+      <p>NEW — wraps POS-specific order data</p>
+      <ul>
+        <li><code>GET /api/pos/today</code> — today's sales</li>
+        <li><code>GET /api/pos/by-location</code></li>
+        <li><code>GET /api/pos/transactions</code></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- EXECUTION ORDER -->
+<div class="section">
+  <h2>EXECUTION ORDER — DO THIS IN SEQUENCE</h2>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h3>Oboosu + Stallon: Scaffold the skeleton</h3>
+      <p>Create <code>index.html</code> (thin shell — nav, sidebar, content container, module loader). Create <code>event-bus.js</code> and <code>core.js</code> (API client wrapper, shared state). Wire up <code>netlify.toml</code> redirects for new function routes. <strong>Don't break the existing app</strong> — new files alongside old ones.</p>
+    </div>
+  </div>
+
+  <div class="dep-arrow">↓ shell is live, modules can load into it</div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h3>Stallon: Split the god-function</h3>
+      <p>Extract <code>shopify.js</code> routes into <code>products.js</code>, <code>orders.js</code>, <code>inventory.js</code>, <code>ledger.js</code>, <code>pos.js</code>. Keep old <code>shopify.js</code> alive as legacy — both routes work in parallel. Test every endpoint before moving on.</p>
+    </div>
+  </div>
+
+  <div class="dep-arrow">↓ new API endpoints are live and tested</div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h3>Shrek: Build marketplace.js + stock.js</h3>
+      <p>Extract MP and stock UI from the monolith HTML into standalone ES modules. Wire them to the new <code>/api/products</code> and <code>/api/inventory</code> endpoints. Publish <code>product:updated</code> and <code>stock:low</code> events.</p>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h3>Deshawn: Build pos.js + cash-flow.js + ledger.js</h3>
+      <p>Extract POS, cash flow, and ledger UI from the monolith. Wire to <code>/api/pos</code>, <code>/api/cash-flow</code>, <code>/api/ledger</code>. Subscribe to <code>stock:updated</code> from Shrek, publish <code>order:new</code> and <code>po:created</code>.</p>
+    </div>
+  </div>
+
+  <div class="dep-arrow">↓ all modules render in the shell, events flowing</div>
+
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <h3>Trump: Test everything together, kill the monolith</h3>
+      <p>Verify all modules load, all events fire, all API endpoints respond. Once confirmed, <code>atica_app.html</code> gets archived. <code>index.html</code> becomes the new entry point. One deploy to rule them all.</p>
+    </div>
+  </div>
+</div>
+
+<!-- NETLIFY.TOML CHANGES -->
+<div class="section">
+  <h2>NETLIFY.TOML — ROUTING CHANGES NEEDED</h2>
+  <div class="card">
+    <div style="background:var(--bg);border-radius:6px;padding:1rem;font-family:var(--mono);font-size:0.75rem;line-height:1.8;overflow-x:auto;">
+      <span style="color:var(--text-dim);"># New API routes — one per Shopify stack</span><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/products/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/products/:splat"<br>
+      &nbsp;&nbsp;status = 200<br><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/orders/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/orders/:splat"<br>
+      &nbsp;&nbsp;status = 200<br><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/inventory/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/inventory/:splat"<br>
+      &nbsp;&nbsp;status = 200<br><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/pos/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/pos/:splat"<br>
+      &nbsp;&nbsp;status = 200<br><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/cash-flow/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/cash-flow/:splat"<br>
+      &nbsp;&nbsp;status = 200<br><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/ledger/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/ledger/:splat"<br>
+      &nbsp;&nbsp;status = 200<br><br>
+      <span style="color:var(--text-dim);"># Keep legacy route alive during migration</span><br>
+      [[redirects]]<br>
+      &nbsp;&nbsp;from = "/api/shopify/*"<br>
+      &nbsp;&nbsp;to = "/.netlify/functions/shopify/:splat"<br>
+      &nbsp;&nbsp;status = 200
+    </div>
+  </div>
+</div>
+
+<!-- MODULE TEMPLATE -->
+<div class="section">
+  <h2>MODULE TEMPLATE — EVERY MODULE FOLLOWS THIS PATTERN</h2>
+  <div class="card">
+    <div style="background:var(--bg);border-radius:6px;padding:1rem;font-family:var(--mono);font-size:0.72rem;line-height:1.8;overflow-x:auto;">
+      <span style="color:var(--text-dim);">// modules/[your-module].js</span><br>
+      <span style="color:var(--purple);">import</span> { on, emit } <span style="color:var(--purple);">from</span> <span style="color:var(--green);">'./event-bus.js'</span>;<br>
+      <span style="color:var(--purple);">import</span> { api, render } <span style="color:var(--purple);">from</span> <span style="color:var(--green);">'./core.js'</span>;<br><br>
+
+      <span style="color:var(--text-dim);">// ── State (private to this module) ──</span><br>
+      <span style="color:var(--purple);">let</span> state = { loaded: <span style="color:var(--orange);">false</span>, data: <span style="color:var(--orange);">null</span> };<br><br>
+
+      <span style="color:var(--text-dim);">// ── Init (called once when module mounts) ──</span><br>
+      <span style="color:var(--purple);">export async function</span> <span style="color:var(--blue);">init</span>(container) {<br>
+      &nbsp;&nbsp;container.innerHTML = renderSkeleton();<br>
+      &nbsp;&nbsp;state.data = <span style="color:var(--purple);">await</span> api.get(<span style="color:var(--green);">'/api/your-endpoint'</span>);<br>
+      &nbsp;&nbsp;state.loaded = <span style="color:var(--orange);">true</span>;<br>
+      &nbsp;&nbsp;update(container);<br>
+      }<br><br>
+
+      <span style="color:var(--text-dim);">// ── Update (re-render with current state) ──</span><br>
+      <span style="color:var(--purple);">function</span> <span style="color:var(--blue);">update</span>(container) {<br>
+      &nbsp;&nbsp;container.innerHTML = renderView(state);<br>
+      &nbsp;&nbsp;bindEvents(container);<br>
+      }<br><br>
+
+      <span style="color:var(--text-dim);">// ── Listen to other modules ──</span><br>
+      on(<span style="color:var(--green);">'order:new'</span>, (order) => {<br>
+      &nbsp;&nbsp;<span style="color:var(--text-dim);">// React to events from other modules</span><br>
+      &nbsp;&nbsp;state.data.push(transform(order));<br>
+      &nbsp;&nbsp;update(document.getElementById(<span style="color:var(--green);">'content'</span>));<br>
+      });<br><br>
+
+      <span style="color:var(--text-dim);">// ── Publish to other modules ──</span><br>
+      <span style="color:var(--purple);">function</span> <span style="color:var(--blue);">onAction</span>(item) {<br>
+      &nbsp;&nbsp;emit(<span style="color:var(--green);">'your-module:action'</span>, item);<br>
+      }
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:3rem;padding-top:1.5rem;border-top:1px solid var(--border);text-align:center;">
+  <p style="color:var(--text-dim);font-size:0.8rem;">Atica Ops Modular Architecture — March 2026</p>
+  <p style="color:var(--text-dim);font-size:0.75rem;">Every session in this project should reference this plan. Don't freelance.</p>
+</div>
+
+</body>
+</html>

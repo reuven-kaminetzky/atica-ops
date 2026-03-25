@@ -1,0 +1,432 @@
+/* ═══════════════════════════════════════════════════════════
+   Atica Ops — Base Design System
+   Odoo-inspired, clean, functional. No KPIs, no vanity.
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* Surface */
+  --bg:         #f8f9fb;
+  --surface:    #ffffff;
+  --surface-2:  #f1f3f5;
+  --border:     #dee2e6;
+  --border-light: #e9ecef;
+
+  /* Text */
+  --text:       #212529;
+  --text-dim:   #6c757d;
+  --text-muted: #adb5bd;
+
+  /* Brand */
+  --primary:    #714b67;
+  --primary-hover: #5f3d57;
+  --primary-light: rgba(113,75,103,0.08);
+
+  /* Status */
+  --success:    #28a745;
+  --success-bg: rgba(40,167,69,0.08);
+  --warning:    #ffc107;
+  --warning-bg: rgba(255,193,7,0.08);
+  --danger:     #dc3545;
+  --danger-bg:  rgba(220,53,69,0.08);
+  --info:       #17a2b8;
+  --info-bg:    rgba(23,162,184,0.08);
+
+  /* Layout */
+  --sidebar-w:  240px;
+  --topbar-h:   48px;
+  --radius:     6px;
+  --radius-lg:  10px;
+
+  /* Type */
+  --font:       -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:  'SF Mono', 'Fira Code', monospace;
+}
+
+/* ── Reset ─────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+img { max-width: 100%; }
+table { border-collapse: collapse; width: 100%; }
+
+/* ── Typography ────────────────────────────────────────── */
+
+h1 { font-size: 1.5rem; font-weight: 700; }
+h2 { font-size: 1.25rem; font-weight: 600; }
+h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
+
+/* ── Buttons ───────────────────────────────────────────── */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+.btn-primary:hover { background: var(--primary-hover); }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}
+
+.btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+
+/* ── Inputs ────────────────────────────────────────────── */
+
+.input-search {
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  background: var(--surface);
+  color: var(--text);
+  width: 220px;
+  transition: border-color 0.15s;
+}
+.input-search:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+/* ── Badges ────────────────────────────────────────────── */
+
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.badge-paid { background: var(--success-bg); color: var(--success); }
+.badge-pending { background: var(--warning-bg); color: #b38600; }
+.badge-refunded { background: var(--danger-bg); color: var(--danger); }
+
+/* ── Cards ─────────────────────────────────────────────── */
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+}
+.stat-label { font-size: 0.78rem; color: var(--text-dim); margin-bottom: 0.25rem; }
+.stat-value { font-size: 1.4rem; font-weight: 700; }
+
+/* ── Module Header ─────────────────────────────────────── */
+
+.module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-light);
+}
+.module-header h2 { margin: 0; }
+.module-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+/* ── Tabs ──────────────────────────────────────────────── */
+
+.module-tabs { display: flex; gap: 0; }
+.tab {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tab:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.tab:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.tab:not(:first-child) { border-left: none; }
+.tab.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+/* ── Data Table ────────────────────────────────────────── */
+
+.data-table {
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.data-table thead { background: var(--surface-2); }
+.data-table th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.data-table td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.85rem;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: var(--primary-light); }
+
+/* ── Product Grid ──────────────────────────────────────── */
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+.product-card {
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.product-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.product-img { width: 100%; height: 160px; object-fit: cover; }
+.product-img-placeholder {
+  width: 100%; height: 160px;
+  background: var(--surface-2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); font-size: 0.8rem;
+}
+.product-info { padding: 0.75rem; }
+.product-title { font-weight: 600; font-size: 0.88rem; margin-bottom: 0.2rem; }
+.product-meta { font-size: 0.75rem; color: var(--text-dim); margin-bottom: 0.3rem; }
+.product-price { font-weight: 700; color: var(--primary); }
+
+/* ── Transaction List ──────────────────────────────────── */
+
+.transaction-list { display: flex; flex-direction: column; gap: 0; }
+.transaction-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 100px 90px 80px;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 0.85rem;
+  align-items: center;
+}
+.transaction-row:hover { background: var(--primary-light); }
+.tx-name { font-weight: 600; font-family: var(--font-mono); font-size: 0.8rem; }
+.tx-store { font-size: 0.78rem; color: var(--text-dim); }
+.tx-total { font-weight: 600; text-align: right; }
+.tx-time { font-size: 0.75rem; color: var(--text-muted); text-align: right; }
+
+/* ── Store Grid ────────────────────────────────────────── */
+
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+.store-card {
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+.store-name { font-weight: 600; margin-bottom: 0.3rem; }
+.store-revenue { font-size: 1.3rem; font-weight: 700; color: var(--primary); }
+.store-meta { font-size: 0.75rem; color: var(--text-dim); }
+
+/* ── Location Cards ────────────────────────────────────── */
+
+.location-card {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 1rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  align-items: center;
+}
+.loc-name { font-weight: 600; }
+.loc-units { font-family: var(--font-mono); font-weight: 600; }
+.loc-skus { color: var(--text-dim); font-size: 0.8rem; }
+
+.level-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0;
+  font-size: 0.82rem;
+  font-family: var(--font-mono);
+}
+.level-qty.out-of-stock { color: var(--danger); font-weight: 700; }
+
+/* ── Settings ──────────────────────────────────────────── */
+
+.settings-section { margin-bottom: 2rem; }
+.connection-card {
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+.connection-card.connected .conn-status { color: var(--success); font-weight: 600; }
+.connection-card.disconnected .conn-status { color: var(--danger); font-weight: 600; }
+.conn-detail { font-size: 0.85rem; color: var(--text-dim); margin-top: 0.25rem; }
+
+.cache-card {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 0.75rem;
+}
+.cache-entry {
+  display: flex; justify-content: space-between;
+  font-size: 0.82rem; font-family: var(--font-mono);
+  padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border-light);
+}
+.cache-entry.expired { opacity: 0.4; }
+.sync-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+/* ── PO List ───────────────────────────────────────────── */
+
+.po-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.po-card {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto auto auto;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  align-items: center;
+  font-size: 0.85rem;
+}
+.po-vendor { font-weight: 600; }
+.po-cost { font-family: var(--font-mono); font-weight: 600; }
+.po-stage { font-size: 0.72rem; }
+.po-date { color: var(--text-dim); font-size: 0.78rem; }
+
+/* ── Daily Chart (simple CSS bars) ─────────────────────── */
+
+.daily-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  padding: 0.5rem 0;
+}
+.daily-bar {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+.bar-fill {
+  width: 100%;
+  background: var(--primary);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  transition: height 0.3s;
+}
+.bar-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  transform: rotate(-45deg);
+  white-space: nowrap;
+}
+
+/* ── Empty State ───────────────────────────────────────── */
+
+.empty-state {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+/* ── Skeleton Loading ──────────────────────────────────── */
+
+.skeleton-container { padding: 1rem 0; }
+.skeleton-row { margin-bottom: 0.75rem; }
+.skeleton-bar {
+  height: 14px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--border-light) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Toast ─────────────────────────────────────────────── */
+
+.toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.toast {
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  font-weight: 500;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: slideIn 0.3s;
+  max-width: 320px;
+}
+.toast-success { background: var(--success); color: white; }
+.toast-error { background: var(--danger); color: white; }
+.toast-info { background: var(--info); color: white; }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

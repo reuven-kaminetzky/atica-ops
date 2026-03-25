@@ -5,7 +5,45 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# API routing
+# ═══════════════════════════════════════════════════════════
+# NEW modular API routes — one function per Shopify stack
+# Run IN PARALLEL with legacy /api/shopify/* during migration
+# ═══════════════════════════════════════════════════════════
+
+[[redirects]]
+  from = "/api/products/*"
+  to = "/.netlify/functions/products/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/orders/*"
+  to = "/.netlify/functions/orders/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/inventory/*"
+  to = "/.netlify/functions/inventory/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/pos/*"
+  to = "/.netlify/functions/pos/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/ledger/*"
+  to = "/.netlify/functions/ledger/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/api/status/*"
+  to = "/.netlify/functions/status/:splat"
+  status = 200
+
+# ═══════════════════════════════════════════════════════════
+# LEGACY routes — keep alive during migration, deprecate later
+# ═══════════════════════════════════════════════════════════
+
 [[redirects]]
   from = "/api/shopify/*"
   to = "/.netlify/functions/shopify/:splat"
