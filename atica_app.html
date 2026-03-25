@@ -7251,11 +7251,18 @@ function renderAnVelocity(){
  if(!window._velTab) window._velTab={sort:'rev',filter:'',cat:'all',expand:{}};
  const V=window._velTab;
 
- const data=prods.map(p=>{
+ const sales7=getSalesSince(7);
+  const by7=getSalesByProduct(sales7);
+  const by30=getSalesByProduct(getSalesSince(30));
+  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
  const realVel=getRealVel(p);
  const adjVel=Math.round(realVel*season.multiplier*10)/10;
+ const vel7=getRealVelocity(p.id,7);
+ const trend=realVel>0&&vel7>0?(vel7-realVel)/Math.max(realVel,.1):0;
+ const sold7=(by7[p.id]||{}).units||0;
+ const rev30=(by30[p.id]||{}).revenue||0;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const weeklyRev=Math.round(adjVel*p.retail);
  const annualRev=weeklyRev*52;
@@ -7276,6 +7283,8 @@ function renderAnVelocity(){
  if(V.sort==='stock')return b.stock-a.stock;
  if(V.sort==='cover')return a.cover-b.cover;
  if(V.sort==='sell')return b.sellThru-a.sellThru;
+  if(V.sort==='trend')return b.trend-a.trend;
+  if(V.sort==='rev30')return b.rev30-a.rev30;
  if(V.sort==='turns')return b.annualTurns-a.annualTurns;
  if(V.sort==='margin')return b.margin-a.margin;
  return 0;
@@ -7318,7 +7327,7 @@ function renderAnVelocity(){
  const barW=Math.round(d.weeklyRev/maxRev*100);
  return `
  <div style="background:var(--sur2);border:1px solid ${d.cover<8?'rgba(138,58,42,.2)':'var(--brd)'};border-radius:var(--rl);margin-bottom:2px">
- <div onclick="window._velTab.expand['${ek}']=!window._velTab.expand['${ek}'];navigate('an-velocity')" style="cursor:pointer;display:grid;grid-template-columns:1fr 50px 50px 50px 50px 50px 50px;align-items:center;padding:12px 14px;gap:2px" class="row-hover">
+ <div onclick="window._velTab.expand['${ek}']=!window._velTab.expand['${ek}'];navigate('an-velocity')" style="cursor:pointer;display:grid;grid-template-columns:1fr 50px 36px 40px 50px 50px 50px 50px;align-items:center;padding:12px 14px;gap:2px" class="row-hover">
  <div style="min-width:0">
  <div style="display:flex;align-items:center;gap:6px">
  ${d.heroImg?`<img src="${d.heroImg}" style="width:24px;height:30px;object-fit:cover;border-radius:3px;flex-shrink:0"/>`:''}
@@ -7329,6 +7338,8 @@ function renderAnVelocity(){
  </div>
  <span style="font-family:var(--mono);font-size:11px;text-align:right;font-weight:700;color:var(--grn)">$${Math.round(d.weeklyRev/1000)}K</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right">${d.adjVel}</span>
+ <span style="font-size:11px;text-align:right;font-weight:700;color:${d.trend>.1?'var(--grn)':d.trend<-.1?'var(--brick)':'var(--faded)'}">${d.adjVel>0?(d.trend>.1?'↑':d.trend<-.1?'↓':'→'):'—'}</span>
+ <span style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--txt3)">${d.sold7||'—'}</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right;font-weight:700">${d.stock}</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${d.cover<8?'var(--brick)':d.cover<16?'var(--amb)':'var(--grn)'}">${d.cover>100?'∞':d.cover+'w'}</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right">${d.sellThru}%</span>
