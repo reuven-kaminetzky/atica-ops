@@ -2429,6 +2429,22 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
          const merged = [...manualSales, ...bridgedSales];
          merged.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
          try { localStorage.setItem('am_sales', JSON.stringify(merged)); } catch(e) {}
+
+         // Build per-product velocity from bridged sales (units/week)
+         const velByProd = {};
+         const daysSynced = 90; // we sync last 90 days
+         for (const order of bridgedSales) {
+           for (const item of (order.items||[])) {
+             if (!item.mpId) continue;
+             velByProd[item.mpId] = (velByProd[item.mpId]||0) + (item.qty||0);
+           }
+         }
+         const velMap = {};
+         for (const [id, units] of Object.entries(velByProd)) {
+           velMap[id] = Math.round((units / daysSynced) * 7 * 10) / 10;
+         }
+         try { localStorage.setItem('am_shopify_velocity', JSON.stringify(velMap)); } catch(e) {}
+
          console.log('[Sync] Bridged', bridgedSales.length, 'Shopify orders to am_sales (' + manualSales.length + ' manual +', bridgedSales.length, 'Shopify)');
        } catch (bridgeErr) { console.warn('[Sync] Sales bridge error:', bridgeErr.message); }
      }
@@ -2832,43 +2848,219 @@ function grp(id,title,count,sub,body,startOpen){
  <div class="grp-b">${body}</div>
  </div>`;
 }
-function renderHome(){
- const prods=Store.getProducts();
- const pos=Store.getPOs();
- const openPOs=pos.filter(po=>po.status!=='complete');
- const notifs=Store.getNotifs().filter(n=>!n.read);
 
- $('page').innerHTML=`
- <div style="max-width:680px;margin:0 auto;padding-top:64px">
+// ═══════════════════════════════════════════════════════════════
+// SHOPIFY ORDER DATA LAYER
+// All functions read from am_sales (synced Shopify orders)
+// ═══════════════════════════════════════════════════════════════
 
- <div style="margin-bottom:56px">
- <div style="font-family:var(--display);font-size:44px;font-weight:600;letter-spacing:-.5px;color:var(--ink)">Welcome back</div>
- <div style="font-size:16px;color:var(--faded);margin-top:10px">Where to?</div>
- </div>
-
- <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:56px">
- <div onclick="navigate('products')" class="atile at-blue"><div class="atile-icon" style="background:var(--blu)">◫</div><div><div class="atile-label">Products</div><div class="atile-sub">Catalog & styles</div></div></div>
- <div onclick="navigate('pos')" class="atile at-green"><div class="atile-icon" style="background:var(--grn)">◈</div><div><div class="atile-label">Orders</div><div class="atile-sub">Purchasing & production</div></div></div>
- <div onclick="navigate('inventory')" class="atile at-gold"><div class="atile-icon" style="background:var(--gold)">▤</div><div><div class="atile-label">Inventory</div><div class="atile-sub">Stock & movement</div></div></div>
- <div onclick="navigate('retail')" class="atile at-teal"><div class="atile-icon" style="background:#288878">◐</div><div><div class="atile-label">Retail</div><div class="atile-sub">Stores & sales</div></div></div>
- <div onclick="navigate('wholesale')" class="atile at-slate"><div class="atile-icon" style="background:#586878">◧</div><div><div class="atile-label">Wholesale</div><div class="atile-sub">Accounts & orders</div></div></div>
- <div onclick="navigate('integrations')" class="atile at-teal"><div class="atile-icon" style="background:#1a7868">⚙</div><div><div class="atile-label">Integrations</div><div class="atile-sub">Shopify · QB · POS</div></div></div>
-    <div onclick="navigate('bookkeeping')" class="atile at-green"><div class="atile-icon" style="background:#1a5830">◎</div><div><div class="atile-label">Finance</div><div class="atile-sub">Cash & bookkeeping</div></div></div>
- </div>
-
- ${notifs.length?`
- <div style="margin-bottom:32px">
- <div style="font-size:13px;color:var(--faded);margin-bottom:12px">${notifs.length} notification${notifs.length>1?'s':''}</div>
- ${notifs.slice(0,3).map(n=>`
- <div onclick="navigate('${n.route||'home'}')" style="display:flex;align-items:center;gap:12px;padding:14px 18px;margin-bottom:6px;background:var(--sur2);border-radius:12px;cursor:pointer;transition:background .12s" onmouseenter="this.style.background='var(--sur)'" onmouseleave="this.style.background='var(--sur2)'">
- <div style="width:6px;height:6px;border-radius:50%;background:${n.type==='critical'?'var(--brick)':n.type==='success'?'var(--grn)':'var(--gold)'};flex-shrink:0"></div>
- <div style="font-size:13px;color:var(--txt2)">${n.msg}</div>
- </div>`).join('')}
- </div>
- `:''}
-
- </div>`;
+function getSales() {
+  try { return JSON.parse(localStorage.getItem('am_sales') || '[]'); } catch(e) { return []; }
 }
+
+function getSalesSince(days) {
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0,10);
+  return getSales().filter(s => (s.date || '') >= cutoff);
+}
+
+function getSalesRevenue(sales) {
+  return sales.reduce((s, o) => s + (o.total || 0), 0);
+}
+
+function getSalesByProduct(sales) {
+  // Returns { mpId: { units, revenue, orders } }
+  const map = {};
+  for (const order of sales) {
+    for (const item of (order.items || [])) {
+      const id = item.mpId || '_unknown';
+      if (!map[id]) map[id] = { units: 0, revenue: 0, orders: 0 };
+      map[id].units += item.qty || 0;
+      map[id].revenue += (item.qty || 0) * (item.price || 0);
+      map[id].orders++;
+    }
+  }
+  return map;
+}
+
+function getSalesByLocation(sales) {
+  const map = {};
+  for (const order of sales) {
+    const loc = order.store || 'Online';
+    if (!map[loc]) map[loc] = { units: 0, revenue: 0, orders: 0 };
+    map[loc].orders++;
+    map[loc].revenue += order.total || 0;
+    for (const item of (order.items || [])) map[loc].units += item.qty || 0;
+  }
+  return map;
+}
+
+function getSalesTrend(days, buckets) {
+  // Returns array of { date, revenue, orders } for sparkline
+  const sales = getSalesSince(days);
+  const bucketSize = Math.ceil(days / buckets);
+  const result = [];
+  for (let i = buckets - 1; i >= 0; i--) {
+    const start = new Date(Date.now() - (i+1) * bucketSize * 86400000).toISOString().slice(0,10);
+    const end = new Date(Date.now() - i * bucketSize * 86400000).toISOString().slice(0,10);
+    const bucket = sales.filter(s => s.date >= start && s.date < end);
+    result.push({ date: end, revenue: getSalesRevenue(bucket), orders: bucket.length });
+  }
+  return result;
+}
+
+function getShopifyCustomers() {
+  // Build customer profiles from Shopify orders
+  const sales = getSales().filter(s => s.source === 'shopify' && s.custId && s.custName !== 'Guest');
+  const customers = {};
+  for (const order of sales) {
+    if (!order.custId) continue;
+    if (!customers[order.custId]) {
+      customers[order.custId] = {
+        id: order.custId, name: order.custName,
+        orders: 0, revenue: 0, firstOrder: order.date,
+        lastOrder: order.date, items: []
+      };
+    }
+    const c = customers[order.custId];
+    c.orders++;
+    c.revenue += order.total || 0;
+    if (order.date > c.lastOrder) c.lastOrder = order.date;
+    if (order.date < c.firstOrder) c.firstOrder = order.date;
+    for (const item of (order.items || [])) {
+      if (item.mpId) c.items.push(item.mpId);
+    }
+  }
+  return Object.values(customers).sort((a,b) => b.revenue - a.revenue);
+}
+
+function getRealVelocity(mpId, days) {
+  // Units sold per week for a master product from real orders
+  const sales = getSalesSince(days || 30);
+  const byProd = getSalesByProduct(sales);
+  const units = (byProd[mpId] || {}).units || 0;
+  return Math.round((units / (days || 30)) * 7 * 10) / 10;
+}
+
+function getMiniSparkline(data, color) {
+  if (!data || data.length === 0) return '';
+  const max = Math.max(...data.map(d => d.revenue), 1);
+  const w = 60, h = 24;
+  const pts = data.map((d, i) => {
+    const x = Math.round((i / (data.length - 1)) * w);
+    const y = Math.round(h - (d.revenue / max) * h);
+    return `${x},${y}`;
+  }).join(' ');
+  return `<svg width="${w}" height="${h}" style="display:block"><polyline points="${pts}" fill="none" stroke="${color || 'var(--grn)'}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+}
+
+
+function renderHome(){
+  const prods = Store.getProducts();
+  const pos = Store.getPOs();
+  const openPOs = pos.filter(po => po.status !== 'complete');
+  const notifs = Store.getNotifs().filter(n => !n.read);
+  const sales30 = getSalesSince(30);
+  const sales7  = getSalesSince(7);
+  const sales1  = getSalesSince(1);
+  const rev30   = getSalesRevenue(sales30);
+  const rev7    = getSalesRevenue(sales7);
+  const rev1    = getSalesRevenue(sales1);
+  const trend   = getSalesTrend(30, 12);
+  const byProd  = getSalesByProduct(sales30);
+  const topProds = Object.entries(byProd)
+    .filter(([id]) => id !== '_unknown')
+    .sort((a,b) => b[1].revenue - a[1].revenue)
+    .slice(0, 4);
+  const oos = prods.filter(p => Store.totalStock(p.id) === 0 && p.vel > 0);
+  const fmt = n => '$' + (n >= 1000 ? (n/1000).toFixed(1) + 'K' : Math.round(n));
+  const hasOrders = sales30.length > 0;
+
+  $('page').innerHTML = `
+  <div style="max-width:760px;margin:0 auto;padding-top:40px">
+
+    <div style="margin-bottom:32px">
+      <div style="font-family:var(--display);font-size:36px;font-weight:600;letter-spacing:-.5px;color:var(--ink)">Atica Man</div>
+      <div style="font-size:13px;color:var(--faded);margin-top:4px">${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})}</div>
+    </div>
+
+    ${hasOrders ? `
+    <!-- LIVE REVENUE STRIP -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px">
+      <div style="padding:16px;border-right:1px solid var(--brd)">
+        <div style="font-size:10px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Today</div>
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ink)">${fmt(rev1)}</div>
+        <div style="font-size:10px;color:var(--faded);margin-top:2px">${sales1.length} orders</div>
+      </div>
+      <div style="padding:16px;border-right:1px solid var(--brd)">
+        <div style="font-size:10px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">7 days</div>
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--ink)">${fmt(rev7)}</div>
+        <div style="font-size:10px;color:var(--faded);margin-top:2px">${sales7.length} orders</div>
+      </div>
+      <div style="padding:16px">
+        <div style="font-size:10px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">30 days</div>
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:var(--grn)">${fmt(rev30)}</div>
+        <div style="font-size:10px;color:var(--faded);margin-top:2px">${sales30.length} orders</div>
+      </div>
+    </div>
+
+    <!-- SPARKLINE + TOP PRODUCTS -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px">
+        <div style="font-size:10px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">30-day trend</div>
+        <div style="overflow:hidden">${getMiniSparkline(trend, 'var(--grn)')}</div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--faded);margin-top:4px">
+          <span>30d ago</span><span>today</span>
+        </div>
+      </div>
+      <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:14px">
+        <div style="font-size:10px;color:var(--faded);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Top sellers</div>
+        ${topProds.map(([id, d]) => {
+          const p = prods.find(x => x.id === id);
+          const name = p ? p.name.split(' ').slice(0,2).join(' ') : id;
+          const pct = rev30 > 0 ? Math.round(d.revenue / rev30 * 100) : 0;
+          return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;cursor:pointer" onclick="navigate('product-detail','${id}')">
+            <div style="font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</div>
+            <div style="font-size:10px;font-family:var(--mono);color:var(--faded)">${pct}%</div>
+            <div style="width:32px;height:3px;background:var(--brd);border-radius:2px;overflow:hidden;flex-shrink:0"><div style="height:100%;width:${pct}%;background:var(--grn);border-radius:2px"></div></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    ` : `
+    <!-- NO ORDERS YET -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
+      <div style="font-size:22px">📊</div>
+      <div>
+        <div style="font-size:13px;font-weight:600">Sync Shopify to see live revenue</div>
+        <div style="font-size:11px;color:var(--faded);margin-top:2px">Orders will appear here once synced</div>
+      </div>
+      <button class="btn btn-p" style="margin-left:auto;flex-shrink:0" onclick="navigate('integrations')">Sync</button>
+    </div>
+    `}
+
+    <!-- ALERTS -->
+    ${oos.length ? `<div onclick="navigate('stockouts')" style="cursor:pointer;background:rgba(138,58,42,.06);border:1px solid rgba(138,58,42,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:10px;font-size:12px"><span style="font-weight:700;color:var(--brick)">⚠ ${oos.length} products out of stock</span> — tap to see</div>` : ''}
+    ${openPOs.length ? `<div onclick="navigate('pos')" style="cursor:pointer;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:12px 16px;margin-bottom:10px;font-size:12px"><span style="font-weight:600">📦 ${openPOs.length} open POs</span> <span style="color:var(--faded)">in progress</span></div>` : ''}
+    ${notifs.length ? notifs.slice(0,2).map(n=>`
+    <div onclick="navigate('${n.route||'home'}')" style="display:flex;align-items:center;gap:10px;padding:12px 16px;margin-bottom:6px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);cursor:pointer">
+      <div style="width:6px;height:6px;border-radius:50%;background:${n.type==='critical'?'var(--brick)':n.type==='success'?'var(--grn)':'var(--gold)'};flex-shrink:0"></div>
+      <div style="font-size:12px;color:var(--txt2);flex:1">${n.msg}</div>
+    </div>`).join('') : ''}
+
+    <!-- NAV GRID -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:20px">
+      <div onclick="navigate('products')" class="atile at-blue"><div class="atile-icon" style="background:var(--blu)">◫</div><div><div class="atile-label">Products</div><div class="atile-sub">${prods.length} master products</div></div></div>
+      <div onclick="navigate('pos')" class="atile at-green"><div class="atile-icon" style="background:var(--grn)">◈</div><div><div class="atile-label">Orders</div><div class="atile-sub">${openPOs.length} open POs</div></div></div>
+      <div onclick="navigate('inventory')" class="atile at-gold"><div class="atile-icon" style="background:var(--gold)">▤</div><div><div class="atile-label">Inventory</div><div class="atile-sub">${prods.reduce((s,p)=>s+Store.totalStock(p.id),0).toLocaleString()} units</div></div></div>
+      <div onclick="navigate('retail')" class="atile at-teal"><div class="atile-icon" style="background:#288878">◐</div><div><div class="atile-label">Retail</div><div class="atile-sub">${hasOrders ? fmt(rev30) + ' / 30d' : '4 stores'}</div></div></div>
+      <div onclick="navigate('bookkeeping')" class="atile at-green"><div class="atile-icon" style="background:#1a5830">◎</div><div><div class="atile-label">Finance</div><div class="atile-sub">Cash & bookkeeping</div></div></div>
+      <div onclick="navigate('analytics')" class="atile at-purple"><div class="atile-icon" style="background:#4a3a8a">◕</div><div><div class="atile-label">Analytics</div><div class="atile-sub">Velocity & forecast</div></div></div>
+    </div>
+
+  </div>`;
+}
+
+
 function createTransfer(productId, from, to, qty) {
  const transfers = JSON.parse(localStorage.getItem('am_transfers') || '[]');
  const p = Store.getProduct(productId);
@@ -9822,28 +10014,139 @@ function renderOperations(){
   </div>`;
 }
 function renderRetail(){
-  const custs=Store.getCustomers();
-  const STORES=Store.LOCS.filter(l=>l!=='Online'&&l!=='Reserve'&&l!=='Wholesale');
-  const sales=(()=>{try{return JSON.parse(localStorage.getItem('am_sales')||'[]');}catch(e){return[];}})();
+  const prods = Store.getProducts();
+  const STORES = ['Lakewood','Flatbush','Crown Heights','Monsey'];
+  const sales30 = getSalesSince(30);
+  const sales7  = getSalesSince(7);
+  const byLoc30 = getSalesByLocation(sales30);
+  const byLoc7  = getSalesByLocation(sales7);
+  const shopifySales = sales30.filter(s => s.source === 'shopify');
+  const totalRev = getSalesRevenue(sales30);
+  const fmt = n => '$' + (n >= 1000 ? (n/1000).toFixed(1) + 'K' : Math.round(n));
+  const shopifyOnline = byLoc30['Online'] || byLoc30['Shopify'] || {};
+  const hasData = sales30.length > 0;
 
-  $('page').innerHTML=`
+  if (!window._retTab) window._retTab = 'overview';
+  const T = window._retTab;
+
+  $('page').innerHTML = `
   <div style="max-width:940px">
     <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px;margin-bottom:4px">Retail</div>
-    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:20px">${STORES.length} stores · ${custs.length} customers · ${sales.length} recorded sales</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-bottom:16px">${STORES.length} stores · ${sales30.length} orders / 30d · ${fmt(totalRev)} revenue</div>
 
-    <!-- STORE LIST -->
-    <div style="font-family:var(--display);font-size:13px;font-weight:600;color:var(--ink);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid var(--ink)">Stores</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:24px">
-      ${STORES.map(s=>`<div onclick="navigate('ret-store')" style="cursor:pointer;padding:10px 16px;background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);font-size:13px;font-weight:600;transition:border-color .12s" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">${s}</div>`).join('')}
+    <div class="tab-bar" style="margin-bottom:20px">
+      ${['overview','stores','orders','customers'].map(t=>`
+      <div class="stab ${T===t?'on':''}" onclick="window._retTab='${t}';navigate('retail')">${t.charAt(0).toUpperCase()+t.slice(1)}</div>`).join('')}
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-      <div onclick="navigate('floor')" class="atile at-gold"><div class="atile-icon">◈</div><div><div class="atile-label">Floor App</div><div class="atile-sub">POS · lookup · cart</div></div></div>
-      <div onclick="navigate('crm')" class="atile at-blue"><div class="atile-icon">◐</div><div><div class="atile-label">CRM</div><div class="atile-sub">${custs.length} customers</div></div></div>
-      <div onclick="navigate('ret-store')" class="atile at-teal"><div class="atile-icon">▤</div><div><div class="atile-label">Store View</div><div class="atile-sub">Per-store inventory</div></div></div>
+    ${T === 'overview' ? `
+    <!-- REVENUE BY LOCATION -->
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);overflow:hidden;margin-bottom:16px">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--brd);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--faded)">Revenue by location — last 30 days</div>
+      ${[...STORES.map(s => ({name:s, data:byLoc30[s]||{}})),
+         {name:'Online / Shopify', data:{revenue:(shopifyOnline.revenue||0), orders:(shopifyOnline.orders||0)}}
+        ].map(({name, data}) => {
+        const rev = data.revenue || 0;
+        const pct = totalRev > 0 ? Math.round(rev/totalRev*100) : 0;
+        return `<div style="padding:12px 16px;border-bottom:1px solid var(--brd);display:flex;align-items:center;gap:12px" onclick="window._retTab='stores';window._retStore='${name}';navigate('retail')" style="cursor:pointer">
+          <div style="width:120px;font-size:12px;font-weight:500;flex-shrink:0">${name}</div>
+          <div style="flex:1;height:6px;background:var(--brd);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${rev>0?'var(--grn)':'var(--brd)'};border-radius:3px;transition:width .3s"></div>
+          </div>
+          <div style="font-family:var(--mono);font-size:12px;font-weight:700;width:60px;text-align:right">${rev>0?fmt(rev):'—'}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--faded);width:30px;text-align:right">${data.orders||0}</div>
+        </div>`;
+      }).join('')}
     </div>
+
+    <!-- TOP PRODUCTS THIS MONTH -->
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:10px">Top products — 30 days</div>
+    ${(() => {
+      const byProd = getSalesByProduct(sales30);
+      return Object.entries(byProd)
+        .filter(([id]) => id !== '_unknown')
+        .sort((a,b) => b[1].units - a[1].units)
+        .slice(0, 8)
+        .map(([id, d]) => {
+          const p = prods.find(x => x.id === id);
+          const name = p ? p.name : id;
+          const stock = p ? Store.totalStock(p.id) : 0;
+          const vel = d.units / 30 * 7;
+          const cover = vel > 0 ? Math.round(stock / vel) : 999;
+          return `<div onclick="navigate('product-detail','${id}')" style="display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--brd);cursor:pointer" onmouseover="this.style.background='var(--sur)'" onmouseout="this.style.background=''">
+            ${p && p.heroImg ? `<img src="${p.heroImg}" style="width:28px;height:36px;object-fit:cover;border-radius:3px;flex-shrink:0">` : `<div style="width:28px;height:36px;background:var(--brd);border-radius:3px;flex-shrink:0"></div>`}
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${d.units} sold · ${fmt(d.revenue)}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-family:var(--mono);font-size:11px;font-weight:700">${d.units}u</div>
+              <div style="font-size:9px;color:${cover<8?'var(--red)':cover<16?'var(--amb)':'var(--faded)'}">${cover<999?cover+'w cover':'—'}</div>
+            </div>
+          </div>`;
+        }).join('') || '<div style="padding:24px;text-align:center;color:var(--faded);font-size:12px">No sales data yet — sync Shopify first</div>';
+    })()}
+    ` : ''}
+
+    ${T === 'orders' ? `
+    <!-- RECENT ORDERS FROM SHOPIFY -->
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:10px">${shopifySales.length} Shopify orders — last 30 days</div>
+    ${shopifySales.slice(0,40).map(order => `
+    <div style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--r);padding:12px 14px;margin-bottom:4px">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">
+        <span style="font-family:var(--mono);font-size:11px;font-weight:600">${order.orderName||order.id}</span>
+        <span style="font-family:var(--mono);font-size:12px;font-weight:700">${fmt(order.total)}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--faded)">${order.date}</span>
+        <span style="font-size:11px;color:var(--faded)">·</span>
+        <span style="font-size:11px;color:var(--txt2)">${order.custName||'Guest'}</span>
+        <span class="badge ${order.financialStatus==='paid'?'b-grn':'b-amb'}" style="margin-left:auto">${order.financialStatus||'pending'}</span>
+      </div>
+      ${(order.items||[]).slice(0,3).map(item=>`
+        <div style="font-size:10px;color:var(--faded);margin-top:3px">${item.title||item.mpId||'—'} × ${item.qty}</div>
+      `).join('')}
+    </div>`).join('') || '<div style="padding:32px;text-align:center;color:var(--faded)">No orders synced yet</div>'}
+    ` : ''}
+
+    ${T === 'customers' ? `
+    <!-- SHOPIFY CUSTOMERS -->
+    ${(() => {
+      const customers = getShopifyCustomers();
+      return customers.length > 0 ? `
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:10px">${customers.length} customers from Shopify</div>
+      ${customers.slice(0,30).map(c => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid var(--brd)">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0">${c.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div>
+        <div style="flex:1">
+          <div style="font-size:12px;font-weight:600">${c.name}</div>
+          <div style="font-family:var(--mono);font-size:10px;color:var(--faded)">${c.orders} orders · ${fmt(c.revenue)} · last: ${c.lastOrder}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">${fmt(c.revenue)}</div>
+      </div>`).join('')}` :
+      '<div style="padding:32px;text-align:center;color:var(--faded)">No customer data yet — sync Shopify orders first</div>';
+    })()}
+    ` : ''}
+
+    ${T === 'stores' ? `
+    <!-- PER-STORE INVENTORY -->
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+      ${STORES.map(store => {
+        const storeData = byLoc30[store] || {};
+        const prods7 = Store.getStoreInventory(store).filter(p=>p.storeQty>0);
+        return `<div onclick="navigate('ret-store')" style="background:var(--sur2);border:1px solid var(--brd);border-radius:var(--rl);padding:16px;cursor:pointer" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor=''">
+          <div style="font-size:14px;font-weight:700;margin-bottom:8px">${store}</div>
+          <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--grn)">${fmt(storeData.revenue||0)}</div>
+          <div style="font-size:10px;color:var(--faded);margin-top:2px">${storeData.orders||0} orders · ${prods7.length} SKUs in stock</div>
+        </div>`;
+      }).join('')}
+    </div>
+    ` : ''}
+
   </div>`;
 }
+
+
 function retTab(store){
  document.querySelectorAll('[id^="ret-t-"]').forEach(t=>t.classList.remove('on'));
  const tabId = store==='all'?'all':store.replace(/ /g,'-');
@@ -9950,7 +10253,7 @@ function renderProducts(){
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
- const adjVel=Math.round(p.vel*season.multiplier*10)/10;
+ const const realVel=getRealVelocity(p.id,30); adjVel=realVel>0?realVel:Math.round(p.vel*season.multiplier*10)/10;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const lnd=Math.round(p.fob*1.34*100)/100;
  const mg=p.retail>0?Math.round((p.retail-lnd)/p.retail*100):0;
