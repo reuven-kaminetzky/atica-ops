@@ -132,14 +132,7 @@ async function arriveShipment(client, { pathParams, body }) {
   if (body.adjustments && Array.isArray(body.adjustments)) {
     for (const adj of body.adjustments) {
       try {
-        const result = await client._request('/inventory_levels/adjust.json', {
-          method: 'POST',
-          body: JSON.stringify({
-            inventory_item_id: adj.inventoryItemId,
-            location_id: adj.locationId,
-            available_adjustment: adj.adjustment,
-          }),
-        });
+        const result = await client.adjustInventory(adj.inventoryItemId, adj.locationId, adj.adjustment);
         adjustResults.push({ ...adj, success: true, level: result.inventory_level });
       } catch (err) {
         adjustResults.push({ ...adj, success: false, error: err.message });

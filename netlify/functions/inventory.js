@@ -48,15 +48,7 @@ async function adjustInventory(client, { body }) {
   if (!inventoryItemId || !locationId || adjustment === undefined) {
     throw new RouteError(400, 'inventoryItemId, locationId, and adjustment required');
   }
-  const result = await client._request('/inventory_levels/adjust.json', {
-    method: 'POST',
-    body: JSON.stringify({
-      inventory_item_id: inventoryItemId,
-      location_id: locationId,
-      available_adjustment: adjustment,
-    }),
-  });
-  // Invalidate inventory cache after adjustment
+  const result = await client.adjustInventory(inventoryItemId, locationId, adjustment);
   cache.set(cache.makeKey('inventory', {}), null, 0);
   return { adjusted: true, inventoryLevel: result.inventory_level };
 }
@@ -74,25 +66,8 @@ async function transferInventory(client, { body }) {
   if (quantity <= 0) throw new RouteError(400, 'quantity must be positive');
   if (fromLocationId === toLocationId) throw new RouteError(400, 'source and destination must differ');
 
-  // Deduct from source
-  const deduct = await client._request('/inventory_levels/adjust.json', {
-    method: 'POST',
-    body: JSON.stringify({
-      inventory_item_id: inventoryItemId,
-      location_id: fromLocationId,
-      available_adjustment: -quantity,
-    }),
-  });
-
-  // Add to destination
-  const add = await client._request('/inventory_levels/adjust.json', {
-    method: 'POST',
-    body: JSON.stringify({
-      inventory_item_id: inventoryItemId,
-      location_id: toLocationId,
-      available_adjustment: quantity,
-    }),
-  });
+  const deduct = await client.adjustInventory(inventoryItemId, fromLocationId, -quantity);
+  const add = await client.adjustInventory(inventoryItemId, toLocationId, quantity);
 
   cache.set(cache.makeKey('inventory', {}), null, 0);
 
