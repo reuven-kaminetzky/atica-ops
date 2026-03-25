@@ -451,12 +451,7 @@ const SEED_PRODUCTS=[
     {id:'herring-shirt',name:'Herringbone Weave Shirt',code:'HBW',cat:'Shirts',vendor:'The Orient Apparel (TAL)',fob:15,retail:62,lead:90,moq:50,sizes:'shirts',qbCode:'4000-HBW',hts:'6205.20',duty:20,status:'active',vel:2.2,sell:68,inc:120,flag:'ok',tagline:'',description:'',features:[],gallery:[],notes:''},
     {id:'royal-oxford',name:'Royal Oxford Shirt',code:'ROX',cat:'Shirts',vendor:'The Orient Apparel (TAL)',fob:17,retail:72,lead:90,moq:50,sizes:'shirts',qbCode:'4000-ROX',hts:'6205.20',duty:20,status:'active',vel:1.8,sell:58,inc:100,flag:'ok',tagline:'',description:'',features:[],gallery:[],notes:''},
     {id:'pinpoint',name:'Pinpoint Oxford Shirt',code:'PPO',cat:'Shirts',vendor:'The Orient Apparel (TAL)',fob:13,retail:54,lead:90,moq:50,sizes:'shirts',qbCode:'4000-PPO',hts:'6205.20',duty:20,status:'active',vel:3.5,sell:75,inc:160,flag:'reorder',tagline:'',description:'',features:[],gallery:[],notes:''},
-    {id:'summer-suit',name:'Summer Weight Suit',code:'SWS',cat:'Suits',vendor:'Ningbo Youngor (YGR)',fob:65,retail:295,lead:90,moq:50,sizes:'suits',qbCode:'4000-SWS',hts:'6203.11',duty:17.5,status:'active',vel:1.8,sell:55,inc:60,flag:'watch',tagline:'',description:'',features:[],gallery:[],notes:''},
-    {id:'sweater',name:'Knit Sweaters',code:'KNT',cat:'Outerwear',vendor:'',fob:18,retail:89,lead:90,moq:50,sizes:'shirts',qbCode:'4000-KNT',hts:'6110.20',duty:17.5,status:'active',vel:3.2,sell:60,inc:0,flag:'watch',tagline:'Cardigans · Pullovers · Zip-Ups',description:'',features:[],gallery:[],notes:''},
-    {id:'luxury-pant',name:'Parkway Dress Pants',code:'PKDR',cat:'Pants',vendor:'Shandong (DY17)',fob:16,retail:72,lead:90,moq:100,sizes:'pants',qbCode:'4000-PKDR',hts:'6203.42',duty:24.1,status:'active',vel:8.5,sell:58,inc:0,flag:'watch',tagline:'Luxury Performance · Non-Iron',description:'',features:[],gallery:[],notes:''},
-    {id:'socks',name:'Everyday Comfort Socks',code:'SCK',cat:'Accessories',vendor:'',fob:2.5,retail:8,lead:60,moq:200,sizes:'socks',qbCode:'4000-SCK',hts:'6115.95',duty:12.8,status:'active',vel:18,sell:70,inc:0,flag:'watch',tagline:'Argyle · Lines · Patterns',description:'',features:[],gallery:[],notes:''},
-    {id:'hats',name:'Hats & Caps',code:'HAT',cat:'Accessories',vendor:'',fob:8,retail:64,lead:60,moq:50,sizes:'onesize',qbCode:'4000-HAT',hts:'6505.00',duty:7.9,status:'active',vel:2.1,sell:55,inc:0,flag:'watch',tagline:'Baseball Caps · Quilted · Rainproof',description:'',features:[],gallery:[],notes:''},
-    {id:'cufflinks',name:'Cufflinks',code:'CLK',cat:'Accessories',vendor:'',fob:6,retail:48,lead:60,moq:50,sizes:'onesize',qbCode:'4000-CLK',hts:'7117.19',duty:11,status:'active',vel:1.2,sell:50,inc:0,flag:'watch',tagline:'',description:'',features:[],gallery:[],notes:''}
+    {id:'summer-suit',name:'Summer Weight Suit',code:'SWS',cat:'Suits',vendor:'Ningbo Youngor (YGR)',fob:65,retail:295,lead:90,moq:50,sizes:'suits',qbCode:'4000-SWS',hts:'6203.11',duty:17.5,status:'active',vel:1.8,sell:55,inc:60,flag:'watch',tagline:'',description:'',features:[],gallery:[],notes:''}
     ];
 const SEED_STYLES={
  'hc360':[
@@ -2181,14 +2176,20 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
        // ── Build live styles from ALL matching Shopify product variants ──
        const seedStyles = styles[prod.id] || [];
        // Group Shopify variants by COLOR — not by fit (Lorenzo/Alexander) or size
-       const FIT_NAMES = /^(lorenzo|alexander|classic|modern|slim|regular|relaxed|tailored|standard|athletic|comfort|straight|traditional|contemporary|fitted|narrow|wide|pleated)$/i;
+       const FIT_NAMES = /^(lorenzo|alexander|classic|modern|slim|regular|relaxed|tailored|standard|athletic|comfort|straight|traditional|contemporary|fitted|narrow|wide|pleated|short|long|extra.slim|x.slim|extra.long|x.long|petite|big|tall|portly|stout|husky|boys|girls|youth|adult|mens|mens|womens|unisex|one.size|os|s|m|l|xl|xxl|xs)$/i;
        const SIZE_PAT = /^(\d{1,2}[xX]\d{2}|\d{2}[SRLT]|[xX]{0,2}[sSmMlLxX]{1,3}[lL]?|\d{2,3}(\.\d)?(\/\d+)?|one\s*size)$/i;
        const getColorIdx = (opts) => { const i=(opts||[]).findIndex(o=>/color|colour|fabric|style/i.test(o.name)); return i>=0?i:(opts&&opts.length===1?0:-1); };
        const getColor = (title, opts) => {
          const parts = (title||'').split(' / ').map(p=>p.trim()).filter(Boolean);
-         const ci = getColorIdx(opts); if(ci>=0&&parts[ci]) return parts[ci];
+         // Try option index first (most reliable)
+         const ci = getColorIdx(opts); if(ci>=0&&parts[ci]&&!FIT_NAMES.test(parts[ci])&&!SIZE_PAT.test(parts[ci])) return parts[ci];
+         // Filter out fits and sizes — prefer substantive color/fabric names
          const cp = parts.filter(p=>!SIZE_PAT.test(p)&&!FIT_NAMES.test(p));
-         return cp.length>0?cp.join(' / '):(parts.filter(p=>!SIZE_PAT.test(p))[0]||parts[0]||'Default');
+         // Among remaining, prefer longer names (color+fabric combos) over short single words
+         if(cp.length>0) return cp.sort((a,b)=>b.length-a.length)[0];
+         // Last resort: first non-size part
+         const nonSize = parts.filter(p=>!SIZE_PAT.test(p));
+         return nonSize.length>0?nonSize[0]:(parts[0]||'Default');
        };
        const CLR_PAL = ['#1a2a4a','#4a4a4a','#c8c8c8','#2a4a2a','#8a3a2a','#3a5a78','#6a5a4a','#4a3a6a','#7a6a5a','#2a3a5a','#5a3a2a','#3a6a5a','#6a4a3a','#2a5a4a'];
        let _ci = 0;
@@ -10199,125 +10200,123 @@ function renderRetailView(store){
  </div>`;
 }
 function renderProducts(){
- const prods=Store.getProducts();
- const season=Store.getCurrentSeason();
- const proj=Store.getProjection(12);
+  if(!window._mp)window._mp={cat:'all',filter:'',sort:'vel',dir:-1,open:{}};
+  const S=window._mp;
+  const mps=Store.getProducts();
+  const season=Store.getCurrentSeason();
+  const allCats=['all',...[...new Set(mps.map(p=>p.cat).filter(Boolean))].sort()];
+  const filtered=S.cat==='all'?mps:mps.filter(p=>p.cat===S.cat);
+  const searched=S.filter?filtered.filter(p=>[p.name,p.code,p.cat,p.vendor].join(' ').toLowerCase().includes(S.filter.toLowerCase())):filtered;
+  const sales30=getSalesSince(30);
+  const byProd=getSalesByProduct(sales30);
+  const rows=searched.map(p=>{
+    const styles=Store.getStyles(p.id);
+    const stock=Store.totalStock(p.id);
+    const realVel=getRealVelocity(p.id,30);
+    const vel=realVel>0?realVel:Math.round((p.vel||0)*season.multiplier*10)/10;
+    const cover=vel>0?Math.round(stock/vel):999;
+    const lnd=p.fob?Math.round(p.fob*1.34*100)/100:0;
+    const mg=p.retail&&lnd?Math.round((p.retail-lnd)/p.retail*100):0;
+    const sold=(byProd[p.id]||{}).units||0;
+    const openPOs=Store.getPOs().filter(po=>po.mpId===p.id&&po.status!=='complete');
+    // Deduplicated style colors — skip fits/sizes
+    const styleColors=[...new Map(styles.map(s=>[s.color||'#888',s.color])).values()].slice(0,10);
+    return{...p,styles,stock,vel,cover,lnd,mg,sold,openPOs,styleColors};
+  }).sort((a,b)=>{
+    const va=a[S.sort]??0,vb=b[S.sort]??0;
+    return typeof va==='string'?va.localeCompare(vb)*S.dir:(vb-va)*S.dir;
+  });
+  const sh=(label,key)=>`<span onclick="window._mp.sort='${key}';window._mp.dir=${S.sort===key?-S.dir:-1};navigate('products')" style="cursor:pointer;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:${S.sort===key?'var(--gold)':'var(--txt4)'};font-weight:${S.sort===key?700:500}">${label}${S.sort===key?(S.dir<0?' ▾':' ▴'):''}</span>`;
+  const totStock=rows.reduce((s,p)=>s+p.stock,0);
+  const totVel=rows.reduce((s,p)=>s+p.vel,0);
+  const intg=Store.getIntegrations();
+  const lastSync=intg.shopify?.lastSync?new Date(intg.shopify.lastSync):null;
+  const ageMin=lastSync?Math.round((Date.now()-lastSync.getTime())/60000):9999;
 
- if(!window._ledger){window._ledger={sort:'rev',dir:-1,filter:'',cat:'all',expand:{}};}
- const L=window._ledger;
+  $('page').innerHTML=`
+  <div style="max-width:1000px">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px;gap:12px;flex-wrap:wrap">
+      <div>
+        <div style="font-family:var(--display);font-size:26px;font-weight:600;letter-spacing:-.4px">Master Products</div>
+        <div style="font-size:11px;color:var(--faded);margin-top:3px;font-family:var(--mono)">${rows.length} MPs · ${totStock.toLocaleString()} units · ${totVel.toFixed(1)} u/wk
+          <span style="margin-left:8px;color:${lastSync&&ageMin<240?'var(--grn)':'var(--amb)'}">● ${lastSync?(ageMin<60?ageMin+'m':Math.round(ageMin/60)+'h')+' ago':'never synced'}</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-sm" onclick="(async()=>{this.textContent='Syncing…';const r=await Store.syncFromShopify();navigate('products');toast(r.synced?'Synced '+r.totalProducts+' products':r.reason||'Sync failed',r.synced?'success':'error')})()">↻ Sync</button>
+        <button class="btn btn-sm" onclick="navigate('purchasing')">Buying plan</button>
+        <button class="btn btn-p btn-sm" onclick="showNewProductModal()">+ New MP</button>
+      </div>
+    </div>
 
- const data=prods.map(p=>{
- const stock=Store.totalStock(p.id);
- const styles=Store.getStyles(p.id);
- const realVel=getRealVelocity(p.id,30);
- const adjVel=realVel>0?realVel:Math.round(p.vel*season.multiplier*10)/10;
- const cover=adjVel>0?Math.round(stock/adjVel):999;
- const lnd=Math.round(p.fob*1.34*100)/100;
- const mg=p.retail>0?Math.round((p.retail-lnd)/p.retail*100):0;
- const monthRev=Math.round(adjVel*p.retail*4.33);
- const incoming=p.inc||0;
- const pProj=proj.filter(r=>r.mpId===p.id);
- const dying=pProj.filter(r=>r.willStockout).length;
- return{...p,stock,styles,adjVel,cover,lnd,mg,monthRev,incoming,dying,styleCount:styles.length};
- });
+    <div style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">
+      ${allCats.map(c=>`<span onclick="window._mp.cat='${c}';window._mp.open={};navigate('products')"
+        style="cursor:pointer;padding:4px 12px;border-radius:14px;font-size:10px;font-family:var(--mono);border:1px solid ${S.cat===c?'var(--gold)':'var(--brd)'};background:${S.cat===c?'rgba(184,154,90,.12)':'var(--sur2)'};color:${S.cat===c?'var(--gold)':'var(--txt3)'};font-weight:${S.cat===c?700:400}">${c==='all'?'All ('+mps.length+')':c}</span>`).join('')}
+    </div>
 
- const cats=['all',...[...new Set(prods.map(p=>p.cat))]];
- const filtered=L.cat==='all'?data:data.filter(d=>d.cat===L.cat);
- const searched=L.filter?filtered.filter(d=>{const q=L.filter.toLowerCase();return d.name.toLowerCase().includes(q)||d.code.toLowerCase().includes(q)||d.cat.toLowerCase().includes(q);}):filtered;
+    <input type="text" placeholder="Search name, code, vendor…" value="${S.filter||''}"
+      oninput="window._mp.filter=this.value;navigate('products')"
+      style="width:100%;border:1px solid var(--brd);border-radius:8px;padding:8px 14px;font-size:12px;background:var(--sur);margin-bottom:8px;font-family:var(--mono)"/>
 
- const sorted=[...searched].sort((a,b)=>{
- const va=a[L.sort]||0,vb=b[L.sort]||0;
- return typeof va==='string'?(va>vb?1:-1)*L.dir:(vb-va)*L.dir;
- });
+    <div style="display:grid;grid-template-columns:1fr 56px 54px 62px 54px 52px;gap:0;padding:4px 14px;align-items:center">
+      <span style="font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--txt4)">MASTER PRODUCT</span>
+      ${sh('STOCK','stock')} ${sh('VEL/W','vel')} ${sh('COVER','cover')} ${sh('MG%','mg')} ${sh('SOLD','sold')}
+    </div>
 
- const sortBtn=(label,key)=>`<span onclick="window._ledger.sort='${key}';window._ledger.dir=${L.sort===key?-L.dir:-1};navigate('products')" style="cursor:pointer;text-align:right;font-size:8px;text-transform:uppercase;${L.sort===key?'color:var(--gold);font-weight:700':''}">${label}${L.sort===key?(L.dir<0?' ▾':' ▴'):''}</span>`;
-
- const totalStock=searched.reduce((s,d)=>s+d.stock,0);
- const totalRev=searched.reduce((s,d)=>s+d.monthRev,0);
-
- $('page').innerHTML=`
- <div style="max-width:940px">
- <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px">
- <div>
- <div style="font-family:var(--display);font-size:28px;font-weight:600;letter-spacing:-.4px">The Ledger</div>
- <div style="font-family:var(--mono);font-size:11px;color:var(--faded);margin-top:4px">${searched.length} products &middot; ${totalStock.toLocaleString()} units &middot; $${Math.round(totalRev/1000)}K/mo</div>
- </div>
- <button class="btn btn-p" onclick="navigate('po-new')">+ New PO</button>
- </div>
-
- <!-- CATEGORY TABS -->
- <div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
- ${cats.map(cat=>`<span onclick="window._ledger.cat='${cat}';navigate('products')" style="cursor:pointer;padding:6px 14px;border-radius:16px;font-size:11px;font-family:var(--mono);border:1px solid ${L.cat===cat?'var(--gold)':'var(--brd)'};background:${L.cat===cat?'rgba(184,154,90,.12)':'var(--sur2)'};color:${L.cat===cat?'var(--gold)':'var(--ink)'};font-weight:${L.cat===cat?'600':'400'}">${cat==='all'?'All ('+prods.length+')':cat}</span>`).join('')}
- </div>
-
- <!-- SEARCH -->
- <input type="text" placeholder="Filter products..." value="${L.filter||''}" oninput="window._ledger.filter=this.value;navigate('products')" style="width:100%;border:1px solid var(--brd);border-radius:8px;padding:10px 14px;font-size:13px;background:var(--sur);margin-bottom:12px;font-family:var(--mono)"/>
-
- <!-- HEADERS -->
- <div style="display:grid;grid-template-columns:1fr 50px 50px 55px 50px 50px 45px;gap:3px;padding:0 14px;font-family:var(--mono);margin-bottom:4px">
- <span style="font-size:8px;color:var(--faded)">PRODUCT</span>
- ${sortBtn('STOCK','stock')}${sortBtn('VEL','adjVel')}${sortBtn('REV/M','monthRev')}${sortBtn('COVER','cover')}${sortBtn('MG%','mg')}${sortBtn('INC','incoming')}
- </div>
-
- <!-- PRODUCTS -->
- ${sorted.map((p,i)=>{
- const ek=p.id;const expanded=L.expand[ek];
- return`
- <div style="background:var(--sur2);border:1px solid ${p.dying?'rgba(138,58,42,.3)':'var(--brd)'};border-radius:var(--rl);margin-bottom:2px">
- <div onclick="window._ledger.expand['${ek}']=!window._ledger.expand['${ek}'];navigate('products')" style="cursor:pointer;display:grid;grid-template-columns:1fr 50px 50px 55px 50px 50px 45px;align-items:center;padding:12px 14px;gap:3px" class="row-hover">
- <div>
- <div style="display:flex;align-items:center;gap:6px">
- ${p.heroImg?`<img src="${p.heroImg}" style="width:28px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0" alt="product"/>`:''}
- <div>
- <span style="font-family:var(--display);font-size:14px;font-weight:600">${p.name}</span>
- <span class="badge ${p.flag==='ok'?'b-grn':p.flag==='reorder'?'b-red':'b-amb'}" style="margin-left:4px;font-size:8px">${p.flag}</span>
- ${p.dying?'<span style="font-family:var(--mono);font-size:8px;color:var(--brick);margin-left:4px">'+p.dying+' dying</span>':''}
- <div style="font-family:var(--mono);font-size:9px;color:var(--faded)">${p.code} &middot; ${p.cat} &middot; ${p.styleCount} styles</div>
- <div style="font-family:var(--mono);font-size:7px;color:var(--faded);margin-top:2px">${p.status||'active'}</div>
- </div>
- </div>
- </div>
- <span style="font-family:var(--mono);font-size:12px;text-align:right;font-weight:700${p.stock<50?';color:var(--brick)':''}">${p.stock}</span>
- <span style="font-family:var(--mono);font-size:11px;text-align:right;color:var(--faded)">${p.adjVel}</span>
- <span style="font-family:var(--mono);font-size:11px;text-align:right;color:var(--grn)">$${Math.round(p.monthRev/1000)}K</span>
- <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.cover<8?'var(--brick)':'var(--faded)'}">${p.cover>100?'∞':p.cover+'w'}</span>
- <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.mg>75?'var(--grn)':''}">${p.mg}%</span>
- <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.incoming>0?'var(--grn)':'var(--faded)'}">${p.incoming||'—'}</span>
- </div>
- ${expanded?`<div style="border-top:1px solid var(--brd)">
- <!-- STYLE CARDS -->
- <div style="display:grid;grid-template-columns:repeat(${Math.min(p.styles.length,4)},1fr);gap:6px;padding:10px 14px;border-bottom:1px solid var(--brd)">
- ${p.styles.map(s=>{
- const styleFrac=s.vel/Math.max(1,p.styles.reduce((sum,x)=>sum+x.vel,0));
- const styleStock=Math.round(p.stock*styleFrac);
- return`<div onclick="navigate('style-detail','${p.id}__${s.id}')" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;cursor:pointer" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
- <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
- <span style="width:14px;height:14px;border-radius:50%;background:${s.color};border:1px solid rgba(0,0,0,.1);flex-shrink:0"></span>
- <span style="font-size:11px;font-weight:600">${s.name.split(' ')[0]}</span>
- <span class="badge ${s.grade==='A'?'b-grn':s.grade==='B'?'b-amb':'b-gry'}" style="font-size:8px">${s.grade}</span>
- </div>
- <div style="display:flex;gap:8px;font-family:var(--mono);font-size:10px;color:var(--faded)">
- <span>${styleStock}u</span><span>${s.vel}/w</span><span>${s.sell}%</span>
- </div>
- </div>`;
- }).join('')}
- </div>
- <!-- ACTIONS -->
- <div style="padding:10px 14px;display:flex;gap:6px;flex-wrap:wrap">
- <button class="btn btn-sm" onclick="navigate('product-detail','${p.id}')">Open</button>
- <button class="btn btn-sm" onclick="navigate('product-stack','${p.id}')">Stack</button>
- <button class="btn btn-sm" onclick="navigate('pd-dna','${p.id}')">Tech pack</button>
- <button class="btn btn-sm" onclick="navigate('pd-inv','${p.id}')">Stock</button>
- <button class="btn btn-sm" onclick="navigate('pd-pos','${p.id}')">POs</button>
- <button class="btn btn-sm btn-p" onclick="window._poNew={mpId:'${p.id}',step:1};navigate('po-new')">+ PO</button>
- </div>
- </div>`:''}
- </div>`;
- }).join('')}
- </div>`;
+    ${rows.length===0?`<div style="padding:48px;text-align:center;color:var(--faded)">No products match</div>`:''}
+    ${rows.map(p=>{
+      const isOpen=!!S.open[p.id];
+      const coverColor=p.cover<6?'var(--brick)':p.cover<12?'var(--amb)':'var(--txt3)';
+      const mgColor=p.mg>=70?'var(--grn)':p.mg>0?'var(--txt3)':'var(--brick)';
+      const stockColor=p.stock<20?'var(--brick)':p.stock<60?'var(--amb)':'var(--txt2)';
+      const statusDot=p.status==='active'?'var(--grn)':p.status==='development'?'var(--amb)':'var(--txt4)';
+      const flagColor=p.flag==='reorder'?'var(--brick)':p.flag==='liquidate'?'var(--amb)':p.flag==='watch'?'var(--gold)':null;
+      const swatches=p.styleColors.map(c=>`<span style="width:9px;height:9px;border-radius:50%;background:${c};border:1px solid rgba(0,0,0,.15);flex-shrink:0;display:inline-block"></span>`).join('');
+      return`
+      <div style="background:var(--sur2);border:1px solid ${isOpen?'var(--brd-s)':'var(--brd)'};border-radius:var(--rl);margin-bottom:3px;overflow:hidden">
+        <div onclick="window._mp.open['${p.id}']=!window._mp.open['${p.id}'];navigate('products')"
+          style="display:grid;grid-template-columns:1fr 56px 54px 62px 54px 52px;gap:0;align-items:center;padding:11px 14px;cursor:pointer"
+          onmouseover="this.parentElement.style.borderColor='var(--brd-s)'" onmouseout="this.parentElement.style.borderColor='${isOpen?'var(--brd-s)':'var(--brd)'}'">
+          <div style="display:flex;align-items:center;gap:9px;min-width:0">
+            ${p.heroImg?`<img src="${p.heroImg}" style="width:26px;height:34px;object-fit:cover;border-radius:3px;flex-shrink:0;border:1px solid var(--brd)" alt=""/>`:`<div style="width:26px;height:34px;background:var(--bg);border-radius:3px;flex-shrink:0;border:1px solid var(--brd)"></div>`}
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                <span style="font-family:var(--display);font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.name}</span>
+                ${flagColor?`<span style="font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;border:1px solid ${flagColor};color:${flagColor};flex-shrink:0;text-transform:uppercase">${p.flag}</span>`:''}
+                ${p.openPOs.length?`<span style="font-size:8px;padding:1px 5px;border-radius:3px;background:rgba(26,68,144,.08);color:var(--blu);flex-shrink:0">${p.openPOs.length}PO</span>`:''}
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+                <span style="width:6px;height:6px;border-radius:50%;background:${statusDot};flex-shrink:0"></span>
+                <span style="font-family:var(--mono);font-size:9px;color:var(--txt4)">${p.code||'—'} · ${p.cat}${p.retail?' · $'+p.retail:''}</span>
+                <span style="display:inline-flex;gap:2px;align-items:center;margin-left:2px">${swatches}</span>
+                <span style="font-size:9px;color:var(--txt4)">${p.styles.length}st</span>
+              </div>
+            </div>
+          </div>
+          <span style="font-family:var(--mono);font-size:12px;font-weight:700;text-align:right;color:${stockColor}">${p.stock}</span>
+          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.vel>0?'var(--txt2)':'var(--txt4)'}">${p.vel>0?p.vel:'—'}</span>
+          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${coverColor}">${p.cover>99?'∞':p.cover+'w'}</span>
+          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${mgColor}">${p.mg>0?p.mg+'%':'—'}</span>
+          <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.sold>0?'var(--txt2)':'var(--txt4)'}">${p.sold||'—'}</span>
+        </div>
+        ${isOpen?`
+        <div style="border-top:1px solid var(--brd);background:var(--sur)">
+          <div style="padding:10px 16px;border-bottom:1px solid var(--brd);display:flex;gap:20px;flex-wrap:wrap">
+            ${[['Vendor',p.vendor],['FOB',p.fob?'$'+p.fob:null],['Retail',p.retail?'$'+p.retail:null],['Lead',p.lead?p.lead+'d':null],['MOQ',p.moq?p.moq+'u':null],['HTS',p.hts],['Duty',p.duty?p.duty+'%':null],['Category',p.cat],['Sizes',p.sizes]].filter(([,v])=>v).map(([l,v])=>`<div><div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txt4);margin-bottom:2px">${l}</div><div style="font-family:var(--mono);font-size:11px;font-weight:600;color:var(--txt2)">${v}</div></div>`).join('')}
+          </div>
+          <div style="padding:8px 14px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('product-detail','${p.id}')">Open</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('product-stack','${p.id}')">Stack</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('pd-inv','${p.id}')">Inventory</button>
+            <button class="btn btn-sm" onclick="event.stopPropagation();navigate('pd-pos','${p.id}')">POs (${p.openPOs.length})</button>
+            ${p.shopifyUrl?`<a href="${p.shopifyUrl}" target="_blank" rel="noopener" class="btn btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">Shopify ↗</a>`:''}
+            <button class="btn btn-sm btn-p" onclick="event.stopPropagation();window._poNew={mpId:'${p.id}',step:1};navigate('po-new')">+ PO</button>
+          </div>
+        </div>`:''}
+      </div>`;
+    }).join('')}
+  </div>`;
 }
-
-let _hierDragIdx = null;
 function showNewProductModal(){
  const cats=['Suits','Shirts','Blazers','Pants','Kapote','Accessories','Boys'];
  const vendors=Store.getVendors().filter(v=>v.status==='active');
@@ -10754,13 +10753,10 @@ function getProductionPlan() {
  const pos = Store.getPOs();
  const planned = (()=>{try{return JSON.parse(localStorage.getItem('am_planned_pos')||'[]');}catch(e){return[];}})();
 
- const _salesPP = getSalesSince(30);
- const _byProdPP = getSalesByProduct(_salesPP);
  const plan = prods.map(p => {
  const stock = Store.totalStock(p.id);
  const styles = Store.getStyles(p.id);
- const realVel = getRealVelocity(p.id, 30);
- const adjVel = realVel > 0 ? realVel : Math.round(p.vel * season.multiplier * 10) / 10;
+ const adjVel = Math.round(p.vel * season.multiplier * 10) / 10;
  const weeklyUnits = adjVel;
  const coverWeeks = weeklyUnits > 0 ? Math.round(stock / weeklyUnits) : 999;
  const stockoutDate = weeklyUnits > 0 ? new Date(Date.now() + coverWeeks * 7 * 86400000) : null;
