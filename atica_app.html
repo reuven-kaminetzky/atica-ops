@@ -14053,8 +14053,10 @@ async function renderTrunkCF(sub) {
   const byStore = {};
   if(liveStores && liveStores.length > 0) {
    liveStores.forEach(s => {
-    const name = s.name||s.location||s.store||'Unknown';
+    const name = s.store||s.name||s.location||'Unknown';
     byStore[name] = s.revenue||s.totalRevenue||s.total||0;
+    if(s.avgOrder) window['_posAOV_'+name] = s.avgOrder;
+    if(s.orders) window['_posOrders_'+name] = s.orders;
    });
   }
   const byProduct = {};
@@ -14089,7 +14091,7 @@ async function renderTrunkCF(sub) {
     <div class="sec-h"><span style="font-size:12px;font-weight:600">By Location — 30 Days</span><span style="font-size:10px;color:${liveStores?'var(--grn)':'var(--txt3)'}">${liveStores?'● Live POS':'cached'}</span></div>
     ${stores.map(([store,rev])=>`
      <div class="drow">
-      <div class="fxb mb4"><span style="font-size:13px;font-weight:500">${store}</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">${fmt(rev)}</span></div>
+      <div class="fxb mb4"><span style="font-size:13px;font-weight:500">${store}</span><div style="display:flex;gap:10px;align-items:center"><span style="font-family:var(--mono);font-size:10px;color:var(--txt3)">${window['_posAOV_'+store]?'AOV '+fmt(window['_posAOV_'+store]):''}</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">${fmt(rev)}</span></div></div>
       <div style="height:4px;background:var(--brd);border-radius:2px"><div style="width:${Math.round(rev/maxStore*100)}%;height:100%;background:var(--grn);border-radius:2px;opacity:.7"></div></div>
      </div>`).join('')}
     ${stores.length===0?`<div style="color:var(--txt3);font-size:12px;padding:8px 0">No location data — sync Shopify</div>`:''}
