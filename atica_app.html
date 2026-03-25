@@ -4200,6 +4200,7 @@ function renderAnForecast(){
 
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
+ const inv=Store.getInventoryFor(p.id)||{};
  const styles=Store.getStyles(p.id);
  const adjVel=(()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:Math.round((p.vel||0)*season.multiplier*10)/10;})();
  const cover=adjVel>0?Math.round(stock/adjVel):999;
@@ -11144,11 +11145,21 @@ function renderProducts(){
  <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.incoming>0?'var(--grn)':'var(--faded)'}">${p.incoming||'—'}</span>
  </div>
  ${expanded?`<div style="border-top:1px solid var(--brd)">
+ <!-- STORE STOCK STRIP -->
+ <div style="display:flex;gap:0;border-bottom:1px solid var(--brd);overflow-x:auto">
+  ${Store.LOCS.filter(l=>l!=='Reserve').map(loc=>{
+   const q=inv[loc]||0;
+   return`<div style="padding:6px 10px;border-right:1px solid var(--brd);text-align:center;min-width:70px;flex-shrink:0;background:${q===0?'rgba(138,58,42,.04)':''}">`
+    +`<div style="font-family:var(--mono);font-size:12px;font-weight:700;color:${q===0?'var(--brick)':q<5?'var(--amb)':'var(--ink)'}">${q}</div>`
+    +`<div style="font-size:8px;color:var(--faded);margin-top:1px">${loc}</div>`
+   +`</div>`;
+  }).join('')}
+ </div>
  <!-- STYLE CARDS -->
  <div style="display:grid;grid-template-columns:repeat(${Math.min(p.styles.length,4)},1fr);gap:6px;padding:10px 14px;border-bottom:1px solid var(--brd)">
  ${p.styles.map(s=>{
  const styleFrac=s.vel/Math.max(1,p.styles.reduce((sum,x)=>sum+x.vel,0));
- const styleStock=Math.round(p.stock*styleFrac);
+ const styleStock=s.inventoryQty!=null?s.inventoryQty:Math.round(p.stock*styleFrac);
  return`<div onclick="navigate('style-detail','${p.id}__${s.id}')" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;cursor:pointer" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
  <span style="width:14px;height:14px;border-radius:50%;background:${s.color};border:1px solid rgba(0,0,0,.1);flex-shrink:0"></span>
@@ -11156,7 +11167,7 @@ function renderProducts(){
  <span class="badge ${s.grade==='A'?'b-grn':s.grade==='B'?'b-amb':'b-gry'}" style="font-size:8px">${s.grade}</span>
  </div>
  <div style="display:flex;gap:8px;font-family:var(--mono);font-size:10px;color:var(--faded)">
- <span>${styleStock}u</span><span>${s.vel}/w</span><span>${s.sell}%</span>
+ <span style="color:${styleStock===0?'var(--brick)':''}">${styleStock}u</span><span>${s.vel>0?s.vel+'/w':'—'}</span><span>${s.sell||'—'}%</span>
  </div>
  </div>`;
  }).join('')}
