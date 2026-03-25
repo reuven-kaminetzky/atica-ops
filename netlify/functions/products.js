@@ -12,7 +12,7 @@
  */
 
 const { createHandler, RouteError } = require('../../lib/handler');
-const { mapProduct, mapSKU } = require('../../lib/mappers');
+const { mapProduct, mapSKU, buildProductTree } = require('../../lib/mappers');
 const cache = require('../../lib/cache');
 
 // ── Handlers ────────────────────────────────────────────────
@@ -83,12 +83,25 @@ async function confirmAllSKU() {
   return { confirmed: true, message: 'All SKU mappings confirmed' };
 }
 
+async function productTrees(client) {
+  const ck = cache.makeKey('product-trees', {});
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  const { products } = await client.getProducts();
+  const trees = products.map(buildProductTree);
+  const result = { count: trees.length, trees };
+  cache.set(ck, result, cache.CACHE_TTL.products);
+  return result;
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
   { method: 'GET',   path: '',                handler: listProducts },
   { method: 'POST',  path: 'sync',            handler: syncProducts },
   { method: 'GET',   path: 'titles',          handler: listTitles },
+  { method: 'GET',   path: 'trees',           handler: productTrees },
   { method: 'GET',   path: 'sku-map',         handler: skuMap },
   { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },
