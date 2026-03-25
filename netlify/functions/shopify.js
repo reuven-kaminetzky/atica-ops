@@ -184,6 +184,53 @@ async function webhooksSetup(client, { body }) {
   return { message: 'Webhooks configured', webhooks: created };
 }
 
+
+async function draftOrders(client, { params }) {
+  const status = params.status || 'open';
+  let all = [];
+  try {
+    all = await client._fetchAll('/draft_orders.json', 'draft_orders', { status, limit: '250' });
+  } catch(e) {
+    all = [];
+  }
+  return {
+    count: all.length,
+    draftOrders: all.map(d => ({
+      id: d.id,
+      name: d.name,
+      status: d.status,
+      createdAt: d.created_at,
+      updatedAt: d.updated_at,
+      lineItems: (d.line_items || []).map(li => ({
+        title: li.title,
+        sku: li.sku,
+        quantity: li.quantity,
+        price: li.price,
+        vendor: li.vendor,
+      })),
+      totalPrice: d.total_price,
+      note: d.note,
+      tags: d.tags,
+    })),
+  };
+}
+
+async function inventoryAdjust(client, { body }) {
+  const { inventoryItemId, locationId, adjustment } = body;
+  if (!inventoryItemId || !locationId || adjustment === undefined) {
+    throw new RouteError(400, 'inventoryItemId, locationId, and adjustment required');
+  }
+  const result = await client._request('/inventory_levels/adjust.json', {
+    method: 'POST',
+    body: JSON.stringify({
+      inventory_item_id: inventoryItemId,
+      location_id: locationId,
+      available_adjustment: adjustment,
+    }),
+  });
+  return { adjusted: true, inventoryLevel: result.inventory_level };
+}
+
 async function listTitles(client) {
   const ck = cacheKey('titles');
   const cached = cacheGet(ck);
@@ -241,6 +288,8 @@ const ROUTES = [
   { method: 'POST',  path: 'webhooks/setup',      handler: webhooksSetup },
   { method: 'GET',   path: 'titles',              handler: listTitles },
   { method: 'GET',   path: 'cache/stats',         handler: cacheStats,     noClient: true },
+  { method: 'GET',   path: 'draft-orders',        handler: draftOrders },
+  { method: 'POST',  path: 'inventory/adjust',    handler: inventoryAdjust },
   { method: 'POST',  path: 'cache/clear',         handler: cacheClear,     noClient: true },
 ];
 
