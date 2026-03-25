@@ -195,6 +195,7 @@ export interface AticaOrder {
   currency: string;
   financialStatus: string;
   fulfillmentStatus: string | null;
+  sourceName: string | null;
   lineItems: AticaLineItem[];
   customer: AticaCustomer | null;
   shippingAddress: { city: string; province: string; country: string; zip: string } | null;

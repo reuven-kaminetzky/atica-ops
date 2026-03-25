@@ -101,6 +101,7 @@ export function mapOrder(o: ShopifyOrder): AticaOrder {
     currency: o.currency,
     financialStatus: o.financial_status,
     fulfillmentStatus: o.fulfillment_status,
+    sourceName: o.source_name || null,
     lineItems: o.line_items.map(mapLineItem),
     customer: mapCustomer(o.customer),
     shippingAddress: mapAddress(o.shipping_address),
