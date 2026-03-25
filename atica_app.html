@@ -259,21 +259,21 @@ const API = {
  async getNotifications() { return this._fetch('/api/notifications'); },
  async getActivity(limit) { return this._fetch('/api/activity?limit=' + (limit || 100)); },
  async health() { return this._fetch('/api/health'); },
- async shopifyStatus() { return this._fetch('/api/shopify/status'); },
+ async shopifyStatus() { return this._fetch('/api/status'); },
  async shopifyConnect(data) { return this._fetch('/api/shopify/connect', { method: 'POST', body: data }); },
  async shopifyDisconnect() { return this._fetch('/api/shopify/disconnect', { method: 'POST' }); },
- async shopifySyncProducts() { return this._fetch('/api/shopify/sync/products', { method: 'POST' }); },
- async shopifySyncOrders(since) { return this._fetch('/api/shopify/sync/orders', { method: 'POST', body: { since } }); },
- async shopifySyncInventory() { return this._fetch('/api/shopify/sync/inventory', { method: 'POST' }); },
- async shopifySnapshot() { return this._fetch('/api/shopify/snapshot', { method: 'POST' }); },
- async shopifySetupWebhooks(baseUrl) { return this._fetch('/api/shopify/webhooks/setup', { method: 'POST', body: { base_url: baseUrl } }); },
- async shopifyVelocity(days) { return this._fetch('/api/shopify/velocity?days=' + (days || 30)); },
- async shopifyLedger(params) { return this._fetch('/api/shopify/ledger?' + new URLSearchParams(params || {})); },
- async shopifySales(params) { return this._fetch('/api/shopify/sales?' + new URLSearchParams(params || {})); },
- async shopifySnapshots(params) { return this._fetch('/api/shopify/snapshots?' + new URLSearchParams(params || {})); },
- async shopifySKUMap(filter) { return this._fetch('/api/shopify/sku-map?filter=' + (filter || 'all')); },
- async shopifyMapSKU(sku, data) { return this._fetch('/api/shopify/sku-map/' + encodeURIComponent(sku), { method: 'PATCH', body: data }); },
- async shopifyConfirmAllSKU() { return this._fetch('/api/shopify/sku-map/confirm-all', { method: 'POST' }); },
+ async shopifySyncProducts() { return this._fetch('/api/products/sync', { method: 'POST' }); },
+ async shopifySyncOrders(since) { return this._fetch('/api/orders/sync', { method: 'POST', body: { since } }); },
+ async shopifySyncInventory() { return this._fetch('/api/inventory/sync', { method: 'POST' }); },
+ async shopifySnapshot() { return this._fetch('/api/ledger/snapshot', { method: 'POST' }); },
+ async shopifySetupWebhooks(baseUrl) { return this._fetch('/api/status/webhooks', { method: 'POST', body: { base_url: baseUrl } }); },
+ async shopifyVelocity(days) { return this._fetch('/api/orders/velocity?days=' + (days || 30)); },
+ async shopifyLedger(params) { return this._fetch('/api/ledger?' + new URLSearchParams(params || {})); },
+ async shopifySales(params) { return this._fetch('/api/orders/sales?' + new URLSearchParams(params || {})); },
+ async shopifySnapshots(params) { return this._fetch('/api/ledger/snapshots?' + new URLSearchParams(params || {})); },
+ async shopifySKUMap(filter) { return this._fetch('/api/products/sku-map?filter=' + (filter || 'all')); },
+ async shopifyMapSKU(sku, data) { return this._fetch('/api/products/sku-map/' + encodeURIComponent(sku), { method: 'PATCH', body: data }); },
+ async shopifyConfirmAllSKU() { return this._fetch('/api/products/sku-map/confirm-all', { method: 'POST' }); },
  async qbStatus() { return this._fetch('/api/qb/status'); },
  async qbAuth() { return this._fetch('/api/qb/auth'); },
  async qbDisconnect() { return this._fetch('/api/qb/disconnect', { method: 'POST' }); },
@@ -460,9 +460,11 @@ const SEED_PRODUCTS=[
     ];
 const SEED_STYLES={
  'hc360':[
- {id:'hc360-ch',code:'CH',name:'Charcoal herringbone',color:'#4a4a4a',sku:'HC360-CH',status:'active',shopify:true,sell:84,vel:26.4,grade:'B',colorFamily:'dark'},{id:'hc360-nv',code:'NV',name:'Navy solid',color:'#1a2a4a',sku:'HC360-NV',status:'active',shopify:true,sell:91,vel:34.1,grade:'A',colorFamily:'dark'},{id:'hc360-gp',code:'GP',name:'Lt. grey glen plaid',color:'#c8c8c8',sku:'HC360-GP',status:'active',shopify:true,sell:38,vel:6.6,grade:'D',colorFamily:'light'}],'londoner':[
- {id:'lon-wcb',code:'WCB',name:'White/cornflower Bengal',color:'#e8f0f8',sku:'LON-WCB',status:'active',shopify:true,sell:95,vel:13.2,grade:'A',colorFamily:'light'},{id:'lon-nvw',code:'NVW',name:'Navy Bengal stripe',color:'#1a2a4a',sku:'LON-NVW',status:'active',shopify:true,sell:91,vel:9.9,grade:'B',colorFamily:'dark'},{id:'lon-wht',code:'WHT',name:'White solid poplin',color:'#f8f4ee',sku:'LON-WHT',status:'active',shopify:true,sell:88,vel:8.8,grade:'A',colorFamily:'light'}],'dress':[
- {id:'drs-wht',code:'WHT',name:'White solid',color:'#fff',sku:'DRS-WHT',status:'active',shopify:true,sell:82,vel:17.1,grade:'A',colorFamily:'light'},{id:'drs-blu',code:'BLC',name:'Blue check',color:'#b0c8e0',sku:'DRS-BLC',status:'active',shopify:true,sell:78,vel:15.4,grade:'B',colorFamily:'light'},{id:'drs-str',code:'STR',name:'Stripe navy',color:'#2a3a6a',sku:'DRS-STR',status:'active',shopify:true,sell:71,vel:12.6,grade:'B',colorFamily:'dark'}],'hc480':[
+ {id:'hc360-ch',code:'CH',name:'Charcoal herringbone',color:'#4a4a4a',sku:'HC360-CH',status:'active',shopify:true,sell:84,vel:26.4,grade:'B',colorFamily:'dark'},{id:'hc360-nv',code:'NV',name:'Navy solid',color:'#1a2a4a',sku:'HC360-NV',status:'active',shopify:true,sell:91,vel:34.1,grade:'A',colorFamily:'dark'},{id:'hc360-gp',code:'GP',name:'Lt. grey glen plaid',color:'#c8c8c8',sku:'HC360-GP',status:'active',shopify:true,sell:38,vel:6.6,grade:'D',colorFamily:'light'}],'londoner':[],'dress':[
+ {id:'drs-wht',code:'WHT',name:'White solid',color:'#f8f4ee',sku:'DRS-WHT',status:'active',shopify:true,sell:82,vel:17.1,grade:'A',colorFamily:'light'},
+ {id:'drs-blu',code:'BLU',name:'Blue solid',color:'#4a78a8',sku:'DRS-BLU',status:'active',shopify:true,sell:78,vel:15.4,grade:'B',colorFamily:'light'},
+ {id:'drs-str',code:'STR',name:'Blue/white stripe',color:'#2a3a6a',sku:'DRS-STR',status:'active',shopify:true,sell:71,vel:12.6,grade:'B',colorFamily:'dark'},
+ {id:'drs-chk',code:'CHK',name:'Blue check',color:'#b0c8e0',sku:'DRS-CHK',status:'active',shopify:true,sell:65,vel:8.8,grade:'C',colorFamily:'light'}],'hc480':[
  {id:'hc480-nv',code:'NV',name:'Navy solid',color:'#1a2a4a',sku:'HC480-NV',status:'active',shopify:true,sell:72,vel:9.9,grade:'A',colorFamily:'dark'},{id:'hc480-ch',code:'CH',name:'Charcoal',color:'#3a3a3a',sku:'HC480-CH',status:'active',shopify:true,sell:65,vel:7.7,grade:'A',colorFamily:'dark'}],'wash-suit':[
  {id:'ws-nv',code:'NV',name:'Navy stretch',color:'#1e2e50',sku:'WSUIT-NV',status:'active',shopify:true,sell:76,vel:12.1,grade:'A',colorFamily:'dark'},{id:'ws-gy',code:'GY',name:'Light grey',color:'#b0b0b0',sku:'WSUIT-GY',status:'active',shopify:true,sell:66,vel:10.4,grade:'C',colorFamily:'light'}],'knit':[
  {id:'kn-nv',code:'NV',name:'Navy polo',color:'#1a2a4a',sku:'POLO-NV',status:'active',shopify:true,sell:42,vel:7.7,grade:'B',colorFamily:'dark'},{id:'kn-wh',code:'WHT',name:'White polo',color:'#f8f4ee',sku:'POLO-WHT',status:'active',shopify:true,sell:34,vel:5.5,grade:'C',colorFamily:'light'},{id:'kn-bk',code:'BK',name:'Black polo',color:'#1a1a1a',sku:'POLO-BK',status:'active',shopify:true,sell:38,vel:4.4,grade:'C',colorFamily:'dark'}],'wash-blazer':[
@@ -474,17 +476,17 @@ const SEED_STYLES={
  {id:'tie-nv',code:'NV',name:'Navy solid silk',color:'#1a2a4a',sku:'TIE-NV',status:'active',shopify:true,sell:78,vel:77.0,grade:'A',colorFamily:'dark'},{id:'tie-bk',code:'BK',name:'Black solid silk',color:'#1a1a1a',sku:'TIE-BK',status:'active',shopify:true,sell:72,vel:66.0,grade:'A',colorFamily:'dark'},{id:'tie-bg',code:'BG',name:'Burgundy solid',color:'#6a1a2a',sku:'TIE-BG',status:'active',shopify:true,sell:66,vel:44.0,grade:'B',colorFamily:'dark'},{id:'tie-gy',code:'GY',name:'Silver grey',color:'#a0a0a0',sku:'TIE-GY',status:'active',shopify:true,sell:70,vel:39.0,grade:'B',colorFamily:'light'}],'belts':[
  {id:'blt-bk',code:'BK',name:'Black leather',color:'#1a1a1a',sku:'BELT-BK',status:'active',shopify:true,sell:74,vel:33.0,grade:'A',colorFamily:'dark'},{id:'blt-br',code:'BR',name:'Brown leather',color:'#6a4020',sku:'BELT-BR',status:'active',shopify:true,sell:70,vel:29.7,grade:'B',colorFamily:'light'}],'boys-suit':[
  {id:'by-nv',code:'NV',name:'Navy',color:'#1e2e50',sku:'BSUIT-NV',status:'active',shopify:true,sell:64,vel:11.0,grade:'A',colorFamily:'dark'},{id:'by-ch',code:'CH',name:'Charcoal',color:'#4a4a4a',sku:'BSUIT-CH',status:'active',shopify:true,sell:56,vel:7.7,grade:'B',colorFamily:'dark'},{id:'by-bk',code:'BK',name:'Black',color:'#1a1a1a',sku:'BSUIT-BK',status:'active',shopify:true,sell:60,vel:4.4,grade:'A',colorFamily:'dark'}],'londoner-boys':[
- {id:'lb-wht',code:'WHT',name:'White solid',color:'#f8f4ee',sku:'GNTLO-WHT',status:'active',shopify:true,sell:72,vel:8.8,grade:'A',colorFamily:'light'},{id:'lb-blu',code:'BLU',name:'Blue stripe',color:'#b0c8e0',sku:'GNTLO-BLU',status:'active',shopify:true,sell:68,vel:6.6,grade:'B',colorFamily:'light'}],'shoes-ital':[{id:'sho-blk',code:'BLK',name:'Black Oxford',color:'#1a1a1a',sku:'SHO-BLK',status:'active',shopify:true,sell:78,vel:5.0,grade:'A',colorFamily:'dark'},{id:'sho-brn',code:'BRN',name:'Burnished Brown',color:'#6a3a1a',sku:'SHO-BRN',status:'active',shopify:true,sell:65,vel:3.3,grade:'B',colorFamily:'dark'},{id:'sho-cog',code:'COG',name:'Cognac',color:'#a06830',sku:'SHO-COG',status:'active',shopify:true,sell:54,vel:1.6,grade:'C',colorFamily:'light'}],'shoes-lux':[{id:'lux-blk',code:'BLK',name:'Museum Black',color:'#0a0a0a',sku:'LUX-BLK',status:'active',shopify:true,sell:62,vel:1.9,grade:'B',colorFamily:'dark'},{id:'lux-pat',code:'PAT',name:'Patina',color:'#7a5a3a',sku:'LUX-PAT',status:'active',shopify:true,sell:48,vel:1.4,grade:'C',colorFamily:'dark'}],'raincoat':[{id:'rnc-blk',code:'BLK',name:'Black',color:'#1a1a1a',sku:'RNC-BLK',status:'active',shopify:true,sell:52,vel:2.8,grade:'B',colorFamily:'dark'},{id:'rnc-nvy',code:'NVY',name:'Navy',color:'#1a2a4a',sku:'RNC-NVY',status:'active',shopify:true,sell:38,vel:1.6,grade:'C',colorFamily:'dark'}],'milano':[{id:'mil-wht',code:'WHT',name:'White broadcloth',color:'#f8f6f0',sku:'MIL-WHT',status:'active',shopify:true,sell:92,vel:9.9,grade:'A',colorFamily:'light'},{id:'mil-blu',code:'BLU',name:'Light blue',color:'#a8c8e8',sku:'MIL-BLU',status:'active',shopify:true,sell:88,vel:6.1,grade:'A',colorFamily:'light'},{id:'mil-pnk',code:'PNK',name:'Pink',color:'#e8c0c0',sku:'MIL-PNK',status:'active',shopify:true,sell:65,vel:1.6,grade:'C',colorFamily:'light'}],'edinburgh':[{id:'edn-sky',code:'SKY',name:'Sky dobby',color:'#a0c0e0',sku:'EDN-SKY',status:'active',shopify:true,sell:68,vel:2.8,grade:'B',colorFamily:'light'},{id:'edn-lav',code:'LAV',name:'Lavender check',color:'#c0a8d0',sku:'EDN-LAV',status:'active',shopify:true,sell:55,vel:1.6,grade:'C',colorFamily:'light'}],'maggia-blazer':[{id:'mag-nvy',code:'NVY',name:'Navy knit',color:'#1a2a4a',sku:'MAG-NVY',status:'active',shopify:true,sell:62,vel:3.8,grade:'B',colorFamily:'dark'},{id:'mag-gry',code:'GRY',name:'Grey knit',color:'#808080',sku:'MAG-GRY',status:'active',shopify:true,sell:48,vel:2.2,grade:'C',colorFamily:'light'}],'wash-boys-blazer':[{id:'bwb-nvy',code:'NVY',name:'Navy',color:'#1a2a4a',sku:'BWB-NVY',status:'active',shopify:true,sell:72,vel:3.3,grade:'B',colorFamily:'dark'},{id:'bwb-blk',code:'BLK',name:'Black',color:'#1a1a1a',sku:'BWB-BLK',status:'active',shopify:true,sell:64,vel:1.6,grade:'C',colorFamily:'dark'}],'boys-pants':[{id:'bep-blk',code:'BLK',name:'Black',color:'#1a1a1a',sku:'BEP-BLK',status:'active',shopify:true,sell:88,vel:8.2,grade:'A',colorFamily:'dark'},{id:'bep-nvy',code:'NVY',name:'Navy',color:'#1a2a4a',sku:'BEP-NVY',status:'active',shopify:true,sell:78,vel:4.4,grade:'B',colorFamily:'dark'},{id:'bep-gry',code:'GRY',name:'Grey',color:'#808080',sku:'BEP-GRY',status:'active',shopify:true,sell:65,vel:2.8,grade:'C',colorFamily:'light'}],'silk-kapote':[{id:'skp-blk',code:'BLK',name:'Black silk',color:'#0a0a0a',sku:'SKP-BLK',status:'active',shopify:false,sell:35,vel:1.6,grade:'C',colorFamily:'dark'}],'bengal-stripe':[{id:'bengal-stripe-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'BNG-NV',status:'active',shopify:true,sell:78,vel:11.0,grade:'A',colorFamily:'dark'},{id:'bengal-stripe-wh',code:'WH',name:'White',color:'#ffffff',sku:'BNG-WH',status:'active',shopify:true,sell:68,vel:6.6,grade:'B',colorFamily:'dark'},{id:'bengal-stripe-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'BNG-SB',status:'active',shopify:true,sell:58,vel:6.6,grade:'C',colorFamily:'dark'}],
-    'oxford-btn':[{id:'oxford-btn-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'OXF-NV',status:'active',shopify:true,sell:72,vel:1.6,grade:'A',colorFamily:'dark'},{id:'oxford-btn-wh',code:'WH',name:'White',color:'#ffffff',sku:'OXF-WH',status:'active',shopify:true,sell:62,vel:1.0,grade:'B',colorFamily:'dark'},{id:'oxford-btn-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'OXF-SB',status:'active',shopify:true,sell:52,vel:1.0,grade:'C',colorFamily:'dark'}],
-    'linen-shirt':[{id:'linen-shirt-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'LNS-NV',status:'active',shopify:true,sell:44,vel:0.9,grade:'A',colorFamily:'dark'},{id:'linen-shirt-wh',code:'WH',name:'White',color:'#ffffff',sku:'LNS-WH',status:'active',shopify:true,sell:34,vel:0.6,grade:'B',colorFamily:'dark'},{id:'linen-shirt-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'LNS-SB',status:'active',shopify:true,sell:24,vel:0.6,grade:'C',colorFamily:'dark'}],
-    'perf-shirt':[{id:'perf-shirt-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'PRF-NV',status:'active',shopify:true,sell:65,vel:1.4,grade:'A',colorFamily:'dark'},{id:'perf-shirt-wh',code:'WH',name:'White',color:'#ffffff',sku:'PRF-WH',status:'active',shopify:true,sell:55,vel:0.9,grade:'B',colorFamily:'dark'},{id:'perf-shirt-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'PRF-SB',status:'active',shopify:true,sell:45,vel:0.9,grade:'C',colorFamily:'dark'}],
-    'tuxedo-shirt':[{id:'tuxedo-shirt-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'TXS-NV',status:'active',shopify:true,sell:45,vel:0.3,grade:'A',colorFamily:'dark'},{id:'tuxedo-shirt-wh',code:'WH',name:'White',color:'#ffffff',sku:'TXS-WH',status:'active',shopify:true,sell:35,vel:0.2,grade:'B',colorFamily:'dark'},{id:'tuxedo-shirt-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'TXS-SB',status:'active',shopify:true,sell:25,vel:0.2,grade:'C',colorFamily:'dark'}],
-    'band-collar':[{id:'band-collar-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'BCS-NV',status:'active',shopify:true,sell:52,vel:0.6,grade:'A',colorFamily:'dark'},{id:'band-collar-wh',code:'WH',name:'White',color:'#ffffff',sku:'BCS-WH',status:'active',shopify:true,sell:42,vel:0.4,grade:'B',colorFamily:'dark'},{id:'band-collar-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'BCS-SB',status:'active',shopify:true,sell:32,vel:0.4,grade:'C',colorFamily:'dark'}],
-    'check-shirt':[{id:'check-shirt-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'WPC-NV',status:'active',shopify:true,sell:71,vel:1.2,grade:'A',colorFamily:'dark'},{id:'check-shirt-wh',code:'WH',name:'White',color:'#ffffff',sku:'WPC-WH',status:'active',shopify:true,sell:61,vel:0.7,grade:'B',colorFamily:'dark'},{id:'check-shirt-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'WPC-SB',status:'active',shopify:true,sell:51,vel:0.7,grade:'C',colorFamily:'dark'}],
-    'herring-shirt':[{id:'herring-shirt-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'HBW-NV',status:'active',shopify:true,sell:68,vel:1.0,grade:'A',colorFamily:'dark'},{id:'herring-shirt-wh',code:'WH',name:'White',color:'#ffffff',sku:'HBW-WH',status:'active',shopify:true,sell:58,vel:0.6,grade:'B',colorFamily:'dark'},{id:'herring-shirt-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'HBW-SB',status:'active',shopify:true,sell:48,vel:0.6,grade:'C',colorFamily:'dark'}],
-    'royal-oxford':[{id:'royal-oxford-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'ROX-NV',status:'active',shopify:true,sell:58,vel:0.8,grade:'A',colorFamily:'dark'},{id:'royal-oxford-wh',code:'WH',name:'White',color:'#ffffff',sku:'ROX-WH',status:'active',shopify:true,sell:48,vel:0.5,grade:'B',colorFamily:'dark'},{id:'royal-oxford-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'ROX-SB',status:'active',shopify:true,sell:38,vel:0.5,grade:'C',colorFamily:'dark'}],
-    'pinpoint':[{id:'pinpoint-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'PPO-NV',status:'active',shopify:true,sell:75,vel:1.5,grade:'A',colorFamily:'dark'},{id:'pinpoint-wh',code:'WH',name:'White',color:'#ffffff',sku:'PPO-WH',status:'active',shopify:true,sell:65,vel:0.9,grade:'B',colorFamily:'dark'},{id:'pinpoint-sb',code:'SB',name:'Steel Blue',color:'#6a8090',sku:'PPO-SB',status:'active',shopify:true,sell:55,vel:0.9,grade:'C',colorFamily:'dark'}],
-    'summer-suit':[{id:'summer-suit-nv',code:'NV',name:'Navy',color:'#1a2a4a',sku:'SWS-NV',status:'active',shopify:true,sell:55,vel:0.8,grade:'A',colorFamily:'dark'},{id:'summer-suit-ch',code:'CH',name:'Charcoal',color:'#3a3a3a',sku:'SWS-CH',status:'active',shopify:true,sell:45,vel:0.5,grade:'B',colorFamily:'dark'},{id:'summer-suit-bk',code:'BK',name:'Black',color:'#2a2a2a',sku:'SWS-BK',status:'active',shopify:true,sell:35,vel:0.5,grade:'C',colorFamily:'dark'}]
+ {id:'lb-wht',code:'WHT',name:'White solid',color:'#f8f4ee',sku:'GNTLO-WHT',status:'active',shopify:true,sell:72,vel:8.8,grade:'A',colorFamily:'light'},{id:'lb-blu',code:'BLU',name:'Blue stripe',color:'#b0c8e0',sku:'GNTLO-BLU',status:'active',shopify:true,sell:68,vel:6.6,grade:'B',colorFamily:'light'}],'shoes-ital':[{id:'sho-blk',code:'BLK',name:'Black Oxford',color:'#1a1a1a',sku:'SHO-BLK',status:'active',shopify:true,sell:78,vel:5.0,grade:'A',colorFamily:'dark'},{id:'sho-brn',code:'BRN',name:'Burnished Brown',color:'#6a3a1a',sku:'SHO-BRN',status:'active',shopify:true,sell:65,vel:3.3,grade:'B',colorFamily:'dark'},{id:'sho-cog',code:'COG',name:'Cognac',color:'#a06830',sku:'SHO-COG',status:'active',shopify:true,sell:54,vel:1.6,grade:'C',colorFamily:'light'}],'shoes-lux':[{id:'lux-blk',code:'BLK',name:'Museum Black',color:'#0a0a0a',sku:'LUX-BLK',status:'active',shopify:true,sell:62,vel:1.9,grade:'B',colorFamily:'dark'},{id:'lux-pat',code:'PAT',name:'Patina',color:'#7a5a3a',sku:'LUX-PAT',status:'active',shopify:true,sell:48,vel:1.4,grade:'C',colorFamily:'dark'}],'raincoat':[{id:'rnc-blk',code:'BLK',name:'Black',color:'#1a1a1a',sku:'RNC-BLK',status:'active',shopify:true,sell:52,vel:2.8,grade:'B',colorFamily:'dark'},{id:'rnc-nvy',code:'NVY',name:'Navy',color:'#1a2a4a',sku:'RNC-NVY',status:'active',shopify:true,sell:38,vel:1.6,grade:'C',colorFamily:'dark'}],'milano':[{id:'mil-wht',code:'WHT',name:'White broadcloth',color:'#f8f6f0',sku:'MIL-WHT',status:'active',shopify:true,sell:92,vel:9.9,grade:'A',colorFamily:'light'},{id:'mil-blu',code:'BLU',name:'Light blue',color:'#a8c8e8',sku:'MIL-BLU',status:'active',shopify:true,sell:88,vel:6.1,grade:'A',colorFamily:'light'},{id:'mil-pnk',code:'PNK',name:'Pink',color:'#e8c0c0',sku:'MIL-PNK',status:'active',shopify:true,sell:65,vel:1.6,grade:'C',colorFamily:'light'}],'edinburgh':[{id:'edn-sky',code:'SKY',name:'Sky dobby',color:'#a0c0e0',sku:'EDN-SKY',status:'active',shopify:true,sell:68,vel:2.8,grade:'B',colorFamily:'light'},{id:'edn-lav',code:'LAV',name:'Lavender check',color:'#c0a8d0',sku:'EDN-LAV',status:'active',shopify:true,sell:55,vel:1.6,grade:'C',colorFamily:'light'}],'maggia-blazer':[{id:'mag-nvy',code:'NVY',name:'Navy knit',color:'#1a2a4a',sku:'MAG-NVY',status:'active',shopify:true,sell:62,vel:3.8,grade:'B',colorFamily:'dark'},{id:'mag-gry',code:'GRY',name:'Grey knit',color:'#808080',sku:'MAG-GRY',status:'active',shopify:true,sell:48,vel:2.2,grade:'C',colorFamily:'light'}],'wash-boys-blazer':[{id:'bwb-nvy',code:'NVY',name:'Navy',color:'#1a2a4a',sku:'BWB-NVY',status:'active',shopify:true,sell:72,vel:3.3,grade:'B',colorFamily:'dark'},{id:'bwb-blk',code:'BLK',name:'Black',color:'#1a1a1a',sku:'BWB-BLK',status:'active',shopify:true,sell:64,vel:1.6,grade:'C',colorFamily:'dark'}],'boys-pants':[{id:'bep-blk',code:'BLK',name:'Black',color:'#1a1a1a',sku:'BEP-BLK',status:'active',shopify:true,sell:88,vel:8.2,grade:'A',colorFamily:'dark'},{id:'bep-nvy',code:'NVY',name:'Navy',color:'#1a2a4a',sku:'BEP-NVY',status:'active',shopify:true,sell:78,vel:4.4,grade:'B',colorFamily:'dark'},{id:'bep-gry',code:'GRY',name:'Grey',color:'#808080',sku:'BEP-GRY',status:'active',shopify:true,sell:65,vel:2.8,grade:'C',colorFamily:'light'}],'silk-kapote':[{id:'skp-blk',code:'BLK',name:'Black silk',color:'#0a0a0a',sku:'SKP-BLK',status:'active',shopify:false,sell:35,vel:1.6,grade:'C',colorFamily:'dark'}],'bengal-stripe':[],
+    'oxford-btn':[],
+    'linen-shirt':[],
+    'perf-shirt':[],
+    'tuxedo-shirt':[],
+    'band-collar':[],
+    'check-shirt':[],
+    'herring-shirt':[],
+    'royal-oxford':[],
+    'pinpoint':[],
+    'summer-suit':[]
     };
  const SEED_POS=[
  {id:'PO-2025-042',num:'PO-2025-042',mpId:'hc360',mpName:'Half Canvas Suit $360',mpCode:'HC360',vendor:'Shandong (DY17)',season:'Fall 2025',stage:9,stageLabel:'Complete',status:'complete',styleNames:['Charcoal herringbone','Navy solid'],units:312,fob:41.50,fobTotal:12948,landedTotal:17350,eta:'2025-11-01',distribution:{Lakewood:72,Flatbush:60,'Crown Heights':50,Monsey:38,Online:40,Wholesale:20,Reserve:32},payments:[{desc:'50% deposit',amount:6474,due:'2025-10-28',status:'paid'},{desc:'Freight + brokerage',amount:1682,due:'2025-11-20',status:'overdue'},{desc:'Customs duty',amount:2266,due:'2025-11-10',status:'paid'},{desc:'50% balance',amount:6474,due:'2025-11-28',status:'due'}],stageHistory:{1:{done:true,date:'2025-08-01'},2:{done:true,date:'2025-08-28'},3:{done:true,date:'2025-09-15'},4:{done:true,date:'2025-09-18'},5:{done:true,date:'2025-11-03'},6:{done:true,date:'2025-11-10'},7:{done:true,date:'2025-11-03'},8:{done:true,date:'2025-11-05'},9:{done:true,date:'2025-11-05'}},created:'2025-08-01'},{id:'PO-2026-001',num:'PO-2026-001',mpId:'dress',mpName:'Dress Shirt Milano',mpCode:'DRS',vendor:'The Orient Apparel (TAL)',season:'Spring 2026',stage:5,stageLabel:'Shipping',status:'in-transit',styleNames:['White solid','Blue check','Stripe navy'],units:3081,fob:14.56,fobTotal:44859,landedTotal:60111,eta:'2026-01-28',delivered:null,distribution:null,payments:[{desc:'50% deposit',amount:22430,due:'2025-12-15',status:'paid'},{desc:'Freight + duty',amount:12023,due:'2026-01-28',status:'projected'},{desc:'50% balance',amount:22430,due:'2026-02-15',status:'projected'}],stageHistory:{1:{done:true,date:'2025-11-01'},2:{done:true,date:'2025-11-20'},3:{done:true,date:'2025-12-08'},4:{done:true,date:'2025-12-10'},5:{done:true,date:'2026-01-05'}},created:'2025-11-01'},{id:'PO-2026-002',num:'PO-2026-002',mpId:'milano',mpName:'Milano Dress Shirt',mpCode:'MIL',vendor:'The Orient Apparel (TAL)',fob:15,fobTotal:46200,units:3081,season:'Spring 2026',status:'active',stage:3,eta:'2026-05-15',breakdown:{},styleNames:['White broadcloth','Light blue','Pink'],stageHistory:{1:{done:true,date:'2026-01-10'},2:{done:true,date:'2026-02-01'},3:{done:true,date:'2026-02-20'}},payments:[{desc:'50% deposit',amount:23100,due:'2026-02-20',status:'paid'},{desc:'Balance on shipment',amount:23100,due:'2026-04-15',status:'due'}]},{id:'PO-2026-003',num:'PO-2026-003',mpId:'shoes-ital',mpName:'Italian Dress Shoes',mpCode:'SHO',vendor:'Dino Draghi',fob:62,fobTotal:39680,units:640,season:'Spring 2026',status:'active',stage:4,eta:'2026-06-01',sampleBin:'Reserve Shelf C-2',breakdown:{},styleNames:['Black Oxford','Burnished Brown','Cognac'],stageHistory:{1:{done:true,date:'2026-01-05'},2:{done:true,date:'2026-01-20'},3:{done:true,date:'2026-02-10'},4:{done:true,date:'2026-03-01'}},payments:[{desc:'30% deposit',amount:11904,due:'2026-02-10',status:'paid'},{desc:'70% on shipment',amount:27776,due:'2026-05-01',status:'due'}]},{id:'PO-2026-004',num:'PO-2026-004',mpId:'raincoat',mpName:'Wool Raincoat',mpCode:'RNC',vendor:'Shandong (DY17)',fob:75,fobTotal:30000,units:400,season:'Fall 2026',status:'active',stage:2,eta:'2026-08-15',breakdown:{},styleNames:['Black','Navy'],stageHistory:{1:{done:true,date:'2026-02-15'},2:{done:true,date:'2026-03-10'}},payments:[{desc:'50% deposit',amount:15000,due:'2026-03-15',status:'due'}]},
@@ -2121,12 +2123,23 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
    'boys-shirt':     t => /boys.*(shirt|londoner)/i.test(t),
    'boys-blazer':    t => /boys.*blazer/i.test(t) && !/do not use/i.test(t),
    'boys-pant':      t => /boys.*(pant|trouser)/i.test(t) && !/do not use/i.test(t),
- };
+    // ── Seed-ID aliases (MP id != matcher key) ──
+    'bengal-stripe':    t => /bengal/i.test(t),
+    'oxford-btn':       t => /oxford\s+button/i.test(t),
+    'check-shirt':      t => /windowpane/i.test(t)||/check.*shirt/i.test(t),
+    'herring-shirt':    t => /herringbone/i.test(t),
+    'maggia-blazer':    t => /maggia/i.test(t),
+    'londoner-boys':    t => /boys.*(shirt|londoner)/i.test(t),
+    'wash-boys-blazer': t => /boys.*blazer/i.test(t)&&!/do not use/i.test(t),
+    'boys-pants':       t => /boys.*(pant|trouser)/i.test(t)&&!/do not use/i.test(t),
+    'shoes-ital':       t => /oxford/i.test(t)||/dress\s+shoe/i.test(t)||/brogue/i.test(t),
+    'shoes-lux':        t => /loafer/i.test(t)||/monk/i.test(t)||/chelsea/i.test(t),
+  };
 
  async function syncFromShopify() {
    try {
      // 1. Check connectivity
-     const statusRes = await fetch('/api/shopify/status');
+     const statusRes = await fetch('/api/status');
      if (!statusRes.ok) return { synced: false, reason: 'API unavailable' };
      const statusData = await statusRes.json();
      if (!statusData.connected) return { synced: false, reason: 'Not connected' };
@@ -2134,12 +2147,12 @@ const LOCS=['Lakewood','Flatbush','Crown Heights','Monsey','Online','Reserve'];
 
      // 2. Fetch products, inventory, velocity, sales, and orders in parallel
      const [prodRes, invRes, velRes, salesRes, ordersRes, treesRes] = await Promise.all([
-       fetch('/api/shopify/sync/products', { method: 'POST' }),
-       fetch('/api/shopify/sync/inventory', { method: 'POST' }),
-       fetch('/api/shopify/velocity?days=30'),
-       fetch('/api/shopify/sales?days=30'),
-       fetch('/api/shopify/sync/orders', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
-       fetch('/api/shopify/product-trees'),
+       fetch('/api/products/sync', { method: 'POST' }),
+       fetch('/api/inventory/sync', { method: 'POST' }),
+       fetch('/api/orders/velocity?days=30'),
+       fetch('/api/orders/sales?days=30'),
+       fetch('/api/orders/sync', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ since: new Date(Date.now() - 90*86400000).toISOString() }) }),
+       fetch('/api/products/trees'),
      ]);
      const prodData  = prodRes.ok  ? await prodRes.json()  : null;
      const treesData = treesRes && treesRes.ok ? await treesRes.json() : null;
@@ -3695,14 +3708,6 @@ function renderFinCashflow(){
    </div>
    ${expanded?`
    <div style="border-top:1px solid var(--brd);padding:12px 16px;background:rgba(26,88,48,.04)">
-    ${(()=>{
-     // Show live Shopify inflow badge if this is current month
-     const _now=new Date();const _moIdx=_now.getMonth()-2;
-     if(mi===_moIdx&&_rev30>0){
-      return '<div style="background:rgba(26,88,48,.08);border:1px solid rgba(26,88,48,.2);border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:11px;font-weight:600;color:var(--grn)">📊 Live Shopify Inflow (30d)</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">'+fmt(_rev30)+'</span></div>';
-     }
-     return '';
-    })()}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
      <div><div style="font-size:10px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px">Starting Balance</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(startBal)}</div></div>
      <div style="text-align:right"><div style="font-size:10px;color:var(--txt3);text-transform:uppercase;margin-bottom:4px">Ending Balance</div><div style="font-family:var(--mono);font-size:16px;font-weight:700;color:var(--grn)">${fmt(endBal)}</div></div>
@@ -3832,7 +3837,7 @@ function renderFinAP(){
    }
   });
   if(!recon.length) return '<div style="background:rgba(26,120,56,.06);border:1px solid rgba(26,120,56,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--grn)">✓ All AP invoices matched to POs — no reconciliation issues</div>';
-  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate(&#39;pos&#39;)">View POs</button><button class="btn btn-sm" onclick="navigate(&#39;fin-cashflow&#39;)">Cash Flow</button></div></div>';
+  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate('pos')">View POs</button><button class="btn btn-sm" onclick="navigate('fin-cashflow')">Cash Flow</button></div></div>';
  })()}
 
  ${sortedVendors.map(([vendor,data],vi)=>{
@@ -4040,7 +4045,7 @@ function renderFinCatRev(){
  c.stock+=Store.totalStock(p.id);
  const wRev=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail);
  c.rev+=wRev*52;
- c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+ c.cogs+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34*52);
  c.margin+=(p.retail||0)>0?Math.round(((p.retail||0)-(p.fob||0)*1.34)/(p.retail||1)*100):0;
  });
  Object.values(cats).forEach(c=>{c.avgMargin=c.prods.length?Math.round(c.margin/c.prods.length):0;c.gross=c.rev-c.cogs;c.grossPct=c.rev>0?Math.round(c.gross/c.rev*100):0;});
@@ -4095,6 +4100,10 @@ function renderFinCatRev(){
  </div>`;
 }
 function renderFinValuation(){
+  const sales90=getSalesSince(90);
+  const rev90=getSalesRevenue(sales90);
+  const byProd90=getSalesByProduct(sales90);
+  const hasReal=sales90.length>0;
   const prods=Store.getProducts();
   const LOCS=Store.LOCS;
   const season=Store.getCurrentSeason();
@@ -4191,6 +4200,7 @@ function renderAnForecast(){
 
  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
+ const inv=Store.getInventoryFor(p.id)||{};
  const styles=Store.getStyles(p.id);
  const adjVel=(()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:Math.round((p.vel||0)*season.multiplier*10)/10;})();
  const cover=adjVel>0?Math.round(stock/adjVel):999;
@@ -4386,7 +4396,7 @@ function renderAnScorecard(){
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
   const weeklyRev=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*(p.retail||0)),0);
   const annualRev=weeklyRev*52;
-  const weeklyCOGS=prods.reduce((s,p)=>s+Math.round(p.vel*season.multiplier*p.fob*1.34),0);
+  const weeklyCOGS=prods.reduce((s,p)=>s+Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34),0);
   const grossProfit=(weeklyRev-weeklyCOGS)*52;
   const grossPct=annualRev>0?Math.round(grossProfit/annualRev*100):0;
   const invCost=prods.reduce((s,p)=>s+Store.totalStock(p.id)*(p.fob||0)*1.34,0);
@@ -4408,7 +4418,7 @@ function renderAnScorecard(){
     const c=cats[p.cat]; c.count++;
     c.stock+=Store.totalStock(p.id);
     c.rev+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.retail*52);
-    c.cogs+=Math.round(p.vel*season.multiplier*p.fob*1.34*52);
+    c.cogs+=Math.round((getRealVelocity(p.id,30)||((p.vel||0)*season.multiplier))*p.fob*1.34*52);
     c.styles+=Store.getStyles(p.id).length;
     if(Store.totalStock(p.id)===0&&p.vel>0) c.oos++;
   });
@@ -5263,6 +5273,9 @@ function renderStyleDetail(combined){
  const styles = Store.getStyles(mpId);
  const s = styles.find(x=>x.id===styleId);
  if (!s) { $('page').innerHTML='<div style="padding:40px;color:var(--faded)">Style not found.</div>'; return; }
+ const sn = s._shopifyNode || null;
+ const realFits = sn ? sn.fits.filter(f=>f.name&&f.name!=='—') : null;
+ const realSizes = sn ? [...new Set(sn.fits.flatMap(f=>f.sizes))] : null;
 
  const sizes = Store.SIZE_SETS[p.sizes] || [];
  const core = Store.CORE[p.sizes] || [];
@@ -6443,7 +6456,7 @@ function renderPOStages(poId){
        const val=sd(stage,f.k);
        const inputStyle='width:100%;border:1px solid var(--brd);border-radius:6px;padding:7px 10px;font-size:12px;background:var(--sur);color:var(--ink);font-family:var(--mono)';
        const saveCall=f.saveOnPO
-        ?`(()=>{const _a=Store.getPOs();const _i=_a.findIndex(x=>x.id==='${poId}');if(_i>=0){_a[_i]['${f.k}']=this.value;if('${f.k}'==='etd'||'${f.k}'==='eta'){(_a[_i].payments||[]).forEach(pm=>{if(pm.status==='paid')return;const _etd=_a[_i].etd;const _eta=_a[_i].eta;if(pm.desc?.toLowerCase().includes('deposit')&&_etd&&_etd!=='TBD'){const d=new Date(_etd);d.setDate(d.getDate()-45);pm.due=d.toISOString().split('T')[0];if(pm.status==='projected')pm.status='upcoming';}if(pm.desc?.toLowerCase().includes('balance')&&_eta&&_eta!=='TBD'){const d=new Date(_eta);d.setDate(d.getDate()+14);pm.due=d.toISOString().split('T')[0];if(pm.status==='projected')pm.status='upcoming';}});}try{localStorage.setItem('am_pos',JSON.stringify(_a));}catch(e){}};let _sd={};try{_sd=JSON.parse(localStorage.getItem('${dataKey}')||'{}')}catch(e){};if(!_sd[${stage}])_sd[${stage}]={};_sd[${stage}]['${f.k}']=this.value;try{localStorage.setItem('${dataKey}',JSON.stringify(_sd));}catch(e){}toast('Saved','success');})()`
+        ?`(()=>{window['_sv_${stage}_${f.k}']=this.value;const _a=Store.getPOs();const _i=_a.findIndex(x=>x.id==='${poId}');if(_i>=0){_a[_i]['${f.k}']=this.value;try{localStorage.setItem('am_pos',JSON.stringify(_a));}catch(e){}};let _sd={};try{_sd=JSON.parse(localStorage.getItem('${dataKey}')||'{}')}catch(e){};if(!_sd[${stage}])_sd[${stage}]={};_sd[${stage}]['${f.k}']=this.value;try{localStorage.setItem('${dataKey}',JSON.stringify(_sd));}catch(e){}toast('Saved','success');})()`
         :`(()=>{let _sd={};try{_sd=JSON.parse(localStorage.getItem('${dataKey}')||'{}')}catch(e){};if(!_sd[${stage}])_sd[${stage}]={};_sd[${stage}]['${f.k}']=this.value;try{localStorage.setItem('${dataKey}',JSON.stringify(_sd));}catch(e){}toast('Saved','success');})()`;
 
        return`<div style="margin-bottom:12px">
@@ -6504,9 +6517,9 @@ async function syncShopifyPOData(poId){
  toast('Syncing from Shopify...','info',2000);
  try{
   const [prodRes,invRes,draftRes]=await Promise.all([
-   fetch('/api/shopify/sync/products',{method:'POST'}),
-   fetch('/api/shopify/sync/inventory',{method:'POST'}),
-   fetch('/api/shopify/draft-orders'),
+   fetch('/api/products/sync',{method:'POST'}),
+   fetch('/api/inventory/sync',{method:'POST'}),
+   fetch('/api/orders/drafts'),
   ]);
   const lines=[];
 
@@ -7259,11 +7272,18 @@ function renderAnVelocity(){
  if(!window._velTab) window._velTab={sort:'rev',filter:'',cat:'all',expand:{}};
  const V=window._velTab;
 
- const data=prods.map(p=>{
+ const sales7=getSalesSince(7);
+  const by7=getSalesByProduct(sales7);
+  const by30=getSalesByProduct(getSalesSince(30));
+  const data=prods.map(p=>{
  const stock=Store.totalStock(p.id);
  const styles=Store.getStyles(p.id);
  const realVel=getRealVel(p);
  const adjVel=Math.round(realVel*season.multiplier*10)/10;
+ const vel7=getRealVelocity(p.id,7);
+ const trend=realVel>0&&vel7>0?(vel7-realVel)/Math.max(realVel,.1):0;
+ const sold7=(by7[p.id]||{}).units||0;
+ const rev30=(by30[p.id]||{}).revenue||0;
  const cover=adjVel>0?Math.round(stock/adjVel):999;
  const weeklyRev=Math.round(adjVel*p.retail);
  const annualRev=weeklyRev*52;
@@ -7284,6 +7304,8 @@ function renderAnVelocity(){
  if(V.sort==='stock')return b.stock-a.stock;
  if(V.sort==='cover')return a.cover-b.cover;
  if(V.sort==='sell')return b.sellThru-a.sellThru;
+  if(V.sort==='trend')return b.trend-a.trend;
+  if(V.sort==='rev30')return b.rev30-a.rev30;
  if(V.sort==='turns')return b.annualTurns-a.annualTurns;
  if(V.sort==='margin')return b.margin-a.margin;
  return 0;
@@ -7326,7 +7348,7 @@ function renderAnVelocity(){
  const barW=Math.round(d.weeklyRev/maxRev*100);
  return `
  <div style="background:var(--sur2);border:1px solid ${d.cover<8?'rgba(138,58,42,.2)':'var(--brd)'};border-radius:var(--rl);margin-bottom:2px">
- <div onclick="window._velTab.expand['${ek}']=!window._velTab.expand['${ek}'];navigate('an-velocity')" style="cursor:pointer;display:grid;grid-template-columns:1fr 50px 50px 50px 50px 50px 50px;align-items:center;padding:12px 14px;gap:2px" class="row-hover">
+ <div onclick="window._velTab.expand['${ek}']=!window._velTab.expand['${ek}'];navigate('an-velocity')" style="cursor:pointer;display:grid;grid-template-columns:1fr 50px 36px 40px 50px 50px 50px 50px;align-items:center;padding:12px 14px;gap:2px" class="row-hover">
  <div style="min-width:0">
  <div style="display:flex;align-items:center;gap:6px">
  ${d.heroImg?`<img src="${d.heroImg}" style="width:24px;height:30px;object-fit:cover;border-radius:3px;flex-shrink:0"/>`:''}
@@ -7337,6 +7359,8 @@ function renderAnVelocity(){
  </div>
  <span style="font-family:var(--mono);font-size:11px;text-align:right;font-weight:700;color:var(--grn)">$${Math.round(d.weeklyRev/1000)}K</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right">${d.adjVel}</span>
+ <span style="font-size:11px;text-align:right;font-weight:700;color:${d.trend>.1?'var(--grn)':d.trend<-.1?'var(--brick)':'var(--faded)'}">${d.adjVel>0?(d.trend>.1?'↑':d.trend<-.1?'↓':'→'):'—'}</span>
+ <span style="font-family:var(--mono);font-size:10px;text-align:right;color:var(--txt3)">${d.sold7||'—'}</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right;font-weight:700">${d.stock}</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${d.cover<8?'var(--brick)':d.cover<16?'var(--amb)':'var(--grn)'}">${d.cover>100?'∞':d.cover+'w'}</span>
  <span style="font-family:var(--mono);font-size:11px;text-align:right">${d.sellThru}%</span>
@@ -8035,7 +8059,7 @@ function renderPOs(){
 function advanceStageUI(poId){
  const po=Store.getPO(poId); if(!po) return;
  const from=po.stage; const to=from+1;
- const gate=Store._checkStageGate(po,from,to);
+ const gate=_checkStageGate(po,from,to);
  if(gate.ok){
   Store.advanceStage(poId);
   navigate('po-detail',poId);
@@ -8214,7 +8238,7 @@ function renderPODetail(poId){
   <div style="padding:10px 16px">
    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faded);margin-bottom:6px">Stage gate status</div>
    ${po.stage<9?(()=>{
-    const gate=Store._checkStageGate(po,po.stage,po.stage+1);
+    const gate=_checkStageGate(po,po.stage,po.stage+1);
     return gate.ok
      ? '<div style="font-size:11px;color:var(--grn)">✓ Ready to advance to stage '+(po.stage+1)+'</div>'
      : '<div style="font-size:11px;color:var(--brick)">⛔ '+gate.reason+'</div>';
@@ -8350,7 +8374,7 @@ function renderPODetail(poId){
       <div>
        <div style="font-size:9px;color:var(--faded);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px">${f.l}</div>
        <input type="${f.type||'text'}" value="${f.v.replace(/"/g,'&quot;')}" placeholder="${f.ph}" style="width:100%;border:1px solid var(--brd);border-radius:5px;padding:6px 8px;font-size:11px;${f.mono?'font-family:var(--mono);':''}background:var(--sur);color:var(--ink)"
-        onblur="(()=>{const _a=Store.getPOs();const _i=_a.findIndex(x=>x.id==='${poId}');if(_i>=0){_a[_i]['${f.k}']=this.value;if('${f.k}'==='etd'||'${f.k}'==='eta'){const po=_a[_i];(po.payments||[]).forEach(pm=>{if(pm.status==='paid')return;if(pm.desc?.toLowerCase().includes('deposit')&&po.etd&&po.etd!=='TBD'){const d=new Date(po.etd);d.setDate(d.getDate()-45);pm.due=d.toISOString().split('T')[0];if(pm.status==='projected')pm.status='upcoming';}if(pm.desc?.toLowerCase().includes('balance')&&po.eta&&po.eta!=='TBD'){const d=new Date(po.eta);d.setDate(d.getDate()+14);pm.due=d.toISOString().split('T')[0];if(pm.status==='projected')pm.status='upcoming';}if(pm.desc?.toLowerCase().includes('freight')&&po.eta&&po.eta!=='TBD'){const d=new Date(po.eta);pm.due=d.toISOString().split('T')[0];if(pm.status==='projected')pm.status='upcoming';}});}try{localStorage.setItem('am_pos',JSON.stringify(_a));}catch(e){}}toast('Saved','success');})()"/>
+        onblur="(()=>{const _a=Store.getPOs();const _i=_a.findIndex(x=>x.id==='${poId}');if(_i>=0){_a[_i]['${f.k}']=this.value;if('${f.k}'==='etd'||'${f.k}'==='eta'){const po=_a[_i];(po.payments||[]).forEach(pm=>{if(pm.status==='paid')return;if(pm.desc?.toLowerCase().includes('deposit')&&po.etd&&po.etd!=='TBD'){const d=new Date(po.etd);d.setDate(d.getDate()-45);pm.due=d.toISOString().split('T')[0];}if((pm.desc?.toLowerCase().includes('balance')||pm.desc?.toLowerCase().includes('balance'))&&po.eta&&po.eta!=='TBD'){const d=new Date(po.eta);d.setDate(d.getDate()+14);pm.due=d.toISOString().split('T')[0];}});}try{localStorage.setItem('am_pos',JSON.stringify(_a));}catch(e){}}toast('Saved','success');})()"/>
       </div>`).join('')}
     </div>
     ${po.delivered?`<div style="font-family:var(--mono);font-size:11px;color:var(--grn);margin-top:8px">✓ Delivered ${po.delivered}</div>`:''}
@@ -9037,6 +9061,10 @@ function wizSubmit(){
  navigate('po-detail',po.id);
 }
 function renderInventory(){
+  const _sales30=getSalesSince(30);
+  const _byProd=getSalesByProduct(_sales30);
+  const _rev30=getSalesRevenue(_sales30);
+  const _hasReal=_sales30.length>0;
   const prods=Store.getProducts();
   const LOCS=Store.LOCS;
   const totalStock=prods.reduce((s,p)=>s+Store.totalStock(p.id),0);
@@ -10610,6 +10638,17 @@ const ASSET_STATUS = {
  'done': {label:'Done', color:'var(--grn)'},
  'blocked': {label:'Blocked', color:'var(--red)'}};
 function renderMarketing(){
+  const _s30=getSalesSince(30);
+  const _byCat={}; const _prods=Store.getProducts();
+  const _byProd=getSalesByProduct(_s30);
+  _prods.forEach(p=>{
+    const cat=p.cat||'Other';
+    if(!_byCat[cat])_byCat[cat]={rev:0,units:0};
+    const d=_byProd[p.id]||{};
+    _byCat[cat].rev+=(d.revenue||0); _byCat[cat].units+=(d.units||0);
+  });
+  const _rev30=getSalesRevenue(_s30);
+  const _hasReal=_s30.length>0;
   const prods=Store.getProducts();
   const camps=(()=>{try{return JSON.parse(localStorage.getItem('am_campaigns')||'[]');}catch(e){return[];}})();
   const active=camps.filter(c=>c.status==='active');
@@ -10778,6 +10817,12 @@ function editCopyModal(productId) {
  );
 }
 function renderOperations(){
+  const _s30=getSalesSince(30), _s7=getSalesSince(7);
+  const _byProd=getSalesByProduct(_s30);
+  const _rev30=getSalesRevenue(_s30), _rev7=getSalesRevenue(_s7);
+  const _hasReal=_s30.length>0;
+  const _posCache=(()=>{try{return JSON.parse(localStorage.getItem('am_pos_today')||'null');}catch(e){return null;}})();
+  const _todayRev=_posCache&&_posCache.stores?Object.values(_posCache.stores).reduce((s,x)=>s+(x.revenue||0),0):getSalesRevenue(getSalesSince(1));
   const pos=Store.getPOs();
   const openPOs=pos.filter(po=>po.status!=='complete');
   const shipments=(()=>{try{return Store.getShipments();}catch(e){return[];}})();
@@ -11117,11 +11162,21 @@ function renderProducts(){
  <span style="font-family:var(--mono);font-size:11px;text-align:right;color:${p.incoming>0?'var(--grn)':'var(--faded)'}">${p.incoming||'—'}</span>
  </div>
  ${expanded?`<div style="border-top:1px solid var(--brd)">
+ <!-- STORE STOCK STRIP -->
+ <div style="display:flex;gap:0;border-bottom:1px solid var(--brd);overflow-x:auto">
+  ${Store.LOCS.filter(l=>l!=='Reserve').map(loc=>{
+   const q=inv[loc]||0;
+   return`<div style="padding:6px 10px;border-right:1px solid var(--brd);text-align:center;min-width:70px;flex-shrink:0;background:${q===0?'rgba(138,58,42,.04)':''}">`
+    +`<div style="font-family:var(--mono);font-size:12px;font-weight:700;color:${q===0?'var(--brick)':q<5?'var(--amb)':'var(--ink)'}">${q}</div>`
+    +`<div style="font-size:8px;color:var(--faded);margin-top:1px">${loc}</div>`
+   +`</div>`;
+  }).join('')}
+ </div>
  <!-- STYLE CARDS -->
  <div style="display:grid;grid-template-columns:repeat(${Math.min(p.styles.length,4)},1fr);gap:6px;padding:10px 14px;border-bottom:1px solid var(--brd)">
  ${p.styles.map(s=>{
  const styleFrac=s.vel/Math.max(1,p.styles.reduce((sum,x)=>sum+x.vel,0));
- const styleStock=Math.round(p.stock*styleFrac);
+ const styleStock=s.inventoryQty!=null?s.inventoryQty:Math.round(p.stock*styleFrac);
  return`<div onclick="navigate('style-detail','${p.id}__${s.id}')" style="background:var(--bg);border:1px solid var(--brd);border-radius:6px;padding:8px;cursor:pointer" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform=''">
  <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
  <span style="width:14px;height:14px;border-radius:50%;background:${s.color};border:1px solid rgba(0,0,0,.1);flex-shrink:0"></span>
@@ -11129,7 +11184,7 @@ function renderProducts(){
  <span class="badge ${s.grade==='A'?'b-grn':s.grade==='B'?'b-amb':'b-gry'}" style="font-size:8px">${s.grade}</span>
  </div>
  <div style="display:flex;gap:8px;font-family:var(--mono);font-size:10px;color:var(--faded)">
- <span>${styleStock}u</span><span>${s.vel}/w</span><span>${s.sell}%</span>
+ <span style="color:${styleStock===0?'var(--brick)':''}">${styleStock}u</span><span>${s.vel>0?s.vel+'/w':'—'}</span><span>${s.sell||'—'}%</span>
  </div>
  </div>`;
  }).join('')}
@@ -11225,39 +11280,70 @@ function npCatChange(){
  if(vSel&&vOther){vSel.onchange=()=>{vOther.style.display=vSel.value===''?'block':'none';};}
 }
 function getProductStack(id) {
-  const p=Store.getProduct(id);if(!p)return null;
-  const styles=Store.getStyles(id);const pos=Store.getPOs().filter(po=>po.mpId===id);
-  const stock=Store.totalStock(id);const st=(()=>{try{return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}');}catch(e){return{};}})();
-  const dna=(()=>{try{return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}');}catch(e){return{};}})();
-  const constr=dna.construction||{};const qc=dna.qc||{};
-  const catSpecs=Object.values(Store.CATEGORY_COMPONENTS[p.cat]||{}).flat();
-  const hasVendor=p.vendor&&p.vendor!=='—';const hasFob=p.fob>0;const hasHts=p.hts&&p.hts.length>=4;
-  const mk=(id2,label,done,val,action,actionLabel)=>({id:id2,label,done,val:val||'',action:action||'',actionLabel:actionLabel||''});
-  const phases=[
-    {id:'brief',label:'Brief',icon:'1',desc:'Product identity',sections:{
-      'Identity':[mk('name','Product name',p.name?.length>2,p.name),mk('code','Code',p.code?.length>=3,p.code),mk('cat','Category',p.cat&&p.cat!=='Uncategorized',p.cat),mk('desc','Description',p.description?.length>=20,(p.description?.length||0)+' chars'),mk('retail','Retail price',p.retail>0,'$'+p.retail,"navigate('pd-edit','"+id+"')"),mk('img','Hero image',!!p.heroImg,p.heroImg?'Set':'Missing')]
-    }},
-    {id:'sourcing',label:'Sourcing',icon:'2',desc:'Vendor & materials',sections:{
-      'Vendor':[mk('vendor','Vendor assigned',hasVendor,p.vendor,"navigate('pd-dna','"+id+"')"),mk('fob','FOB price',hasFob,'$'+p.fob),mk('lead','Lead time',p.lead>0,p.lead+'d'),mk('moq','MOQ',p.moq>0,p.moq+'u')]
-    }},
-    {id:'development',label:'Dev',icon:'3',desc:'Specs & samples',sections:{
-      'Construction':catSpecs.map(s=>mk(s.id,s.label,!!constr[s.id],constr[s.id]||'—',"navigate('pd-dna','"+id+"')")),
-      'Approval':[mk('sample','Sample approved',!!st.sampleApproved,st.sampleApproved||'Pending',"stackAction('"+id+"','sampleApproved')","Approve"),mk('fit','Fit approved',!!st.fitApproved,st.fitApproved||'Pending',"stackAction('"+id+"','fitApproved')","Approve")]
-    }},
-    {id:'costing',label:'Costing',icon:'4',desc:'Margin & pricing',sections:{
-      'Cost':[mk('hts','HTS code',hasHts,p.hts||'—'),mk('duty','Duty rate',p.duty>0,p.duty+'%'),mk('margin','Margin check',p.retail>0&&hasFob,Math.round((p.retail-p.fob*1.34)/p.retail*100)+'%'),mk('marginOk','Margin approved',!!st.marginApproved,st.marginApproved||'Pending',"stackAction('"+id+"','marginApproved')","Approve")]
-    }},
-    {id:'content',label:'Content',icon:'5',desc:'Photos & copy',sections:{
-      'Content':[mk('hero','Hero image',!!p.heroImg,p.heroImg?'Set':'Missing'),mk('desc2','Description 50+ chars',p.description?.length>=50,(p.description?.length||0)+' chars'),mk('shopify','Shopify listing',!!p.shopifyUrl,p.shopifyUrl?'Live':'No')]
-    }},
-    {id:'launch',label:'Launch',icon:'6',desc:'Go live',sections:{
-      'Inventory':[mk('stock','Stock received',stock>0,stock+' units'),mk('dist','Distributed',Store.LOCS.filter(l=>(Store.getInventoryFor(id)||{})[l]>0).length>1,Store.LOCS.filter(l=>(Store.getInventoryFor(id)||{})[l]>0).length+' locations'),mk('live','Go live',p.status==='active',p.status||'dev',"stackAction('"+id+"','goLive')","Go Live")]
-    }}
+  const p = Store.getProduct(id); if (!p) return null;
+
+  // ── Try to get real styles from am_product_trees (synced from Shopify) ──
+  const _trees = (() => { try { return JSON.parse(localStorage.getItem('am_product_trees')||'[]'); } catch(e) { return []; } })();
+  const _tree  = _trees.find(t => t.shopifyId === p.shopifyId) || null;
+
+  let styles;
+  if (_tree && _tree.styles && _tree.styles.length > 0) {
+    // Map Stallon's StyleNode → shape renderProductStack/renderStyleDetail expects
+    styles = _tree.styles.map(sn => ({
+      id:           (p.id + '-' + sn.name.replace(/[^a-z0-9]/gi,'_').toLowerCase()),
+      code:         sn.sku ? sn.sku.split('-').pop() : sn.name.slice(0,3).toUpperCase(),
+      name:         sn.name,
+      color:        sn.color || '#888',
+      colorFamily:  sn.name.toLowerCase().includes('navy')||sn.name.toLowerCase().includes('blue') ? 'dark' :
+                    sn.name.toLowerCase().includes('white')||sn.name.toLowerCase().includes('cream') ? 'light' : 'dark',
+      sku:          sn.sku || '',
+      status:       'active',
+      shopify:      true,
+      vel:          0, // real vel comes from getRealVelocity by style id
+      sell:         0,
+      grade:        null,
+      inventoryQty: sn.totalQty,
+      fits:         sn.fits.map(f => f.name).filter(n => n && n !== '—'),
+      sizes:        [...new Set(sn.fits.flatMap(f => f.sizes))],
+      _shopifyNode: sn, // keep raw data for detail view
+    }));
+  } else {
+    styles = Store.getStyles(id);
+  }
+
+  const pos     = Store.getPOs().filter(po => po.mpId === id);
+  const inv     = Store.getInventoryFor(id) || {};
+  const stock   = Store.totalStock(id);
+  const sizes   = Store.SIZE_SETS[p.sizes] || [];
+  const core    = Store.CORE[p.sizes] || [];
+  const catComps = Store.CATEGORY_COMPONENTS[p.cat] || {};
+  const st  = (() => { try { return JSON.parse(localStorage.getItem('am_stack_'+id)||'{}'); } catch(e) { return {}; } })();
+  const dna = (() => { try { return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}'); } catch(e) { return {}; } })();
+  const constr = dna.construction || {};
+  const realVel  = getRealVelocity(id, 30);
+  const vel      = realVel > 0 ? realVel : (p.vel || 0);
+  const cover    = vel > 0 ? Math.round(stock / vel) : 999;
+  const lnd      = p.fob ? Math.round(p.fob * 1.34 * 100) / 100 : 0;
+  const margin   = p.retail && lnd ? Math.round((p.retail - lnd) / p.retail * 100) : 0;
+  const sold30   = (getSalesByProduct(getSalesSince(30))[id] || {}).units || 0;
+  const openPOs  = pos.filter(po => po.status !== 'complete');
+  const incoming = openPOs.reduce((s, po) => s + (po.units || 0), 0);
+  const activeLocs = Store.LOCS.filter(l => (inv[l] || 0) > 0);
+  const oosLocs    = Store.LOCS.filter(l => l !== 'Reserve' && (inv[l] || 0) === 0);
+  const allSpecs   = Object.values(catComps).flat();
+  const filledSpecs = allSpecs.filter(s => constr[s.id]);
+  const specPct    = allSpecs.length > 0 ? Math.round(filledSpecs.length / allSpecs.length * 100) : 0;
+  const approvals  = [
+    { id:'sampleApproved', label:'Initial sample', date: st.sampleApproved },
+    { id:'fitApproved',    label:'Fit sample',     date: st.fitApproved    },
+    { id:'ppApproved',     label:'Pre-production', date: st.ppApproved     },
+    { id:'marginApproved', label:'Margin sign-off',date: st.marginApproved },
   ];
-  phases.forEach(ph=>{const reqs=Object.values(ph.sections).flat();ph.total=reqs.length;ph.done=reqs.filter(r=>r.done).length;ph.pct=ph.total>0?Math.round(ph.done/ph.total*100):0;ph.complete=ph.pct===100;});
-  const totalReqs=phases.reduce((s,ph)=>s+ph.total,0);const totalDone=phases.reduce((s,ph)=>s+ph.done,0);
-  const totalPct=totalReqs>0?Math.round(totalDone/totalReqs*100):0;
-  return{phases,totalDone,totalReqs,totalPct,p,styles,pos,stock};
+  const fromShopify = !!(_tree && _tree.styles && _tree.styles.length > 0);
+
+  return { p, styles, pos, openPOs, inv, stock, sizes, core, catComps, constr,
+           vel, cover, lnd, margin, sold30, incoming, specPct, filledSpecs, allSpecs,
+           approvals, st, fromShopify, _tree };
 }
 
 function stackAction(productId, action) {
@@ -11290,12 +11376,25 @@ function stackAction(productId, action) {
 function renderProductStack(id) {
   const data=getProductStack(id);
   if(!data){$('page').innerHTML='<div style="padding:40px;color:var(--faded)">Product not found.</div>';return;}
-  const {phases,totalDone,totalReqs,totalPct,p,styles,pos,stock}=data;
+  const {p,styles,pos,openPOs,inv,stock,sizes,core,catComps,constr,
+         vel,cover,lnd,margin,sold30,incoming,specPct,filledSpecs,allSpecs,
+         approvals,st,fromShopify,_tree}=data;
   const season=Store.getCurrentSeason();
-  const adjVel=(()=>{const _r=getRealVelocity(p.id,30);return _r>0?_r:Math.round((p.vel||0)*season.multiplier*10)/10;})();
-  const coverWk=adjVel>0?Math.round(stock/adjVel):999;
-  const landed=Math.round(p.fob*1.34*100)/100;
-  const margin=p.retail>0?Math.round((p.retail-landed)/p.retail*100):0;
+  // Rebuild phase compat vars for the render template
+  const phases=[
+    {id:'identity',label:'Identity',pct:p.name&&p.code&&p.cat?100:50,complete:!!(p.name&&p.code&&p.cat&&p.heroImg)},
+    {id:'sourcing', label:'Sourcing', pct:p.vendor&&p.fob&&p.hts?100:p.vendor||p.fob?60:0,complete:!!(p.vendor&&p.fob&&p.hts&&p.duty)},
+    {id:'dna',      label:'DNA',     pct:specPct,complete:specPct===100},
+    {id:'pos',      label:'POs',     pct:pos.length>0?Math.min(100,pos.length*25):0,complete:pos.filter(po=>po.status==='complete').length>0},
+    {id:'live',     label:'Live',    pct:stock>0&&vel>0?100:stock>0?50:0,complete:p.status==='active'&&stock>0&&vel>0},
+  ];
+  const totalReqs=phases.length*100;
+  const totalDone=phases.reduce((s,ph)=>s+ph.pct,0);
+  const totalPct=Math.round(totalDone/phases.length);
+  // Compat aliases
+  const adjVel=vel;
+  const coverWk=cover;
+  const landed=lnd;
   const vendorId=(()=>{const vs=Store.getVendors();const f=vs.find(v=>p.vendor.includes(v.short||v.name));return f?f.id:null;})();
   const vendor=vendorId?Store.getVendor(vendorId):null;
   const comps=(()=>{try{return JSON.parse(localStorage.getItem('am_components_v2')||'{}');}catch(e){return{};}})();
@@ -11957,25 +12056,97 @@ function markAllRead(){Store.markAllRead();updateNotifBadge();$('notifList').inn
 function updateAPIStatus(){
  const dot=$('api-dot'),label=$('api-label');
  if(!dot||!label)return;
- if(API._online&&API._user){
- dot.style.background='var(--grn)';
- label.textContent=API._user.name+' · '+API._user.role;
- } else if(API._online){
- dot.style.background='var(--amb)';
- label.textContent='Connected · not logged in';
+ // Show Shopify sync status
+ const intg=(()=>{try{const i=Store.getIntegrations();return i.shopify||null;}catch(e){return null;}})();
+ if(intg&&intg.connected&&intg.lastSync){
+  const mins=Math.round((Date.now()-new Date(intg.lastSync).getTime())/60000);
+  dot.style.background='var(--grn)';
+  label.textContent='Shopify · '+(mins<2?'just now':mins<60?mins+'m ago':Math.round(mins/60)+'h ago');
+ } else if(intg&&intg.connected){
+  dot.style.background='var(--amb)';
+  label.textContent='Shopify · syncing…';
  } else {
- dot.style.background='var(--sb-dim)';
- label.textContent='Standalone';
+  dot.style.background='var(--sb-dim)';
+  label.textContent='Not synced · tap to sync';
+  if(dot) dot.style.cursor='pointer';
+  if(dot) dot.onclick=()=>{Store.syncFromShopify().then(r=>r.synced?toast('Synced','success'):toast('Sync failed','error'));};
  }
 }
 setInterval(updateAPIStatus,3000);
 setTimeout(updateAPIStatus,500);
+
+// ── 3-minute Shopify sales pulse ────────────────────────────────
+// Sales pulse with exponential backoff on failure
+const _pulse = {
+  interval: 3 * 60 * 1000,  // base: 3 minutes
+  maxInterval: 15 * 60 * 1000, // cap: 15 minutes
+  timer: null,
+};
+
+function _schedulePulse(delay) {
+  if (_pulse.timer) clearTimeout(_pulse.timer);
+  _pulse.timer = setTimeout(runSalesPulse, delay);
+}
+
+async function runSalesPulse() {
+  let success = false;
+  try {
+    const r = await fetch('/api/orders/sales?days=1');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (!d || d.error) throw new Error('bad response');
+    // Merge today's orders into am_sales
+    const existing = (() => { try { return JSON.parse(localStorage.getItem('am_sales')||'[]'); } catch(e) { return []; } })();
+    // Only add orders not already in am_sales
+    const today = new Date().toISOString().slice(0,10);
+    const todayExisting = new Set(existing.filter(s=>s.date===today).map(s=>s.id));
+    let added = 0;
+    if (d.dailySales) {
+      // Update the sync dot to show last pulse time
+      const dot = document.getElementById('api-dot');
+      if (dot) dot.style.background = 'var(--grn)';
+      const label = document.getElementById('api-label');
+      if (label) label.textContent = 'Shopify · synced ' + new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      added = d.dailySales.reduce((s,ds)=>s+(ds.orders||0),0);
+    }
+    // Also refresh /api/pos/today cache
+    try {
+      const posR = await fetch('/api/pos/today');
+      if (posR.ok) {
+        const posD = await posR.json();
+        if (posD && !posD.error) {
+          posD._ts = Date.now();
+          try { localStorage.setItem('am_pos_today', JSON.stringify(posD)); } catch(e) {}
+        }
+      }
+    } catch(e) { /* pos/today is best-effort */ }
+    // If currently on home page, refresh the store strip
+    if (typeof currentRoute !== 'undefined' && currentRoute === 'home') {
+      renderHome();
+    }
+    success = true;
+  } catch(e) {
+    // Exponential backoff: double interval on fail, cap at 15 minutes
+    _pulse.interval = Math.min(_pulse.interval * 2, _pulse.maxInterval);
+    const dot = document.getElementById('api-dot');
+    if (dot) dot.style.background = 'var(--amb)';
+  } finally {
+    // Reset to base interval on success, use backed-off interval on fail
+    if (success) _pulse.interval = 3 * 60 * 1000;
+    _schedulePulse(_pulse.interval);
+  }
+}
+// First pulse after 30 seconds (give page time to load)
+setTimeout(runSalesPulse, 30000);
 function exportAll(){
  const data={products:Store.getProducts(),pos:Store.getPOs(),inventory:Store.getInventory(),exported:new Date().toISOString()};
  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='atica_man_export.json';a.click();
 }
 function renderPurchasing(){
+  const _sales30=getSalesSince(30);
+  const _byProd=getSalesByProduct(_sales30);
+  const _hasReal=_sales30.length>0;
   const prods=Store.getProducts();
   const pos=Store.getPOs();
   const ppData=(window._ppCache||(window._ppCache=getProductionPlan()));
@@ -12164,6 +12335,8 @@ function toggleLaunchStep(styleId,key){
  else if(currentRoute==='product-detail')navigate('product-detail',window._pdId);
 }
 function renderCRM(){
+  const _shopifyCusts=getShopifyCustomers();
+  const _hasShopify=_shopifyCusts.length>0;
   // Enrich customers with real Shopify order totals where available
   const sales30=getSalesSince(30);
   const sales365=getSalesSince(365);
@@ -12223,6 +12396,11 @@ function renderCRM(){
   </div>`;
 }
 function renderCRMCustomers(){
+  // Merge seed customers with real Shopify customers
+  const _shopifyCusts = getShopifyCustomers();
+  const _seedCusts = Store.getCustomers();
+  const allCustomers = _shopifyCusts.length > 0 ? _shopifyCusts : _seedCusts;
+  const hasReal = _shopifyCusts.length > 0;
  // Merge seed + real Shopify customers from recent orders
  const _salesLive=getSalesSince(180);
  const _shopCusts={};
@@ -12397,7 +12575,18 @@ function crmTab(i){[0,1,2,3,4].forEach(j=>{const t=$('crm-t'+j),p=$('crm-p'+j);i
 let _floorStore='Lakewood';
 function renderFloorApp(){
  const prods=Store.getProducts();
- const custs=Store.getCustomers();
+ // Real customers from Shopify order history
+ const _shopifyCusts=getShopifyCustomers();
+ const custs=_shopifyCusts.length>0?_shopifyCusts:Store.getCustomers();
+ // Today's live feed from POS
+ const _posCache=(()=>{try{return JSON.parse(localStorage.getItem('am_pos_today')||'null');}catch(e){return null;}})();
+ const todayFeed=(()=>{try{return JSON.parse(localStorage.getItem('am_pos_feed')||'null');}catch(e){return null;}})();
+ const todayRev=_posCache&&_posCache.stores?Object.values(_posCache.stores).reduce((s,x)=>s+(x.revenue||0),0):getSalesRevenue(getSalesSince(1));
+ // Refresh POS feed async
+ if(!_posCache||(Date.now()-(_posCache._ts||0))>60000){
+   fetch('/api/pos/today').then(r=>r.ok?r.json():null).then(d=>{if(d&&!d.error){d._ts=Date.now();try{localStorage.setItem('am_pos_today',JSON.stringify(d));}catch(e){}}}).catch(()=>{});
+   fetch('/api/pos/feed?limit=20').then(r=>r.ok?r.json():null).then(d=>{if(d&&!d.error){try{localStorage.setItem('am_pos_feed',JSON.stringify(d));}catch(e){}}}).catch(()=>{});
+ }
  const STORES=Store.LOCS.filter(l=>l!=='Online');
 
  if(!window._floor) window._floor={store:STORES[0],search:'',custSearch:'',mode:'browse',cart:[],custId:null};
@@ -13202,7 +13391,7 @@ async function loadDraftOrders() {
   const status = document.getElementById('drafts-status');
   if(badge) badge.textContent = 'LOADING...';
   try {
-    const res = await fetch('/api/shopify/draft-orders');
+    const res = await fetch('/api/orders/drafts');
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const count = data.count || 0;
@@ -13235,14 +13424,14 @@ async function testShopifyConnection() {
 
   badge.textContent = 'TESTING...';
   badge.className = 'badge b-gry';
-  box.textContent = 'Calling /api/shopify/status...';
+  box.textContent = 'Calling /api/status...';
   if(log) { log.style.display='block'; log.textContent=''; }
 
   const addLog = (msg) => { if(log){ log.textContent += '\n' + msg; log.scrollTop=log.scrollHeight; } };
 
   try {
-    addLog('→ GET /api/shopify/status');
-    const res = await fetch('/api/shopify/status');
+    addLog('→ GET /api/status');
+    const res = await fetch('/api/status');
     addLog('← HTTP ' + res.status);
 
     if (!res.ok) {
@@ -13286,7 +13475,7 @@ async function runShopifySync() {
   try {
     const [syncResult, draftResult] = await Promise.all([
       Store.syncFromShopify(),
-      fetch('/api/shopify/draft-orders').then(r=>r.ok?r.json():{count:0,error:'unavailable'}),
+      fetch('/api/orders/drafts').then(r=>r.ok?r.json():{count:0,error:'unavailable'}),
     ]);
     const draftMsg = draftResult.count !== undefined ? ' · '+draftResult.count+' draft orders' : '';
     if(box) box.textContent = syncResult.synced
@@ -13332,7 +13521,7 @@ window.onerror=function(msg,url,line,col,err){
 };
 window.onload=()=>{
  try{
- const DATA_VERSION='v31';
+ const DATA_VERSION='v32';
  if(localStorage.getItem('am_data_version')!==DATA_VERSION){
     const keys=Object.keys(localStorage);keys.forEach(k=>{if(k.startsWith('am_'))localStorage.removeItem(k);});
  ['am_products','am_pos','am_styles','am_inventory','am_notifications','am_demand','am_web_analytics','am_integrations','am_transfers','am_components_v2','am_shipments','am_milestones','am_launch'].forEach(k=>localStorage.removeItem(k));
@@ -13975,25 +14164,13 @@ function renderTrunkPOS(sub) {
 }
 
 // ─── CASH FLOW TRUNK ─────────────────────────────────────────────
-async function renderTrunkCF(sub) {
+function renderTrunkCF(sub) {
  sub = sub || 'cf-overview';
  const sales30 = getSalesSince(30);
  const sales7  = getSalesSince(7);
  const pos = Store.getPOs().filter(p=>p.status!=='complete');
  const rev30 = getSalesRevenue(sales30);
  const rev7  = getSalesRevenue(sales7);
- // Live POS data from real Netlify endpoints
- let posToday=null, posByLoc=null;
- try{
-  const [r1,r2]=await Promise.all([
-   fetch('/api/pos/today'),
-   fetch('/api/pos/by-location?days=7'),
-  ]);
-  if(r1.ok) posToday=await r1.json();
-  if(r2.ok) posByLoc=await r2.json();
- }catch(e){}
- const liveTodayRev=posToday?.totalRevenue||posToday?.revenue||0;
- const liveStores=posByLoc?.byStore||posByLoc?.locations||posByLoc?.stores||null;
  const fmt = n => '$'+(n>=1000?(n/1000).toFixed(1)+'K':Math.round(n).toLocaleString());
  const fmtFull = n => '$'+Math.round(n).toLocaleString();
 
@@ -14019,8 +14196,7 @@ async function renderTrunkCF(sub) {
 
  if (sub === 'cf-overview') {
   body = `
-   <div style="display:grid;grid-template-columns:repeat(${liveTodayRev>0?4:3},1fr);gap:16px;margin-bottom:28px">
-    ${liveTodayRev>0?`<div class="mbox"><div class="mbox-l">Today (live)</div><div class="mbox-v" style="color:var(--grn)">${fmt(liveTodayRev)}</div><div class="mbox-s" style="color:var(--grn)">● Live from POS</div></div>`:''}
+   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px">
     <div class="mbox"><div class="mbox-l">Inflow (30d)</div><div class="mbox-v" style="color:var(--grn)">${fmt(rev30)}</div><div class="mbox-s">From Shopify orders</div></div>
     <div class="mbox"><div class="mbox-l">Outflow (POs)</div><div class="mbox-v" style="color:var(--red)">${fmt(totalOutflow)}</div><div class="mbox-s">${pendingPayments.length} pending payments</div></div>
     <div class="mbox"><div class="mbox-l">Net (30d)</div><div class="mbox-v" style="color:${net30>=0?'var(--grn)':'var(--red)'}">${fmt(net30)}</div><div class="mbox-s">${net30>=0?'Positive':'Negative'} flow</div></div>
@@ -14049,23 +14225,14 @@ async function renderTrunkCF(sub) {
  if (sub === 'cf-in') {
   // Daily breakdown + per-store + top products
   const byDay = {};
-  // Build byStore — prefer live /api/pos/by-location, fall back to localStorage sales
   const byStore = {};
-  if(liveStores && liveStores.length > 0) {
-   liveStores.forEach(s => {
-    const name = s.store||s.name||s.location||'Unknown';
-    byStore[name] = s.revenue||s.totalRevenue||s.total||0;
-    if(s.avgOrder) window['_posAOV_'+name] = s.avgOrder;
-    if(s.orders) window['_posOrders_'+name] = s.orders;
-   });
-  }
   const byProduct = {};
   sales30.forEach(o => {
    const d = (o.date||'').slice(0,10);
    const store = o.store||o.location||'Online';
    const rev = o.total||0;
    if(d) byDay[d] = (byDay[d]||0) + rev;
-   if(!liveStores) byStore[store] = (byStore[store]||0) + rev;
+   byStore[store] = (byStore[store]||0) + rev;
    (o.items||[]).forEach(item => {
     const id = item.mpId||item.productId||'unknown';
     if(!byProduct[id]) byProduct[id] = {units:0,rev:0};
@@ -14088,10 +14255,10 @@ async function renderTrunkCF(sub) {
    </div>
 
    <div class="card2 mb16">
-    <div class="sec-h"><span style="font-size:12px;font-weight:600">By Location — 30 Days</span><span style="font-size:10px;color:${liveStores?'var(--grn)':'var(--txt3)'}">${liveStores?'● Live POS':'cached'}</span></div>
+    <div class="sec-h"><span style="font-size:12px;font-weight:600">By Location — 30 Days</span></div>
     ${stores.map(([store,rev])=>`
      <div class="drow">
-      <div class="fxb mb4"><span style="font-size:13px;font-weight:500">${store}</span><div style="display:flex;gap:10px;align-items:center"><span style="font-family:var(--mono);font-size:10px;color:var(--txt3)">${window['_posAOV_'+store]?'AOV '+fmt(window['_posAOV_'+store]):''}</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">${fmt(rev)}</span></div></div>
+      <div class="fxb mb4"><span style="font-size:13px;font-weight:500">${store}</span><span style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--grn)">${fmt(rev)}</span></div>
       <div style="height:4px;background:var(--brd);border-radius:2px"><div style="width:${Math.round(rev/maxStore*100)}%;height:100%;background:var(--grn);border-radius:2px;opacity:.7"></div></div>
      </div>`).join('')}
     ${stores.length===0?`<div style="color:var(--txt3);font-size:12px;padding:8px 0">No location data — sync Shopify</div>`:''}
