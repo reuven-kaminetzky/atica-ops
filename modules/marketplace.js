@@ -96,32 +96,42 @@ function render() {
 
   el.innerHTML = `
     <div class="product-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
-      ${filtered.map(mp => `
+      ${filtered.map(mp => {
+        const stockColor = (mp.totalInventory || 0) === 0 ? 'var(--danger)' : mp.totalInventory < 20 ? '#b38600' : 'var(--success)';
+        const stockLabel = mp.totalInventory === 0 ? 'OUT OF STOCK' : mp.totalInventory < 20 ? 'LOW STOCK' : '';
+        return `
         <div class="product-card" data-id="${mp.id}" style="cursor:pointer">
-          ${mp.images && mp.images[0]
-            ? `<img src="${mp.images[0]}&width=300" class="product-img" style="height:180px" />`
-            : `<div class="product-img-placeholder" style="height:180px">${mp.code}</div>`}
+          <div style="position:relative">
+            ${mp.images && mp.images[0]
+              ? `<img src="${mp.images[0]}&width=300" class="product-img" style="height:180px" />`
+              : `<div class="product-img-placeholder" style="height:180px;font-size:1.5rem;font-weight:700">${mp.code}</div>`}
+            ${stockLabel ? `<div style="position:absolute;top:8px;left:8px;font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:3px;background:${stockColor};color:white">${stockLabel}</div>` : ''}
+            ${mp.margin ? `<div style="position:absolute;top:8px;right:8px;font-size:0.65rem;font-weight:600;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,0.6);color:white">${mp.margin}%</div>` : ''}
+          </div>
           <div class="product-info" style="padding:0.85rem">
-            <div class="product-title">${mp.name}</div>
-            <div class="product-meta">${mp.vendor || '—'} · ${mp.code}</div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start">
+              <div class="product-title">${mp.name}</div>
+            </div>
+            <div class="product-meta">${mp.vendor || '—'} · ${mp.cat}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem">
               <div class="product-price">${formatCurrency(mp.liveRetail || mp.retail)}</div>
-              <div style="font-size:0.75rem;color:var(--text-dim)">${formatNumber(mp.totalInventory)} units</div>
+              <div style="font-size:0.75rem;color:${stockColor};font-weight:600">${formatNumber(mp.totalInventory)} units</div>
             </div>
             ${mp.styleCount > 0 ? `
-              <div style="margin-top:0.5rem;display:flex;gap:4px;flex-wrap:wrap">
+              <div style="margin-top:0.5rem;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
                 ${mp.styles.slice(0, 6).map(s => `
-                  <span style="width:18px;height:18px;border-radius:50%;background:${s.color};border:1px solid var(--border);display:inline-block" title="${s.name} (${s.qty})"></span>
+                  <span style="width:18px;height:18px;border-radius:50%;background:${s.color || '#ddd'};border:1px solid var(--border);display:inline-block" title="${s.name} (${formatNumber(s.qty)})"></span>
                 `).join('')}
-                ${mp.styles.length > 6 ? `<span style="font-size:0.7rem;color:var(--text-dim);padding:2px 4px">+${mp.styles.length - 6}</span>` : ''}
+                ${mp.styles.length > 6 ? `<span style="font-size:0.68rem;color:var(--text-dim)">+${mp.styles.length - 6}</span>` : ''}
               </div>
             ` : ''}
-            <div style="margin-top:0.4rem;font-size:0.72rem;color:var(--text-dim)">
-              FOB ${formatCurrency(mp.fob)} · ${mp.margin ? mp.margin + '% margin' : '—'} · ${mp.shopifyProductCount} Shopify products
+            <div style="margin-top:0.5rem;display:flex;justify-content:space-between;font-size:0.72rem;color:var(--text-dim)">
+              <span>FOB ${formatCurrency(mp.fob)}</span>
+              <span>${mp.shopifyProductCount} products · ${mp.variantCount || 0} SKUs</span>
             </div>
           </div>
         </div>
-      `).join('')}
+      `}).join('')}
     </div>
   `;
 

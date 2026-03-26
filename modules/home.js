@@ -1,45 +1,47 @@
 /**
- * Home Module — Navigation tiles, Odoo style
- * No KPIs. No vanity metrics. Just get to work.
+ * Home Module — Navigation tiles + quick status
+ * No KPIs. No vanity metrics. Functional summary + navigation.
  */
 
 import { emit } from './event-bus.js';
+import { api, formatCurrency, formatNumber } from './core.js';
 
 const TILES = [
-  { id: 'marketplace', label: 'Master Products', desc: 'Products, styles, fits, Shopify catalog',          icon: '▤', color: '#1d3557' },
-  { id: 'cash-flow',   label: 'Cash Flow',        desc: 'Revenue, POs, production planning',               icon: '◫', color: '#2d6a4f' },
-  { id: 'stock',       label: 'Stock',             desc: 'Inventory by product and location',               icon: '▦', color: '#6c584c' },
-  { id: 'vendors',     label: 'Vendors',           desc: 'Vendor management, PO rollup',                    icon: '⊞', color: '#714b67' },
-  { id: 'ledger',      label: 'Ledger',            desc: 'Financial entries from orders',                   icon: '◈', color: '#3a0ca3' },
-  { id: 'settings',    label: 'Settings',          desc: 'Shopify connection, sync, cache',                 icon: '⚙', color: '#495057' },
+  { id: 'marketplace', label: 'Master Products', desc: 'Products, styles, fits, Shopify catalog',    icon: '▤', color: '#1d3557' },
+  { id: 'cash-flow',   label: 'Cash Flow',        desc: 'Revenue, POs, production planning',         icon: '◫', color: '#2d6a4f' },
+  { id: 'stock',       label: 'Stock',             desc: 'Inventory by product and location',         icon: '▦', color: '#6c584c' },
+  { id: 'vendors',     label: 'Vendors',           desc: 'Vendor management, PO rollup',              icon: '⊞', color: '#714b67' },
+  { id: 'analytics',   label: 'Analytics',         desc: 'Revenue charts, velocity, demand signals',  icon: '◩', color: '#264653' },
+  { id: 'settings',    label: 'Settings',          desc: 'Shopify connection, sync, cache',            icon: '⚙', color: '#495057' },
 ];
 
 export async function init(container) {
   container.innerHTML = `
-    <div style="max-width:720px;margin:3rem auto;padding:0 1rem">
-      <div style="margin-bottom:2.5rem">
-        <div style="font-size:1.8rem;font-weight:700;letter-spacing:-.5px">Atica Man</div>
+    <div style="max-width:800px;margin:2rem auto;padding:0 1rem">
+      <div style="margin-bottom:2rem">
+        <div style="font-size:1.6rem;font-weight:700;letter-spacing:-.5px">Atica Man</div>
         <div style="font-size:0.85rem;color:var(--text-dim);margin-top:0.25rem">Operations Platform</div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem">
+      <div id="home-summary" style="margin-bottom:1.5rem"></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.75rem">
         ${TILES.map(t => `
           <button class="home-tile" data-route="${t.id}" style="
             display:flex;flex-direction:column;align-items:flex-start;
-            padding:1.5rem;border-radius:var(--radius-lg);
+            padding:1.25rem;border-radius:var(--radius-lg);
             border:1px solid var(--border-light);background:var(--surface);
             cursor:pointer;text-align:left;transition:all .15s;
-            min-height:140px;position:relative;overflow:hidden;
+            min-height:120px;position:relative;overflow:hidden;
           ">
-            <div style="font-size:2rem;margin-bottom:0.75rem;opacity:0.85">${t.icon}</div>
-            <div style="font-size:1rem;font-weight:600;margin-bottom:0.3rem">${t.label}</div>
-            <div style="font-size:0.78rem;color:var(--text-dim);line-height:1.4">${t.desc}</div>
-            <div style="position:absolute;top:0;right:0;width:4px;height:100%;background:${t.color}"></div>
+            <div style="font-size:1.5rem;margin-bottom:0.5rem;opacity:0.85">${t.icon}</div>
+            <div style="font-size:0.92rem;font-weight:600;margin-bottom:0.2rem">${t.label}</div>
+            <div style="font-size:0.75rem;color:var(--text-dim);line-height:1.4">${t.desc}</div>
+            <div style="position:absolute;top:0;right:0;width:3px;height:100%;background:${t.color}"></div>
           </button>
         `).join('')}
       </div>
     </div>
     <style>
-      .home-tile:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); transform:translateY(-2px); }
+      .home-tile:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); transform:translateY(-1px); }
       .home-tile:active { transform:translateY(0); }
     </style>
   `;
@@ -49,6 +51,29 @@ export async function init(container) {
       emit('nav:change', { route: btn.dataset.route });
     });
   });
+
+  // Load quick summary (non-blocking)
+  loadSummary();
+}
+
+async function loadSummary() {
+  const el = document.getElementById('home-summary');
+  if (!el) return;
+
+  try {
+    const status = await api.get('/api/status');
+    if (!status?.connected) {
+      el.innerHTML = `<div style="padding:0.75rem;background:var(--danger-bg);border:1px solid var(--danger);border-radius:var(--radius);font-size:0.85rem;color:var(--danger)">
+        Shopify not connected — check Settings
+      </div>`;
+      return;
+    }
+
+    el.innerHTML = `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;font-size:0.78rem">
+      <span style="padding:0.3rem 0.65rem;background:var(--success-bg);border:1px solid var(--success);border-radius:20px;color:var(--success)">● Connected to ${status.shop}</span>
+      <span style="padding:0.3rem 0.65rem;background:var(--surface-2);border:1px solid var(--border-light);border-radius:20px;color:var(--text-dim)">${status.plan} · ${status.currency} · API ${status.apiVersion}</span>
+    </div>`;
+  } catch (e) { /* silent */ }
 }
 
 export function destroy() {}
