@@ -81,6 +81,7 @@ Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Sh
 - **cash-flow.js** — 4 tabs: Overview (revenue + POs), Purchase Orders (table + create/edit/advance), Production (lead-time reorder plan), Ledger
 - **stock.js** — By Product (MP totals), By Store (MP × Location matrix), Locations (raw)
 - **vendors.js** — Vendor cards with MP product lines, PO rollup, expandable details
+- **analytics.js** — MP velocity, category breakdown bars, daily revenue chart, 7/30/90d toggle
 - **pos.js** — Today's sales, feed, by-store (data feed only — not priority)
 - **ledger.js** — Financial entries with configurable day range
 - **settings.js** — Shopify status, sync controls, cache, webhooks
@@ -88,7 +89,7 @@ Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Sh
 - **event-bus.js** — Pub/sub with EVENTS registry
 
 **Shell (atica_v2.html):**
-- Sidebar: Catalog (Master Products, Stock) → Operations (Cash Flow, Vendors) → Finance (Ledger, Sales Feed) → System (Settings)
+- Sidebar: Catalog (Master Products, Stock) → Operations (Cash Flow, Vendors, Analytics) → Finance (Ledger, Sales Feed) → System (Settings)
 - Mobile: hamburger toggle, backdrop overlay, auto-close on nav
 - Modal system → `emit('modal:open', { title, html, onMount, onClose, wide })`
 - Toast notifications → `emit('toast:show', { message, type })`
@@ -132,7 +133,7 @@ netlify/functions/          # 12 Netlify Functions
   oauth-callback.js         # OAuth token exchange
 
 modules/                    # V2 frontend ES modules
-  [10 modules — see above]
+  [11 modules — see above]
 
 docs/ARCHITECTURE.md        # Full system architecture
 ```
@@ -158,9 +159,10 @@ git pull origin main   # Always pull first
 
 ### Always
 - Use `createHandler(ROUTES, prefix)` for every Netlify function
+- Use `validate.days(params)` for day parameters — never inline `parseInt`
+- Use `validate.required(body, ['field1', 'field2'])` for required body fields
 - Use `lib/products.js` for MP seeds and matching
 - Use `lib/locations.js` for store normalization
-- Cap `days` params: `Math.min(parseInt(params.days || '30', 10), 365)`
 - Add `noClient: true` to routes that don't need Shopify client
 - Use `emit('modal:open', {...})` for modals — don't build inline overlays
 - Use `emit('toast:show', {...})` for notifications
@@ -210,15 +212,14 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 
 ### High Priority
 - [ ] MP PLM stage tracking — persist which PLM stage each MP is at (concept→in-store→reorder review→EOL)
-- [ ] Analytics module — dedicated analytics page with MP velocity charts, category breakdown, trend lines
 - [ ] MP detail needs size grid — show available sizes per fit per style (the full matrix)
 - [ ] Cash-flow overview should show real cost breakdown (PO costs vs revenue, not just revenue)
 
 ### Medium Priority
 - [ ] Sales pulse backoff in monolith — if syncSalesPulse fails, double interval up to 15 min
-- [ ] v2 event bus end-to-end testing — events fire but some subscriptions are stubs
 - [ ] PO bulk actions — select multiple POs, advance stage, or export
 - [ ] Inventory transfer UI — stock module has the tab but no form yet
+- [ ] CRM / customer profiles — Shopify order history per customer
 
 ### Lower Priority
 - [ ] Monolith → v2 migration plan (both run on same backend, v2 is the long-term)
@@ -226,6 +227,15 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 - [ ] CI test pipeline (endpoint tests exist but DNS blocked from CI)
 
 ### Done (do not rebuild)
+- [x] Analytics module — MP velocity, category bars, daily revenue chart, 7/30/90d toggle
+- [x] PO edit form with Edit/Save toggle (Shendrao-san built this)
+- [x] Input validation standardized — validate.days(), validate.required(), validate.intParam()
+- [x] Module loader bug fix — destroys CORRECT module on navigation
+- [x] Global error boundary — unhandled rejections → toast
+- [x] API client timeout (15s) + better Shopify error messages
+- [x] Cache key determinism — sorted params
+- [x] Settings diagnostics — API version, store URL, connection hints
+- [x] Store + API version auto-detection (tries 2 stores × 6 versions)
 - [x] MP detail with Quick PO + Full Form shortcuts
 - [x] PO detail view with stage track, check-ins, history, stage advancement
 - [x] PO edit form — editable fields (vendor, units, FOB, ETD, ETA, container, vessel, notes)
