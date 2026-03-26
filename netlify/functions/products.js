@@ -198,7 +198,7 @@ async function seedCatalog() {
 
 async function reorderPlan(client, { params }) {
   const days = validate.days(params);
-  const coverDays = validate.intParam(params, 'cover', { min: 30, max: 365, fallback: 90 }); // target days of stock to maintain
+  const coverDays = validate.intParam(params, 'cover', { min: 30, max: 365, fallback: 140 }); // 20 weeks — business target is 16-24 weeks
   const ck = cache.makeKey('reorder', { days, coverDays });
   const cached = cache.get(ck);
   if (cached) return cached;

@@ -24,6 +24,87 @@ Atica Man is a menswear retail operations platform. Static HTML + Netlify Functi
 **POS is NOT a priority.** Renamed to "Sales Feed" — just a data feed into cash flow.
 **No KPIs. No vanity metrics.** Odoo style — functional tiles, real data.
 
+## Business Intelligence (from original prototype)
+
+These formulas and constants come from the 14K-line monolith. They're the real business logic.
+
+### Key Numbers
+- **$4.3M** annual revenue, **$1.1M** inventory at cost
+- **35 products**, 91 styles, **~63%** average margin
+- **14 vendors**, **5 wholesale accounts**
+- **OpEx:** $25K/month (hardcoded, should be configurable)
+- **Target cover:** 16-24 weeks of stock
+
+### Seasonal Multipliers (affect ALL forecasting)
+```
+Spring/Summer:    0.85x
+Back-to-School:   1.40x  (Aug-Sep)
+Fall/Winter:      1.15x
+Holiday:          1.60x  (Nov-Dec)
+```
+Our reorder endpoint does NOT use these yet. `adjustedVelocity = baseVelocity × seasonMultiplier`.
+
+### Landed Cost
+```
+landed = FOB × 1.34  (duty + freight combined)
+margin = (retail - landed) / retail × 100
+```
+The 1.34 multiplier is a blunt approximation. We have per-product duty% in seeds — use that instead when available: `landed = FOB × (1 + duty/100) + freight`.
+
+### Production Planning Priority Score
+```
+adjustedVelocity = baseVelocity × seasonMultiplier
+coverWeeks = totalStock / adjustedVelocity
+suggestedQty = (targetCoverWeeks - coverWeeks) × adjustedVelocity
+priority = f(coverWeeks, leadTimeUrgency, velocity, marginContribution)
+```
+Our `/api/products/reorder` does the basic version. It needs seasonal adjustment and priority scoring.
+
+### Demand Signals
+```
+Hot:      sell-through ≥ 85% AND velocity ≥ 5/wk
+Rising:   sell-through ≥ 70% AND velocity ≥ 3/wk
+Steady:   everything else
+Slow:     sell-through < 40% AND velocity < 2/wk
+Stockout: zero stock with active demand
+```
+
+### Distribution Weights (store allocation targets)
+```
+Lakewood: 30%, Flatbush: 20%, Crown Heights: 15%, Monsey: 25%, Online: 10%
+```
+
+### Customer Loyalty Tiers
+```
+Bronze:   $0+     → 0% discount,  1.0x points
+Silver:   $500+   → 5% discount,  1.5x points
+Gold:     $1500+  → 10% discount, 2.0x points
+Platinum: $3000+  → 15% discount, 2.5x points
+Diamond:  $5000+  → 20% discount, 3.0x points
+```
+
+### Vendor Tiers
+```
+Strategic:     core vendors, long-term relationships
+Preferred:     reliable, competitive pricing
+Standard:      adequate, used for fills
+Transactional: one-off or seasonal
+```
+Vendors have: onTime%, qualScore. Not tracked in our system yet.
+
+### Product Stack (original 6-phase lifecycle)
+```
+Brief → Sourcing → Development → Costing → Content → Launch
+```
+This is different from our 18-stage PLM. The original was simpler and more practical. Consider aligning.
+
+### Data Models NOT Built Yet
+- **Wholesale accounts** — 5 accounts with credit limits, terms, discount rates
+- **Components/BOM** — fabric, lining, buttons, zippers per product (keyed by type)
+- **Campaigns** — marketing campaigns with budget, dates, status
+- **Customer sizes** — shirt, pants, suit, shoe sizes per customer
+- **Planned POs** — auto-generated from production planning engine
+
 ## Codebase Overview
 
 ```
@@ -281,23 +362,38 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 
 ## What Needs Work
 
-### High Priority
-- [ ] Wire PLM to marketplace detail modal — show current PLM stage, allow advancement
-- [ ] MP detail size grid — available sizes per fit per style (full matrix)
-- [ ] Cash-flow cost breakdown — PO costs vs revenue, not just revenue total
-- [ ] Customers module — wire the 4 existing endpoints to a UI module
+### High Priority — Business Logic
+- [ ] **Seasonal multipliers in reorder** — adjust velocity by season (0.85x spring, 1.4x BTS, 1.15x fall, 1.6x holiday). Currently reorder uses raw velocity.
+- [ ] **Demand signals** — classify each MP as Hot/Rising/Steady/Slow/Stockout based on sell-through + velocity. Show on marketplace cards and analytics.
+- [ ] **Cash-flow cost projection** — use formula: revenue = velocity × retail × 4.33/mo, COGS = velocity × landed × 4.33. 12-week forward projection from PO payment schedules.
+- [ ] **Distribution weights** — when PO arrives, suggest store allocation: Lakewood 30%, Flatbush 20%, CH 15%, Monsey 25%, Online 10%. Show ideal vs actual in stock module.
+
+### High Priority — Wiring
+- [ ] Wire PLM to marketplace detail modal — show current stage, allow advancement
+- [ ] MP detail size grid — available sizes per fit per style (the full matrix)
+- [ ] Customers module — wire 4 existing endpoints to a UI (list, detail+orders, top, segments)
+- [ ] Customer loyalty tiers — Bronze→Diamond with LTV thresholds, discount %, points multiplier
 
 ### Medium Priority
-- [ ] Shipments module — wire CRUD endpoints to a UI (auto-created on PO "In Transit")
-- [ ] Inventory transfer form — stock module has the tab placeholder, backend ready
+- [ ] Shipments module — wire CRUD endpoints (auto-created on PO "In Transit")
+- [ ] Inventory transfer form — stock module has the tab, backend ready
+- [ ] Vendor scoring — add onTime%, qualScore, tier (Strategic/Preferred/Standard/Transactional) to vendor data
+- [ ] PO payment schedule — each PO has deposit/balance/final payments with due dates and status
 - [ ] PO bulk actions — select multiple, advance stage, or export
-- [ ] Sales pulse backoff in monolith
+
+### Future — Not Built Yet
+- [ ] Wholesale accounts — 5 accounts with credit limits, terms, discount rates
+- [ ] Components/BOM — fabric, lining, buttons per product
+- [ ] Campaigns — marketing campaigns with budget, dates
+- [ ] QuickBooks integration — AP/AR sync
+- [ ] Lightspeed POS integration — retail store data
+- [ ] Command palette (Cmd+K) — global search
+- [ ] Role-based nav — sidebar items by role
 
 ### Lower Priority
 - [ ] Monolith → v2 migration plan
 - [ ] Remove dead code (stocky.js, oauth-callback.js)
-- [ ] Branch protection in GitHub
-- [ ] CI test pipeline
+- [ ] Branch protection, CI pipeline
 
 ### Done (do not rebuild)
 - [x] Analytics module — velocity, category bars, daily chart, 7/30/90d

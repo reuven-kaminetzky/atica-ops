@@ -50,7 +50,7 @@ export async function init(container) {
       api.get('/api/orders/sales', { days: 30 }),
       api.get('/api/purchase-orders'),
       api.get('/api/purchase-orders/stages'),
-      api.get('/api/products/reorder', { days: 30, cover: 90 }),
+      api.get('/api/products/reorder', { days: 30 }),
       api.get('/api/products/seeds'),
     ]);
     state.salesData = sales.status === 'fulfilled' ? sales.value : null;
