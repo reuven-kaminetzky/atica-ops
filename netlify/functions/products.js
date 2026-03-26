@@ -21,6 +21,25 @@ const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
 const store = require('../../lib/store');
 
+// ── Shared Helpers ─────────────────────────────────────────
+// Inventory fetch is expensive (sequential per location).
+// Cache it within this function's memory so reorder + stock share it.
+
+async function fetchAllInventory(client) {
+  const ck = cache.makeKey('_inv_all', {});
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  const { locations } = await client.getLocations();
+  const result = [];
+  for (const loc of locations) {
+    const { inventory_levels } = await client.getInventoryLevels(loc.id);
+    result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
+  }
+  cache.set(ck, result, cache.CACHE_TTL.inventory);
+  return result;
+}
+
 // ── Handlers ────────────────────────────────────────────────
 
 async function listProducts(client) {
@@ -188,15 +207,7 @@ async function reorderPlan(client, { params }) {
   const [productsData, ordersData, inventoryData] = await Promise.all([
     client.getProducts(),
     client.getOrders({ created_at_min: sinceDate(days) }),
-    (async () => {
-      const { locations } = await client.getLocations();
-      const result = [];
-      for (const loc of locations) {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
-      }
-      return result;
-    })(),
+    fetchAllInventory(client),
   ]);
 
   const products = productsData.products;
@@ -361,15 +372,7 @@ async function stockByLocation(client) {
 
   const [productsData, inventoryData] = await Promise.all([
     client.getProducts(),
-    (async () => {
-      const { locations } = await client.getLocations();
-      const result = [];
-      for (const loc of locations) {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
-      }
-      return result;
-    })(),
+    fetchAllInventory(client),
   ]);
 
   const { matched } = matchAll(productsData.products);
@@ -427,6 +430,66 @@ async function stockByLocation(client) {
   return result;
 }
 
+// ── PLM Stage Tracking ──────────────────────────────────────
+// Persists which lifecycle stage each MP is at.
+// Data in Netlify Blobs (store.plm), not Shopify.
+
+async function getPlmStatus() {
+  const allStages = await store.plm.getAll();
+  // Merge with seed data
+  const statusMap = {};
+  for (const entry of allStages) statusMap[entry.mpId || entry.key] = entry;
+
+  const result = MP_SEEDS.map(seed => {
+    const saved = statusMap[seed.id];
+    return {
+      mpId: seed.id,
+      name: seed.name,
+      code: seed.code,
+      cat: seed.cat,
+      plmStage: saved?.plmStage || 'In-Store',
+      plmStageId: saved?.plmStageId || 16,
+      updatedAt: saved?.updatedAt || null,
+      updatedBy: saved?.updatedBy || null,
+      history: saved?.history || [],
+    };
+  });
+
+  return { count: result.length, stages: PLM_STAGES, products: result };
+}
+
+async function updatePlmStage(client, { pathParams, body }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  validate.required(body, ['plmStage']);
+  const targetStage = PLM_STAGES.find(s => s.name === body.plmStage || s.id === body.plmStage);
+  if (!targetStage) throw new RouteError(400, `Invalid PLM stage: ${body.plmStage}`);
+
+  const existing = await store.plm.get(mpId) || {};
+  const now = new Date().toISOString();
+
+  const updated = {
+    ...existing,
+    mpId,
+    plmStage: targetStage.name,
+    plmStageId: targetStage.id,
+    updatedAt: now,
+    updatedBy: body.updatedBy || null,
+    history: [...(existing.history || []), {
+      from: existing.plmStage || 'In-Store',
+      to: targetStage.name,
+      at: now,
+      by: body.updatedBy || null,
+      notes: body.notes || null,
+    }],
+  };
+
+  await store.plm.put(mpId, updated);
+  return { updated: true, product: updated };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
@@ -438,6 +501,8 @@ const ROUTES = [
   { method: 'GET',   path: 'seeds',           handler: seedCatalog,    noClient: true },
   { method: 'GET',   path: 'reorder',         handler: reorderPlan },
   { method: 'GET',   path: 'stock',           handler: stockByLocation },
+  { method: 'GET',   path: 'plm',             handler: getPlmStatus,   noClient: true },
+  { method: 'PATCH', path: 'plm/:id',         handler: updatePlmStage, noClient: true },
   { method: 'GET',   path: 'sku-map',         handler: skuMap },
   { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },
