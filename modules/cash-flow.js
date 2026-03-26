@@ -418,6 +418,11 @@ function openPODetail(po) {
           emit('toast:show', { message: `PO advanced to ${nextStage.name}`, type: 'success' });
           emit('po:updated', { id: po.id, stage: nextStage.name });
 
+          // Specific events for key stage transitions
+          if (nextStage.name === 'Received') {
+            emit('po:received', { po: { ...po, stage: 'Received' }, items: po.units });
+          }
+
           // Refresh
           const posData = await api.get('/api/purchase-orders');
           state.purchaseOrders = posData.purchaseOrders || [];
