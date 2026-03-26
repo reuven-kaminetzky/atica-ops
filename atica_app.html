@@ -3846,7 +3846,7 @@ function renderFinAP(){
    }
   });
   if(!recon.length) return '<div style="background:rgba(26,120,56,.06);border:1px solid rgba(26,120,56,.2);border-radius:var(--rl);padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--grn)">✓ All AP invoices matched to POs — no reconciliation issues</div>';
-  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate('pos')">View POs</button><button class="btn btn-sm" onclick="navigate('fin-cashflow')">Cash Flow</button></div></div>';
+  return '<div style="background:rgba(138,58,42,.08);border:1px solid rgba(138,58,42,.3);border-radius:var(--rl);padding:14px 16px;margin-bottom:16px"><div style="font-size:12px;font-weight:700;color:var(--brick);margin-bottom:8px">⚠ '+recon.length+' reconciliation issue'+( recon.length>1?'s':'')+' — AP vs POs</div>'+recon.map(r=>'<div style="display:grid;grid-template-columns:16px 1fr 80px;gap:8px;padding:6px 0;border-bottom:1px solid rgba(138,58,42,.15);font-size:11px;align-items:start"><span>'+{unmatched:'❓',mismatch:'💲'}[r.type]+'</span><div><div style="font-weight:600">'+r.msg+'</div><div style="color:var(--faded);margin-top:1px">'+r.detail+'</div></div><span style="font-family:var(--mono);text-align:right;color:var(--brick);font-weight:600">$'+Math.round(r.amount).toLocaleString()+'</span></div>').join('')+'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-sm" onclick="navigate(&#39;pos&#39;)">View POs</button><button class="btn btn-sm" onclick="navigate(&#39;fin-cashflow&#39;)">Cash Flow</button></div></div>';
  })()}
 
  ${sortedVendors.map(([vendor,data],vi)=>{
@@ -11408,14 +11408,8 @@ function renderProductStack(id) {
   const vendor=vendorId?Store.getVendor(vendorId):null;
   const comps=(()=>{try{return JSON.parse(localStorage.getItem('am_components_v2')||'{}');}catch(e){return{};}})();
   const myComps=Object.entries(comps).flatMap(([type,arr])=>(arr||[]).filter(c=>(c.cats||[]).includes(id)));
-  const dna=(()=>{try{return JSON.parse(localStorage.getItem('am_dna_'+id)||'{}');}catch(e){return{};}})();
-  const constr=dna.construction||{};
-  const catComps=Store.CATEGORY_COMPONENTS[p.cat]||{};
-  const sizes=Store.SIZE_SETS[p.sizes]||[];
-  const core=Store.CORE[p.sizes]||[];
   const catConfig=Store.CATEGORY_CONFIG[p.cat]||{};
-  const activePOs=pos.filter(po=>po.status!=='complete');
-  const incoming=activePOs.reduce((s,po)=>s+po.units,0);
+  const activePOs=openPOs;
   const ppItem=getProductionPlan().plan.find(x=>x.id===id);
   const wa=Store.getWebAnalyticsFor(id)||{};
   const LOCS=Store.LOCS;
