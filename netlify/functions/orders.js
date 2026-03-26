@@ -3,16 +3,18 @@
  * Owner: Stallon (API layer)
  * 
  * Routes:
- *   GET  /api/orders           → list orders (with ?since= filter)
- *   POST /api/orders/sync      → sync orders from Shopify
- *   GET  /api/orders/velocity  → velocity by SKU (?days=30)
- *   GET  /api/orders/sales     → sales summary (?days=30)
- *   GET  /api/orders/drafts    → draft orders
+ *   GET  /api/orders              → list orders (with ?since= filter)
+ *   POST /api/orders/sync         → sync orders from Shopify
+ *   GET  /api/orders/velocity     → velocity by SKU (?days=30)
+ *   GET  /api/orders/sales        → sales summary (?days=30)
+ *   GET  /api/orders/mp-velocity  → velocity by Master Product (?days=30)
+ *   GET  /api/orders/drafts       → draft orders
  */
 
 const { createHandler } = require('../../lib/handler');
 const { mapOrder } = require('../../lib/mappers');
 const { sinceDate, buildVelocity, buildSalesSummary } = require('../../lib/analytics');
+const { matchAll, MP_BY_ID } = require('../../lib/products');
 const cache = require('../../lib/cache');
 
 // ── Handlers ────────────────────────────────────────────────
@@ -92,14 +94,122 @@ async function draftOrders(client, { params }) {
   };
 }
 
+// ── MP-level analytics ──────────────────────────────────────
+// Aggregates order data by Master Product, not by individual SKU.
+// This is what drives production planning and reorder decisions.
+
+async function mpVelocity(client, { params }) {
+  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const ck = cache.makeKey('mp-velocity', { days });
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  // Fetch orders + products in parallel
+  const [ordersData, productsData] = await Promise.all([
+    client.getOrders({ created_at_min: sinceDate(days) }),
+    client.getProducts(),
+  ]);
+
+  const orders = ordersData.orders;
+  const products = productsData.products;
+
+  // Build product_id → MP seed ID lookup
+  const { matched } = matchAll(products);
+  const productIdToMP = {};
+  for (const [seedId, shopifyProducts] of Object.entries(matched)) {
+    for (const sp of shopifyProducts) {
+      productIdToMP[sp.id] = seedId;
+    }
+  }
+
+  // Aggregate orders by MP
+  const byMP = {};
+  let unmatchedUnits = 0;
+  let unmatchedRevenue = 0;
+
+  for (const order of orders) {
+    for (const li of order.line_items) {
+      const mpId = productIdToMP[li.product_id];
+      if (!mpId) {
+        unmatchedUnits += li.quantity;
+        unmatchedRevenue += parseFloat(li.price) * li.quantity;
+        continue;
+      }
+
+      if (!byMP[mpId]) {
+        const seed = MP_BY_ID[mpId];
+        byMP[mpId] = {
+          mpId,
+          name: seed?.name || mpId,
+          code: seed?.code || '',
+          cat: seed?.cat || '',
+          vendor: seed?.vendor || '',
+          fob: seed?.fob || 0,
+          retail: seed?.retail || 0,
+          units: 0,
+          revenue: 0,
+          orders: 0,
+          orderIds: new Set(),
+        };
+      }
+      byMP[mpId].units += li.quantity;
+      byMP[mpId].revenue += parseFloat(li.price) * li.quantity;
+      byMP[mpId].orderIds.add(order.id);
+    }
+  }
+
+  // Compute velocity and production signals
+  const mpList = Object.values(byMP).map(mp => {
+    mp.orders = mp.orderIds.size;
+    delete mp.orderIds;
+    mp.revenue = +mp.revenue.toFixed(2);
+    mp.unitsPerDay = +(mp.units / days).toFixed(2);
+    mp.revenuePerDay = +(mp.revenue / days).toFixed(2);
+    mp.avgPrice = mp.units > 0 ? +(mp.revenue / mp.units).toFixed(2) : 0;
+    mp.margin = mp.fob > 0 && mp.avgPrice > 0 ? +((1 - mp.fob / mp.avgPrice) * 100).toFixed(1) : null;
+
+    // Production planning signals
+    // At current velocity, how many days of stock remain?
+    // (requires inventory data — placeholder, will enrich when inventory is fetched)
+    mp.projectedMonthly = Math.round(mp.unitsPerDay * 30);
+    mp.projectedQuarterly = Math.round(mp.unitsPerDay * 90);
+
+    return mp;
+  });
+
+  mpList.sort((a, b) => b.units - a.units);
+
+  const result = {
+    days,
+    totalOrders: orders.length,
+    totalMPs: mpList.length,
+    velocity: mpList,
+    summary: {
+      totalUnits: mpList.reduce((s, m) => s + m.units, 0),
+      totalRevenue: +mpList.reduce((s, m) => s + m.revenue, 0).toFixed(2),
+      unmatchedUnits,
+      unmatchedRevenue: +unmatchedRevenue.toFixed(2),
+      topCategory: (() => {
+        const byCat = {};
+        for (const m of mpList) byCat[m.cat] = (byCat[m.cat] || 0) + m.units;
+        return Object.entries(byCat).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+      })(),
+    },
+  };
+
+  cache.set(ck, result, cache.CACHE_TTL.velocity);
+  return result;
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
-  { method: 'GET',   path: '',         handler: listOrders },
-  { method: 'POST',  path: 'sync',     handler: syncOrders },
-  { method: 'GET',   path: 'velocity', handler: velocity },
-  { method: 'GET',   path: 'sales',    handler: sales },
-  { method: 'GET',   path: 'drafts',   handler: draftOrders },
+  { method: 'GET',   path: '',            handler: listOrders },
+  { method: 'POST',  path: 'sync',        handler: syncOrders },
+  { method: 'GET',   path: 'velocity',    handler: velocity },
+  { method: 'GET',   path: 'sales',       handler: sales },
+  { method: 'GET',   path: 'mp-velocity', handler: mpVelocity },
+  { method: 'GET',   path: 'drafts',      handler: draftOrders },
 ];
 
 exports.handler = createHandler(ROUTES, 'orders');
