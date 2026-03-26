@@ -99,6 +99,24 @@ function render() {
       </div>
     </div>
 
+    <!-- Demand Signals + Seasonal Indicator -->
+    ${v?.summary?.signals ? `
+      <div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+        <div style="display:flex;gap:0.5rem;align-items:center">
+          ${v.summary.signals.hot ? `<span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:10px;background:#fee2e2;color:#b91c1c;font-weight:600">🔥 ${v.summary.signals.hot} Hot</span>` : ''}
+          ${v.summary.signals.rising ? `<span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:10px;background:#dcfce7;color:#15803d;font-weight:600">📈 ${v.summary.signals.rising} Rising</span>` : ''}
+          ${v.summary.signals.slow ? `<span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:10px;background:#dbeafe;color:#1d4ed8;font-weight:600">📉 ${v.summary.signals.slow} Slow</span>` : ''}
+          <span style="font-size:0.75rem;padding:0.15rem 0.5rem;border-radius:10px;background:var(--surface-2);color:var(--text-dim)">${v.summary.signals.steady || 0} Steady</span>
+        </div>
+        ${v.seasonalMultiplier ? `
+          <div style="font-size:0.72rem;color:var(--text-dim);margin-left:auto">
+            Season: ${v.seasonalMultiplier}x
+            ${v.seasonalMultiplier > 1.2 ? ' 📈' : v.seasonalMultiplier < 0.9 ? ' 📉' : ''}
+          </div>
+        ` : ''}
+      </div>
+    ` : ''}
+
     <!-- Daily Revenue Chart -->
     ${dailySales.length ? `
       <h3 style="margin-bottom:0.5rem">Daily Revenue</h3>
@@ -132,26 +150,30 @@ function render() {
     <h3 style="margin-bottom:0.5rem">Top Products by Revenue</h3>
     <table class="data-table">
       <thead><tr>
-        <th>#</th><th>Product</th><th>Category</th>
+        <th>#</th><th>Product</th><th>Signal</th><th>Category</th>
         <th style="text-align:right">Units</th>
         <th style="text-align:right">Revenue</th>
-        <th style="text-align:right">Units/Day</th>
+        <th style="text-align:right">/Week</th>
         <th style="text-align:right">Avg Price</th>
         <th style="text-align:right">Margin</th>
       </tr></thead>
       <tbody>
-        ${mpList.slice(0, 20).map((mp, i) => `
+        ${mpList.slice(0, 20).map((mp, i) => {
+          const sigMap = { hot: '🔥', rising: '📈', slow: '📉', steady: '—', stockout: '⚠' };
+          const sigColor = { hot: '#b91c1c', rising: '#15803d', slow: '#1d4ed8', steady: 'var(--text-muted)', stockout: '#b91c1c' };
+          return `
           <tr>
             <td style="color:var(--text-dim);font-size:0.78rem">${i + 1}</td>
             <td style="font-weight:600">${mp.name}</td>
+            <td style="font-size:0.78rem;color:${sigColor[mp.signal] || 'var(--text-dim)'}">${sigMap[mp.signal] || '—'} ${mp.signal || ''}</td>
             <td style="font-size:0.78rem;color:var(--text-dim)">${mp.cat}</td>
             <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(mp.units)}</td>
             <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatCurrency(mp.revenue)}</td>
-            <td style="text-align:right;font-family:var(--font-mono)">${mp.unitsPerDay}</td>
+            <td style="text-align:right;font-family:var(--font-mono)">${mp.velocityPerWeek || mp.unitsPerDay}</td>
             <td style="text-align:right">${formatCurrency(mp.avgPrice)}</td>
             <td style="text-align:right">${mp.margin !== null ? mp.margin + '%' : '—'}</td>
           </tr>
-        `).join('')}
+        `}).join('')}
       </tbody>
     </table>
 
