@@ -3,11 +3,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     const { neon } = require('@netlify/neon');
-    const url = process.env.NETLIFY_DATABASE_URL || process.env.DATABASE_URL;
-    if (!url) return NextResponse.json({ connected: false, error: 'No DATABASE_URL' });
-
-    const sql = neon(url);
-    const [result] = await sql`SELECT NOW() as time`;
+    const sql = neon();
 
     const counts = await sql`
       SELECT 
@@ -19,12 +15,7 @@ export async function GET() {
         (SELECT COUNT(*) FROM shipments) as shipments
     `;
 
-    return NextResponse.json({
-      connected: true,
-      database: 'postgres',
-      time: result.time,
-      ...counts[0],
-    });
+    return NextResponse.json({ connected: true, database: 'postgres', ...counts[0] });
   } catch (e) {
     return NextResponse.json({ connected: false, error: e.message }, { status: 500 });
   }
