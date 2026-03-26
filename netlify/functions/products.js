@@ -513,22 +513,191 @@ async function updatePlmStage(client, { pathParams, body }) {
   return { updated: true, product: updated };
 }
 
+// ── Factory Package ─────────────────────────────────────────
+// Generates everything a vendor needs to produce a product.
+// Combines MP seed data + PLM artifacts + PO details.
+
+const { FACTORY_PACKAGE_SECTIONS, MP_STATUS_RULES } = require('../../lib/domain');
+
+async function factoryPackage(client, { pathParams }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  // Get PLM data
+  const plm = await store.plm.get(mpId) || {};
+
+  // Get active POs for this MP
+  let pos = [];
+  try {
+    const allPOs = await store.po.getAll();
+    pos = allPOs.filter(po => po.mpId === mpId);
+  } catch (e) { /* empty */ }
+
+  const latestPO = pos.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0] || null;
+
+  // Build package
+  const pkg = {
+    generatedAt: new Date().toISOString(),
+    mpId: seed.id,
+    productIdentity: {
+      name: seed.name,
+      code: seed.code,
+      category: seed.cat,
+      vendor: seed.vendor,
+      heroImg: seed.heroImg || null,
+      shopifyUrl: seed.shopifyUrl || null,
+    },
+    techSpecs: {
+      fits: seed.fits || [],
+      sizes: seed.sizes || null,
+      features: seed.features || [],
+      construction: seed.construction || null,
+    },
+    costing: {
+      fob: seed.fob,
+      retail: seed.retail,
+      duty: seed.duty || 0,
+      hts: seed.hts || null,
+      landedCost: +(seed.fob * (1 + (seed.duty || 0) / 100 + 0.08)).toFixed(2),
+      margin: seed.retail > 0 ? +((1 - seed.fob * 1.34 / seed.retail) * 100).toFixed(1) : null,
+      moq: seed.moq || null,
+      leadTimeDays: seed.lead || null,
+    },
+    plmStatus: {
+      currentStage: plm.plmStage || 'Concept',
+      stageId: plm.plmStageId || 1,
+      updatedAt: plm.updatedAt || null,
+      updatedBy: plm.updatedBy || null,
+    },
+    activePOs: pos.map(po => ({
+      id: po.id,
+      stage: po.stage,
+      units: po.units || 0,
+      fobTotal: po.fobTotal || 0,
+      etd: po.etd || null,
+      vendor: po.vendor || seed.vendor,
+    })),
+    latestPO: latestPO ? {
+      id: latestPO.id,
+      units: latestPO.units || 0,
+      styles: latestPO.styles || [],
+      sizeBreakdown: latestPO.sizeBreakdown || null,
+      etd: latestPO.etd || null,
+      container: latestPO.container || null,
+    } : null,
+    sections: FACTORY_PACKAGE_SECTIONS.map(s => s.label),
+  };
+
+  return { package: pkg };
+}
+
+// ── MP Status (derived) ─────────────────────────────────────
+
+async function mpStatus(client, { params }) {
+  const days = validate.days(params);
+
+  // Fetch all data sources
+  const [productsData, ordersData] = await Promise.all([
+    client.getProducts(),
+    client.getOrders({ created_at_min: sinceDate(days) }),
+  ]);
+
+  const { matched } = matchAll(productsData.products);
+
+  // Build velocity by MP
+  const productIdToMP = {};
+  for (const [seedId, shopifyProducts] of Object.entries(matched)) {
+    for (const sp of shopifyProducts) productIdToMP[sp.id] = seedId;
+  }
+  const mpVelocity = {};
+  for (const order of ordersData.orders) {
+    for (const li of order.line_items) {
+      const mpId = productIdToMP[li.product_id];
+      if (!mpId) continue;
+      if (!mpVelocity[mpId]) mpVelocity[mpId] = 0;
+      mpVelocity[mpId] += li.quantity;
+    }
+  }
+
+  // Get PLM + PO data
+  let plmData = [], poData = [];
+  try { plmData = await store.plm.getAll(); } catch (e) {}
+  try { poData = await store.po.getAll(); } catch (e) {}
+
+  const plmByMP = {};
+  for (const p of plmData) plmByMP[p.mpId || p.key] = p;
+  const posByMP = {};
+  for (const po of poData) {
+    if (!po.mpId) continue;
+    if (!posByMP[po.mpId]) posByMP[po.mpId] = [];
+    posByMP[po.mpId].push(po);
+  }
+
+  const statuses = MP_SEEDS.map(seed => {
+    const plm = plmByMP[seed.id] || {};
+    const pos = posByMP[seed.id] || [];
+    const activePOs = pos.filter(po => !['Received', 'Distribution'].includes(po.stage));
+    const unitsSold = mpVelocity[seed.id] || 0;
+
+    // Compute inventory (simplified — uses matched product variant totals)
+    let totalInventory = 0;
+    const matchedProducts = matched[seed.id] || [];
+    for (const sp of matchedProducts) {
+      for (const v of sp.variants) totalInventory += (v.inventory_quantity || 0);
+    }
+
+    const unitsPerDay = unitsSold / days;
+    const daysOfStock = unitsPerDay > 0 ? Math.round(totalInventory / unitsPerDay) : totalInventory > 0 ? 999 : 0;
+
+    const mpData = {
+      plmStage: plm.plmStageId || (totalInventory > 0 ? 12 : 1),
+      activePOs: activePOs.length,
+      totalInventory,
+      daysOfStock,
+      unitsSold,
+    };
+
+    return {
+      mpId: seed.id,
+      name: seed.name,
+      code: seed.code,
+      cat: seed.cat,
+      vendor: seed.vendor,
+      status: MP_STATUS_RULES.compute(mpData),
+      plmStage: plm.plmStage || (totalInventory > 0 ? 'In-Store' : 'Concept'),
+      activePOs: activePOs.length,
+      totalInventory,
+      daysOfStock: Math.min(daysOfStock, 999),
+      unitsSold,
+    };
+  });
+
+  // Count by status
+  const counts = {};
+  for (const s of statuses) counts[s.status] = (counts[s.status] || 0) + 1;
+
+  return { days, counts, products: statuses };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
-  { method: 'GET',   path: '',                handler: listProducts },
-  { method: 'POST',  path: 'sync',            handler: syncProducts },
-  { method: 'GET',   path: 'titles',          handler: listTitles },
-  { method: 'GET',   path: 'trees',           handler: productTrees },
-  { method: 'GET',   path: 'masters',         handler: masterProducts },
-  { method: 'GET',   path: 'seeds',           handler: seedCatalog,    noClient: true },
-  { method: 'GET',   path: 'reorder',         handler: reorderPlan },
-  { method: 'GET',   path: 'stock',           handler: stockByLocation },
-  { method: 'GET',   path: 'plm',             handler: getPlmStatus,   noClient: true },
-  { method: 'PATCH', path: 'plm/:id',         handler: updatePlmStage, noClient: true },
-  { method: 'GET',   path: 'sku-map',         handler: skuMap },
-  { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
-  { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },
+  { method: 'GET',   path: '',                   handler: listProducts },
+  { method: 'POST',  path: 'sync',               handler: syncProducts },
+  { method: 'GET',   path: 'titles',             handler: listTitles },
+  { method: 'GET',   path: 'trees',              handler: productTrees },
+  { method: 'GET',   path: 'masters',            handler: masterProducts },
+  { method: 'GET',   path: 'seeds',              handler: seedCatalog,       noClient: true },
+  { method: 'GET',   path: 'reorder',            handler: reorderPlan },
+  { method: 'GET',   path: 'stock',              handler: stockByLocation },
+  { method: 'GET',   path: 'status',             handler: mpStatus },
+  { method: 'GET',   path: 'plm',                handler: getPlmStatus,      noClient: true },
+  { method: 'PATCH', path: 'plm/:id',            handler: updatePlmStage,    noClient: true },
+  { method: 'GET',   path: 'factory-package/:id', handler: factoryPackage,   noClient: true },
+  { method: 'GET',   path: 'sku-map',            handler: skuMap },
+  { method: 'PATCH', path: 'sku-map/:sku',       handler: updateSKU,         noClient: true },
+  { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU,    noClient: true },
 ];
 
 exports.handler = createHandler(ROUTES, 'products');

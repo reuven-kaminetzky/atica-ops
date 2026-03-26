@@ -43,6 +43,11 @@
   status = 200
 
 [[redirects]]
+  from   = "/api/finance/*"
+  to     = "/.netlify/functions/finance/:splat"
+  status = 200
+
+[[redirects]]
   from   = "/api/purchase-orders/*"
   to     = "/.netlify/functions/purchase-orders/:splat"
   status = 200

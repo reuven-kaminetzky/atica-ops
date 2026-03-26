@@ -133,6 +133,7 @@ lib/                        # Shared backend — EVERY function imports from her
   handler.js                # DRY handler factory + validate helpers + RouteError
   cache.js                  # In-memory TTL cache (deterministic keys)
   store.js                  # Netlify Blobs: po, shipments, snapshots, settings, plm
+  workflow.js               # Workflow engine: product stack, MP↔PO triggers, cash flow, factory packages
   auth.js                   # CORS, JSON response, authentication (SKIP_AUTH=true)
   mappers.js                # Proxy → shopify/mappers.js
   analytics.js              # Proxy → shopify/analytics.js
@@ -150,6 +151,7 @@ netlify/functions/          # 12 Netlify Functions
   status.js                 # connection (shows API version), cache, webhooks
   customers.js              # list, detail, top, segments
   webhooks-shopify.js       # HMAC verification
+  workflow.js               # Unified: status, stack, factory package, cashflow, health
   stocky.js                 # DEAD CODE — zero references
   oauth-callback.js         # DEAD CODE — zero references
 
@@ -287,6 +289,16 @@ GET  /api/ledger                  → Financial entries
 GET  /api/status                  → Connection check + API version
 ```
 
+### Workflow (cross-cutting — ties everything together)
+```
+GET  /api/workflow/status         → Every MP: phase + POs + stock + velocity + flags + health
+GET  /api/workflow/status/:id     → Single MP unified status
+GET  /api/workflow/stack          → Product stack phase definitions (6 build + 3 ongoing)
+GET  /api/workflow/package/:id    → Factory package: 7-section tech pack with completeness %
+GET  /api/workflow/cashflow       → 3-month P&L projection (PO payments + revenue run rate)
+GET  /api/workflow/health         → System health: active POs, overdue, committed cost
+```
+
 ## Endpoint → Module Wiring
 
 | Module | Endpoints Used |
@@ -362,37 +374,34 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 
 ## What Needs Work
 
-### High Priority — Business Logic
-- [ ] **Seasonal multipliers in reorder** — adjust velocity by season (0.85x spring, 1.4x BTS, 1.15x fall, 1.6x holiday). Currently reorder uses raw velocity.
-- [ ] **Demand signals** — classify each MP as Hot/Rising/Steady/Slow/Stockout based on sell-through + velocity. Show on marketplace cards and analytics.
-- [ ] **Cash-flow cost projection** — use formula: revenue = velocity × retail × 4.33/mo, COGS = velocity × landed × 4.33. 12-week forward projection from PO payment schedules.
-- [ ] **Distribution weights** — when PO arrives, suggest store allocation: Lakewood 30%, Flatbush 20%, CH 15%, Monsey 25%, Online 10%. Show ideal vs actual in stock module.
+### High Priority — Frontend Wiring for Workflow
+- [ ] **Product Stack UI** — wire /api/workflow/stack + /api/workflow/status to a module showing each MP's build phase, required fields, completeness
+- [ ] **Factory package download** — wire /api/workflow/package/:id to a button in MP detail that generates a downloadable tech pack
+- [ ] **Cash flow projection UI** — wire /api/workflow/cashflow to cash-flow module showing planned vs actual, 3-month forward view
+- [ ] **Unified status dashboard** — wire /api/workflow/status to a command-center view: every MP with health indicator, flags, PO status
 
-### High Priority — Wiring
-- [ ] Wire PLM to marketplace detail modal — show current stage, allow advancement
-- [ ] MP detail size grid — available sizes per fit per style (the full matrix)
-- [ ] Customers module — wire 4 existing endpoints to a UI (list, detail+orders, top, segments)
-- [ ] Customer loyalty tiers — Bronze→Diamond with LTV thresholds, discount %, points multiplier
+### High Priority — Data Enrichment
+- [ ] **PO payment schedules** — add payments[] array to POs (deposit/balance/final with due dates + status). Wire to cash flow projection.
+- [ ] **Product Stack data persistence** — store fabric specs, construction details, sizing charts per MP in Blobs. This is what populates factory packages.
+- [ ] **MP size grid** — available sizes per fit per style (the full matrix from Shopify variants)
+- [ ] **Customers module** — wire 4 existing endpoints to a UI
 
 ### Medium Priority
 - [ ] Shipments module — wire CRUD endpoints (auto-created on PO "In Transit")
 - [ ] Inventory transfer form — stock module has the tab, backend ready
-- [ ] Vendor scoring — add onTime%, qualScore, tier (Strategic/Preferred/Standard/Transactional) to vendor data
-- [ ] PO payment schedule — each PO has deposit/balance/final payments with due dates and status
-- [ ] PO bulk actions — select multiple, advance stage, or export
+- [ ] Vendor scoring — onTime%, qualScore, tier
+- [ ] Customer loyalty tiers — Bronze→Diamond
+- [ ] PO bulk actions
 
 ### Future — Not Built Yet
-- [ ] Wholesale accounts — 5 accounts with credit limits, terms, discount rates
+- [ ] Wholesale accounts — 5 accounts with credit limits, terms
 - [ ] Components/BOM — fabric, lining, buttons per product
-- [ ] Campaigns — marketing campaigns with budget, dates
-- [ ] QuickBooks integration — AP/AR sync
-- [ ] Lightspeed POS integration — retail store data
-- [ ] Command palette (Cmd+K) — global search
-- [ ] Role-based nav — sidebar items by role
+- [ ] Campaigns — marketing campaigns with budget
+- [ ] QuickBooks/Lightspeed integrations
+- [ ] Command palette (Cmd+K), role-based nav
 
 ### Lower Priority
 - [ ] Monolith → v2 migration plan
-- [ ] Remove dead code (stocky.js, oauth-callback.js)
 - [ ] Branch protection, CI pipeline
 
 ### Done (do not rebuild)
@@ -416,6 +425,12 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 - [x] Cached inventory helper (shared by reorder + stock)
 - [x] PLM endpoint (GET + PATCH with history)
 - [x] Settings diagnostics (API version, store URL, hints)
+- [x] Workflow engine (lib/workflow.js + /api/workflow/* — 6 endpoints)
+- [x] Product Stack: 6 build phases + 3 ongoing, with required fields and gates
+- [x] MP↔PO bidirectional triggers (costing→suggest PO, received→advance MP)
+- [x] Cash flow projection model (planned vs actual, inflow vs outflow)
+- [x] Factory package builder (7-section tech pack with completeness score)
+- [x] Unified MP status (phase + POs + stock + velocity + flags + health)
 
 ## How to Add a New MP
 
