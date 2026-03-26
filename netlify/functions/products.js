@@ -275,6 +275,19 @@ async function reorderPlan(client, { params }) {
       : 0;
     const suggestedCost = +(suggestedQty * (seed.fob || 0)).toFixed(2);
 
+    // Lead-time-aware ordering
+    // When should you place the order so stock doesn't run out?
+    const leadDays = seed.lead || 0;
+    const orderByDaysFromNow = effectiveDays - leadDays;
+    const orderByDate = effectiveDays < 999
+      ? new Date(Date.now() + orderByDaysFromNow * 86400000).toISOString().slice(0, 10)
+      : null;
+    const urgency = effectiveDays >= 999 ? 'none'
+      : orderByDaysFromNow <= 0 ? 'overdue'
+      : orderByDaysFromNow <= 14 ? 'urgent'
+      : orderByDaysFromNow <= 30 ? 'soon'
+      : 'planned';
+
     return {
       mpId: seed.id,
       name: seed.name,
@@ -290,19 +303,26 @@ async function reorderPlan(client, { params }) {
       revenue: +vel.revenue.toFixed(2),
       daysOfStock,
       effectiveDays,
+      // Lead-time ordering
+      lead: leadDays,
+      orderByDate,
+      orderByDaysFromNow: effectiveDays < 999 ? orderByDaysFromNow : null,
+      urgency,
       // Reorder signal
       needsReorder,
       suggestedQty,
       suggestedCost,
       moq: seed.moq || 0,
-      lead: seed.lead || 0,
       fob: seed.fob || 0,
     };
   });
 
-  // Sort: needs reorder first, then by effective days of stock ascending
+  // Sort: overdue first, then urgent, then soon, then by effective days
+  const urgencyOrder = { overdue: 0, urgent: 1, soon: 2, planned: 3, none: 4 };
   plan.sort((a, b) => {
-    if (a.needsReorder !== b.needsReorder) return a.needsReorder ? -1 : 1;
+    const ua = urgencyOrder[a.urgency] ?? 4;
+    const ub = urgencyOrder[b.urgency] ?? 4;
+    if (ua !== ub) return ua - ub;
     return a.effectiveDays - b.effectiveDays;
   });
 
@@ -316,6 +336,9 @@ async function reorderPlan(client, { params }) {
     summary: {
       totalMPs: plan.length,
       needReorder: reorderItems.length,
+      overdue: plan.filter(p => p.urgency === 'overdue').length,
+      urgent: plan.filter(p => p.urgency === 'urgent').length,
+      soon: plan.filter(p => p.urgency === 'soon').length,
       totalReorderCost: +totalReorderCost.toFixed(2),
       totalReorderUnits,
       avgDaysOfStock: plan.length

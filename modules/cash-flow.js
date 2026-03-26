@@ -343,57 +343,65 @@ function renderProduction(el) {
   }
 
   const plan = r.plan || [];
-  const reorderItems = plan.filter(p => p.needsReorder);
+  const actionItems = plan.filter(p => p.urgency === 'overdue' || p.urgency === 'urgent' || p.urgency === 'soon');
 
   el.innerHTML = `
     <div class="stat-row">
       <div class="stat-card">
-        <div class="stat-label">Need Reorder</div>
-        <div class="stat-value" style="${reorderItems.length > 0 ? 'color:var(--danger)' : ''}">${reorderItems.length}</div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">of ${plan.length} MPs</div>
+        <div class="stat-label">Overdue</div>
+        <div class="stat-value" style="${(r.summary?.overdue || 0) > 0 ? 'color:var(--danger)' : ''}">${r.summary?.overdue || 0}</div>
+        <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.2rem">should have ordered already</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Urgent</div>
+        <div class="stat-value" style="${(r.summary?.urgent || 0) > 0 ? 'color:#b38600' : ''}">${r.summary?.urgent || 0}</div>
+        <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.2rem">order within 2 weeks</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Reorder Cost</div>
         <div class="stat-value">${formatCurrency(r.summary?.totalReorderCost || 0)}</div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">${formatNumber(r.summary?.totalReorderUnits || 0)} units</div>
+        <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.2rem">${formatNumber(r.summary?.totalReorderUnits || 0)} units needed</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Avg Days of Stock</div>
         <div class="stat-value">${r.summary?.avgDaysOfStock || 0}</div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">target: ${r.coverDays}d</div>
+        <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.2rem">target: ${r.coverDays}d</div>
       </div>
     </div>
 
-    ${reorderItems.length > 0 ? `
-      <h3 style="color:var(--danger)">Reorder Now</h3>
+    ${actionItems.length > 0 ? `
+      <h3>Action Required</h3>
       <table class="data-table" style="margin-bottom:1.5rem">
         <thead><tr>
-          <th>Product</th><th>Vendor</th>
+          <th>Product</th><th>Vendor</th><th>Urgency</th>
           <th style="text-align:right">Stock</th>
           <th style="text-align:right">Incoming</th>
-          <th style="text-align:right">Eff. Days</th>
-          <th style="text-align:right">Units/Day</th>
-          <th style="text-align:right">Order Qty</th>
+          <th style="text-align:right">Order By</th>
+          <th style="text-align:right">Qty</th>
           <th style="text-align:right">Cost</th>
         </tr></thead>
         <tbody>
-          ${reorderItems.map(p => `
-            <tr>
-              <td style="font-weight:600">${p.name}</td>
-              <td style="font-size:0.8rem;color:var(--text-dim)">${p.vendor || '—'}</td>
-              <td style="text-align:right;font-family:var(--font-mono);${p.currentStock === 0 ? 'color:var(--danger);font-weight:600' : ''}">${formatNumber(p.currentStock)}</td>
-              <td style="text-align:right;font-family:var(--font-mono);${p.incomingUnits > 0 ? 'color:var(--success)' : ''}">${p.incomingUnits > 0 ? '+' + formatNumber(p.incomingUnits) : '—'}</td>
-              <td style="text-align:right;font-family:var(--font-mono);color:var(--danger);font-weight:600">${p.effectiveDays || p.daysOfStock}</td>
-              <td style="text-align:right;font-family:var(--font-mono)">${p.unitsPerDay}</td>
-              <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatNumber(p.suggestedQty)}</td>
-              <td style="text-align:right">${formatCurrency(p.suggestedCost)}</td>
-            </tr>
-            ${p.activePOs?.length ? `
-              <tr><td colspan="8" style="padding:0.3rem 0.75rem;font-size:0.72rem;color:var(--text-dim);background:var(--surface-2)">
-                Active POs: ${p.activePOs.map(po => `${po.id} (${po.stage}, ${formatNumber(po.units)} units)`).join(' · ')}
-              </td></tr>
-            ` : ''}
-          `).join('')}
+          ${actionItems.map(p => {
+            const urgColor = p.urgency === 'overdue' ? 'var(--danger)' : p.urgency === 'urgent' ? '#b38600' : 'var(--text-dim)';
+            const urgLabel = p.urgency === 'overdue' ? 'OVERDUE' : p.urgency === 'urgent' ? 'URGENT' : 'SOON';
+            return `
+              <tr>
+                <td style="font-weight:600">${p.name}</td>
+                <td style="font-size:0.8rem;color:var(--text-dim)">${p.vendor || '—'}</td>
+                <td><span style="color:${urgColor};font-weight:600;font-size:0.75rem">${urgLabel}</span></td>
+                <td style="text-align:right;font-family:var(--font-mono);${p.currentStock === 0 ? 'color:var(--danger);font-weight:600' : ''}">${formatNumber(p.currentStock)}</td>
+                <td style="text-align:right;font-family:var(--font-mono);${p.incomingUnits > 0 ? 'color:var(--success)' : ''}">${p.incomingUnits > 0 ? '+' + formatNumber(p.incomingUnits) : '—'}</td>
+                <td style="text-align:right;font-size:0.8rem;color:${urgColor};font-weight:600">${p.orderByDate || '—'}</td>
+                <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatNumber(p.suggestedQty)}</td>
+                <td style="text-align:right">${formatCurrency(p.suggestedCost)}</td>
+              </tr>
+              ${p.activePOs?.length ? `
+                <tr><td colspan="8" style="padding:0.3rem 0.75rem;font-size:0.72rem;color:var(--text-dim);background:var(--surface-2)">
+                  Active POs: ${p.activePOs.map(po => `${po.id} (${po.stage}, ${formatNumber(po.units)} units)`).join(' · ')}
+                </td></tr>
+              ` : ''}
+            `;
+          }).join('')}
         </tbody>
       </table>
     ` : ''}

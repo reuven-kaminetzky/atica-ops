@@ -156,6 +156,15 @@ function openMPDetail(mp) {
         </div>
       </div>
 
+      <!-- Sourcing -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.5rem;font-size:0.78rem;margin-bottom:1rem;
+        background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.6rem 0.75rem">
+        <div><span style="color:var(--text-dim)">MOQ:</span> ${mp.moq || '—'}</div>
+        <div><span style="color:var(--text-dim)">Lead:</span> ${mp.lead ? mp.lead + 'd' : '—'}</div>
+        <div><span style="color:var(--text-dim)">HTS:</span> ${mp.hts || '—'}</div>
+        <div><span style="color:var(--text-dim)">Duty:</span> ${mp.duty ? mp.duty + '%' : '—'}</div>
+      </div>
+
       ${mp.styles?.length ? `
         <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Styles (${mp.styles.length})</h3>
         <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
@@ -179,12 +188,54 @@ function openMPDetail(mp) {
         </div>
       ` : '<div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">No styles matched from Shopify</div>'}
 
-      <div style="font-size:0.78rem;color:var(--text-dim);border-top:1px solid var(--border-light);padding-top:0.75rem">
+      <div style="font-size:0.78rem;color:var(--text-dim);padding-top:0.75rem;border-top:1px solid var(--border-light)">
         ${mp.shopifyProductCount} Shopify product${mp.shopifyProductCount !== 1 ? 's' : ''} matched ·
-        Sizes: ${mp.sizes || '—'} ·
-        ${mp.fits?.length ? `Fits: ${mp.fits.join(', ')}` : ''}
+        Sizes: ${mp.sizes || '—'}
+        ${mp.fits?.length ? ` · Fits: ${mp.fits.join(', ')}` : ''}
+      </div>
+
+      <!-- Quick PO creation -->
+      <div style="border-top:1px solid var(--border-light);margin-top:0.75rem;padding-top:0.75rem">
+        <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.5rem">Quick PO</div>
+        <div class="form-row">
+          <div class="form-group" style="margin-bottom:0.5rem">
+            <label class="form-label">Units</label>
+            <input id="mpd-units" type="number" class="form-input" placeholder="${mp.moq || 50}" min="1" value="${mp.moq || 50}" />
+          </div>
+          <div class="form-group" style="margin-bottom:0.5rem">
+            <label class="form-label">FOB Total</label>
+            <div id="mpd-total" style="font-family:var(--font-mono);font-size:0.9rem;font-weight:600;padding:0.5rem 0">${formatCurrency((mp.moq || 50) * (mp.fob || 0))}</div>
+          </div>
+        </div>
+        <button id="mpd-create-po" class="btn btn-primary" style="width:100%">Create PO for ${mp.code}</button>
       </div>
     `,
+    onMount: (body) => {
+      const unitsInput = body.querySelector('#mpd-units');
+      const totalDiv = body.querySelector('#mpd-total');
+      const createBtn = body.querySelector('#mpd-create-po');
+
+      unitsInput?.addEventListener('input', () => {
+        const units = parseInt(unitsInput.value) || 0;
+        totalDiv.textContent = formatCurrency(units * (mp.fob || 0));
+      });
+
+      createBtn?.addEventListener('click', async () => {
+        const units = parseInt(unitsInput?.value) || mp.moq || 50;
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        try {
+          const result = await api.post('/api/purchase-orders', { mpId: mp.id, units });
+          emit('modal:close');
+          emit('toast:show', { message: `PO ${result.purchaseOrder.id} created for ${mp.name}`, type: 'success' });
+          emit('po:created', result.purchaseOrder);
+        } catch (err) {
+          emit('toast:show', { message: err.message, type: 'error' });
+          createBtn.disabled = false;
+          createBtn.textContent = `Create PO for ${mp.code}`;
+        }
+      });
+    },
   });
 }
 
