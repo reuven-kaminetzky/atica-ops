@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import { neon } from '@netlify/neon';
 
 export async function POST() {
   try {
-    const { neon } = require('@netlify/neon');
     const { MP_SEEDS } = require('../../../lib/products');
     const sql = neon();
 
+    // Extract vendors
     const vendorMap = {};
     for (const mp of MP_SEEDS) {
       if (mp.vendor) {
@@ -34,7 +35,10 @@ export async function POST() {
 
     let stackCount = 0;
     for (const mp of MP_SEEDS) {
-      try { await sql`INSERT INTO product_stack (mp_id) VALUES (${mp.id}) ON CONFLICT DO NOTHING`; stackCount++; } catch (e) { /* skip */ }
+      try {
+        await sql`INSERT INTO product_stack (mp_id) VALUES (${mp.id}) ON CONFLICT DO NOTHING`;
+        stackCount++;
+      } catch (e) { /* skip */ }
     }
 
     return NextResponse.json({ seeded: true, vendors: vendorCount, products: mpCount, stacks: stackCount });
