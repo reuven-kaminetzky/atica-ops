@@ -1,13 +1,14 @@
 # CLAUDE.md — Atica Ops ERP
 
-> This file is for Claude Code. Read it before touching anything.
+> This file is for Claude Code (Shendrao-san). Read it before touching anything.
+> Updated: March 26, 2026
 
 ## What This Is
 
 Atica Man is a menswear retail operations platform. Static HTML + Netlify Functions, no build step. Connected to Shopify live data (aticaman.myshopify.com). Manages Master Products, Purchase Orders, inventory across 4 retail stores + online, cash flow, and production planning.
 
 - **Live URL:** https://atica-ops.netlify.app/atica_app.html (monolith)
-- **V2 URL:** https://atica-ops.netlify.app/v2 (modular — long-term)
+- **V2 URL:** https://atica-ops.netlify.app/v2 (modular — long-term replacement)
 - **Repo:** github.com/reuven-kaminetzky/atica-ops
 - **Shopify Store:** aticaman.myshopify.com
 - **Shopify API Version:** `2024-10` — DO NOT CHANGE without curl-testing first
@@ -17,61 +18,120 @@ Atica Man is a menswear retail operations platform. Static HTML + Netlify Functi
 1. **MPs (Master Products)** — with correct Shopify styles, full PLM lifecycle. THE ROOT.
 2. **Purchase Orders** — stage gates with PD and finance check-ins. THE TRUNK.
 3. **Cash flow** — tied to POs (costs) and Shopify orders (revenue).
-4. **Production planning** — what to order, when, based on real velocity.
+4. **Production planning** — what to order, when, based on real velocity + inventory.
 5. **Analytics** — from real order data, aggregated by MP.
 
 **POS is NOT a priority.** It's just a data feed into cash flow.
 **No KPIs. No vanity metrics.** Odoo style — functional tiles, real data.
 
+## What Already Works — Do NOT Rebuild
+
+### Backend (12 Netlify Functions + 9 shared libs)
+
+**lib/products.js** — THE ROOT. 40 MP seeds, 40 title matchers, 10 aliases, 18 PLM stages. `matchAll(shopifyProducts)` maps Shopify products to MPs. HC360/HC480 split at $400. "do not use" excluded. This is canonical — monolith has a copy but this is the source of truth.
+
+**lib/locations.js** — Single source of truth for store names. `normalize()`, `resolveOrderStore()`, `buildLocationMap()`. Stores: Lakewood, Flatbush, Crown Heights, Monsey, Online, Reserve.
+
+**lib/shopify.js** — Shopify API client. 8s request timeout, 25s pagination, 3x retry with backoff, cached `createClient` (5 min). Uses `SHOPIFY_STORE_URL` and `SHOPIFY_ACCESS_TOKEN` env vars only.
+
+**lib/handler.js** — DRY handler factory. Every function uses `createHandler(ROUTES, prefix)`. Handles CORS, auth, routing, path params, body parsing, ETag, `RouteError` → proper HTTP status.
+
+**lib/store.js** — Netlify Blobs persistence. Named stores: `po`, `shipments`, `snapshots`, `settings`. Use this, not `let _data = []`.
+
+**lib/cache.js** — In-memory TTL cache. Each function gets its own esbuild-bundled copy. You CANNOT clear another function's cache. TTLs: products 5m, orders 1m, inventory 2m, pos 1m.
+
+**lib/shopify/mappers.js** — `mapProduct`, `mapOrder`, `mapLineItem`, `mapLedgerEntry`, `mapSKU`, `buildProductTree`. Plain JS (compiled from TS).
+
+**lib/shopify/analytics.js** — `sinceDate`, `buildVelocity`, `buildSalesSummary`. Plain JS.
+
+### Key Endpoints
+
+```
+GET  /api/products/masters      → MPs enriched with live Shopify data (styles, inventory, images, margin)
+GET  /api/products/seeds        → Raw MP catalog + PLM stages (no Shopify needed)
+GET  /api/products/reorder      → Production planning: velocity + inventory = reorder signals
+GET  /api/products/trees        → Product tree Style→Fit→Size
+GET  /api/orders/mp-velocity    → Velocity by Master Product (production planning)
+GET  /api/orders/sales          → Revenue summary with daily breakdown
+GET  /api/orders/velocity       → Velocity by individual SKU
+POST /api/purchase-orders       → Create PO (with mpId auto-fills from seed)
+PATCH /api/purchase-orders/:id/stage → Advance stage (PD/finance check-in gates)
+GET  /api/purchase-orders/stages → Stage definitions with gate types
+GET  /api/inventory             → All locations + levels
+GET  /api/pos/today             → Today's sales by store (location_id resolution)
+GET  /api/status                → Shopify connection check
+```
+
+### PO Stage Pipeline (12 stages)
+
+```
+Concept → Design(PD✓) → Sample → Approved(PD✓) → Costed(FIN✓) →
+Ordered → Production → QC(PD✓) → Shipped → In Transit →
+Received(FIN✓) → Distribution
+```
+
+PD stages require `checkedBy` in request body. FIN stages require `checkedBy`.
+Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Shipped, container/vessel before In Transit.
+
+### Frontend V2 (9 modules at /v2)
+
+- **home.js** — Large navigation tiles (no KPIs, no data)
+- **marketplace.js** — MP cards from `/api/products/masters`, category tabs, color swatches, click → detail modal with styles/fits/sizes
+- **cash-flow.js** — 4 tabs: Overview (revenue + POs), Purchase Orders (table + "+ New PO" modal form), Production (reorder plan), Ledger
+- **stock.js** — Inventory grouped by MP (not raw SKUs), by-location view
+- **pos.js** — Today's sales, feed, by-store (data feed only — not priority)
+- **ledger.js** — Financial entries with configurable day range
+- **settings.js** — Shopify status, sync controls, cache, webhooks
+- **core.js** — API client, module loader, formatters
+- **event-bus.js** — Pub/sub with EVENTS registry
+
+**Shell (atica_v2.html):**
+- Sidebar nav → emits `nav:change` → shell swaps modules via `loadModule()`
+- Modal system → `emit('modal:open', { title, html, onMount, onClose, wide })`
+- Toast notifications → `emit('toast:show', { message, type })`
+- Sync indicator → listens to `sync:start/complete/error`
+
 ## File Map
 
 ```
 atica_app.html              # 14K-line monolith — CAREFUL. node --check before any edit.
-atica_v2.html               # Modular shell — boots to home, loads ES modules
-components/sidebar.js       # Odoo-style nav with event bus integration
-css/base.css                # Design system — variables, components
+atica_v2.html               # Modular shell with modal system
+components/sidebar.js       # Odoo-style nav
+css/base.css                # Design system + modal + form CSS
 css/odoo-layout.css         # App shell grid layout
 
-lib/                        # Shared backend libraries — THE FOUNDATION
-  shopify.js                # Shopify API client (8s timeout, 3x retry, paginated)
+lib/                        # Shared backend — THE FOUNDATION
   products.js               # 40 MP seeds, title matchers, PLM stages, matchAll()
   locations.js              # Store name normalization (single source of truth)
+  shopify.js                # Shopify API client
   mappers.js                # Proxy → shopify/mappers.js
   analytics.js              # Proxy → shopify/analytics.js
-  handler.js                # DRY handler factory (auth, CORS, routing, ETag)
-  cache.js                  # In-memory TTL cache (per-function, not shared)
-  store.js                  # Netlify Blobs (POs, shipments, snapshots, settings)
-  auth.js                   # CORS headers, JSON response, authentication
-  shopify/mappers.js        # Shopify → Atica transforms (compiled from TS)
-  shopify/analytics.js      # Velocity, sales rollups (compiled from TS)
-  shopify/*.ts              # Type reference docs — NOT used at runtime
+  handler.js                # DRY handler factory
+  cache.js                  # In-memory TTL cache (per-function)
+  store.js                  # Netlify Blobs (po, shipments, snapshots, settings)
+  auth.js                   # CORS, JSON response, authentication
+  shopify/mappers.js        # Compiled from TS — product/order/SKU transforms
+  shopify/analytics.js      # Compiled from TS — velocity, sales rollups
+  shopify/*.ts              # Type reference only — NOT used at runtime
 
 netlify/functions/          # 12 Netlify Functions
-  products.js               # /api/products/* — list, sync, titles, trees, masters, seeds
-  orders.js                 # /api/orders/* — list, sync, velocity, sales, mp-velocity, drafts
-  inventory.js              # /api/inventory/* — list, sync, adjust, transfer
-  pos.js                    # /api/pos/* — today, by-location, feed (data feed only)
-  ledger.js                 # /api/ledger/* — entries, snapshot, snapshots
-  status.js                 # /api/status/* — connection, cache, webhooks
-  purchase-orders.js        # /api/purchase-orders/* — CRUD + stage advancement
-  shipments.js              # /api/shipments/* — CRUD + arrive (Netlify Blobs)
-  customers.js              # /api/customers/* — list, detail, top, segments
-  webhooks-shopify.js       # POST /api/webhooks/shopify — HMAC verification
-  stocky.js                 # /api/stocky/* — Stocky API proxy
+  products.js               # masters, seeds, reorder, trees, sync, titles, sku-map
+  orders.js                 # list, sync, velocity, sales, mp-velocity, drafts
+  purchase-orders.js        # CRUD + stage advancement with PD/FIN gates
+  inventory.js              # list, sync, adjust, transfer
+  shipments.js              # CRUD + arrive (Netlify Blobs)
+  pos.js                    # today, by-location, feed (location_id resolution)
+  ledger.js                 # entries, snapshot, snapshots
+  status.js                 # connection, cache, webhooks
+  customers.js              # list, detail, top, segments
+  webhooks-shopify.js       # HMAC verification, topic logging
+  stocky.js                 # Stocky API proxy
   oauth-callback.js         # OAuth token exchange
 
-modules/                    # V2 frontend ES modules (init/destroy lifecycle)
-  core.js                   # API client, module loader, formatters
-  event-bus.js              # Pub/sub with EVENTS registry
-  home.js                   # Large navigation tiles (no KPIs)
-  marketplace.js            # MP cards from /api/products/masters
-  cash-flow.js              # Revenue, POs, production velocity, ledger
-  pos.js                    # Today's sales, feed, by-store
-  stock.js                  # Inventory by location
-  ledger.js                 # Financial entries with day range
-  settings.js               # Shopify status, sync controls, cache
+modules/                    # V2 frontend ES modules
+  [9 modules — see above]
 
-docs/ARCHITECTURE.md        # Full system architecture (read this too)
+docs/ARCHITECTURE.md        # Full system architecture
 ```
 
 ## Critical Rules
@@ -79,26 +139,28 @@ docs/ARCHITECTURE.md        # Full system architecture (read this too)
 ### Before ANY push
 ```bash
 node --check <file>   # Every JS file you touch
-git pull origin main   # Always pull first — collisions are common
+git pull origin main   # Always pull first
 ```
 
 ### Never
-- Push to main without `node --check` passing on all changed files
-- Change `SHOPIFY_API_VERSION` without `curl` testing against the live store
-- Use `let _data = []` for persistent storage — use `lib/store.js` (Netlify Blobs)
+- Change `SHOPIFY_API_VERSION` without curl testing
+- Use `let _data = []` for persistent storage — use `lib/store.js`
 - Inline store name matching — use `lib/locations.js`
-- Fetch all orders without a date filter — default 90 days, max 365
+- Inline MP title matching — use `lib/products.js`
+- Fetch orders without date filter — default 90 days, max 365
 - Throw `new Error()` in handlers — use `RouteError(status, message)`
-- Import between frontend modules — use the event bus
-- Require `.ts` files directly — use `.js` counterparts or proxy modules
+- Import between frontend modules — use event bus
+- Require `.ts` files directly — use `.js` counterparts
+- Edit `atica_app.html` without `node --check`
 
 ### Always
 - Use `createHandler(ROUTES, prefix)` for every Netlify function
-- Use `lib/products.js` for MP seeds, title matchers, matching logic
-- Use `lib/locations.js` for store name normalization
-- Cap `days` parameters: `Math.min(parseInt(params.days || '30', 10), 365)`
-- Return `{ count, items }` shaped responses from list endpoints
-- Add `noClient: true` to routes that don't need the Shopify API client
+- Use `lib/products.js` for MP seeds and matching
+- Use `lib/locations.js` for store normalization
+- Cap `days` params: `Math.min(parseInt(params.days || '30', 10), 365)`
+- Add `noClient: true` to routes that don't need Shopify client
+- Use `emit('modal:open', {...})` for modals — don't build inline overlays
+- Use `emit('toast:show', {...})` for notifications
 
 ## Product Hierarchy
 
@@ -110,53 +172,27 @@ Master Product (MP) → Style (by color/fabric) → Fit → Size → Length
 - **Shirts:** fits = Modern (Extra Slim), Contemporary (Slim), Classic
 - **Pants:** fits = Slim, Regular, Relaxed
 
-Title matchers in `lib/products.js` map Shopify product titles to MP seed IDs.
+Title matchers in `lib/products.js` map Shopify titles to MP seed IDs.
 HC360 vs HC480 split at $400 max variant price.
-"do not use" products are always excluded.
 
-## PO Stage Pipeline
+## How to Add a New MP
 
-```
-Concept → Design(PD✓) → Sample → Approved(PD✓) → Costed(FIN✓) →
-Ordered → Production → QC(PD✓) → Shipped → In Transit →
-Received(FIN✓) → Distribution
-```
+1. Add seed to `MP_SEEDS` in `lib/products.js`
+2. Add title matcher to `TITLE_MATCHERS`
+3. If key differs from seed ID, add alias to `ALIASES`
+4. Test: `node -e "const p = require('./lib/products'); console.log(p.matchProduct('Your Title'))"`
 
-Stages marked PD require `checkedBy` (product development sign-off).
-Stages marked FIN require `checkedBy` (finance sign-off).
-Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Shipped, etc.
+## How to Add a New Netlify Function
 
-## How a Request Flows
-
-```
-Browser → Netlify CDN → netlify.toml redirect → Netlify Function
-  → createHandler() → authenticate() → route match
-  → handler(client, ctx) → ShopifyClient._request()
-  → Shopify REST API → response mapped by lib/mappers.js
-  → cached by lib/cache.js → JSON response with ETag
+```javascript
+const { createHandler, RouteError } = require('../../lib/handler');
+const ROUTES = [
+  { method: 'GET', path: '', handler: myHandler },
+];
+exports.handler = createHandler(ROUTES, 'my-endpoint');
 ```
 
-## Cache Architecture
-
-Each function gets its own esbuild-bundled cache copy. You CANNOT clear another function's cache. TTLs are the real invalidation:
-
-| Key | TTL |
-|-----|-----|
-| products | 5 min |
-| orders | 1 min |
-| inventory | 2 min |
-| pos | 1 min |
-| velocity | 3 min |
-| status | 30 sec |
-
-## Persistence
-
-| Data | Storage |
-|------|---------|
-| Products, orders, inventory | Shopify (source of truth) + in-memory cache |
-| Purchase orders | Netlify Blobs (`store.po`) |
-| Shipments | Netlify Blobs (`store.shipments`) |
-| Inventory snapshots | Netlify Blobs (`store.snapshots`) |
+Then add redirect to `netlify.toml` before the SPA fallback.
 
 ## Env Vars (Netlify)
 
@@ -167,102 +203,42 @@ Each function gets its own esbuild-bundled cache copy. You CANNOT clear another 
 | `SKIP_AUTH` | Yes — `true` |
 | `STOCKY_API_KEY` | Optional |
 
-## Stores
-
-Lakewood, Flatbush, Crown Heights, Monsey, Online, Reserve.
-All location normalization goes through `lib/locations.js`.
-
-## Key Endpoints
-
-### Products (the root)
-- `GET /api/products/masters` — MPs enriched with live Shopify styles, inventory, images
-- `GET /api/products/seeds` — raw MP catalog, PLM stages (no Shopify needed)
-- `GET /api/products/trees` — product tree with Style→Fit→Size hierarchy
-
-### Orders / Analytics
-- `GET /api/orders/mp-velocity?days=30` — velocity by Master Product (production planning)
-- `GET /api/orders/sales?days=30` — revenue summary with daily breakdown
-- `GET /api/orders/velocity?days=30` — velocity by individual SKU
-
-### Purchase Orders
-- `POST /api/purchase-orders` with `{ mpId: 'londoner' }` — auto-fills from seed
-- `PATCH /api/purchase-orders/:id/stage` with `{ stage: 'Approved', checkedBy: 'John' }`
-- `GET /api/purchase-orders/stages` — stage definitions with gate types
-
 ## What Needs Work
 
 ### High Priority
-- [ ] v2 event bus end-to-end testing — modules subscribe but cross-module communication not tested
-- [ ] v2 marketplace product detail view — click an MP → see styles, fits, sizes, inventory, PLM stage
-- [ ] Cash-flow PO creation form — modal to create POs from MP list
-- [ ] Production planning view — combine MP velocity + current inventory to suggest reorder quantities
+- [ ] MP detail view in marketplace needs PLM stage display and PO creation shortcut
+- [ ] PO detail view — click a PO row → see full history, stage track, check-ins, advance stage
+- [ ] Cash-flow overview needs real cost data from POs, not just revenue
+- [ ] Production planning should cross-reference active POs (don't suggest reorder if PO already in pipeline)
 
 ### Medium Priority
-- [ ] Inventory by MP — aggregate inventory across locations per Master Product (not per SKU)
-- [ ] Stock module rewrite — show inventory grouped by MP, not raw Shopify inventory items
-- [ ] PO auto-shipment creation — when PO hits "Shipped" stage, auto-create shipment record
-- [ ] Sales pulse backoff — if sync fails, double interval up to 15 min, reset on success
+- [ ] Inventory by MP per location — show which stores have which MPs
+- [ ] PO auto-shipment — when PO hits "Shipped", auto-create shipment record
+- [ ] Sales pulse backoff in monolith — if sync fails, double interval up to 15 min
+- [ ] v2 event bus end-to-end testing
 
 ### Lower Priority
-- [ ] Monolith API migration — atica_app.html still has its own inline sync logic
-- [ ] Branch protection — CONTRIBUTING.md exists but GitHub rules not enforced
-- [ ] Test suite — endpoint smoke tests exist (scripts/test-endpoints.js) but can't run from CI (DNS blocked)
+- [ ] Monolith → v2 migration plan (both run on same backend)
+- [ ] Branch protection in GitHub
+- [ ] CI test pipeline (endpoint tests exist but DNS blocked from CI)
 
 ## Testing
 
 ```bash
-# Syntax check
 node --check lib/products.js
 node --check netlify/functions/orders.js
 
-# Full dependency chain
 node -e "
+const p = require('./lib/products');
 const m = require('./lib/mappers');
 const a = require('./lib/analytics');
-const p = require('./lib/products');
 const l = require('./lib/locations');
-console.log('All resolve');
 console.log('MPs:', p.MP_SEEDS.length);
-console.log('Match test:', p.matchProduct('Londoner White Shirt'));
+console.log('Match:', p.matchProduct('Londoner White Shirt'));
+console.log('Location:', l.normalize('crown heights'));
 "
-
-# Endpoint tests (requires network access to atica-ops.netlify.app)
-npm run test:endpoints
 ```
 
-## How to Add a New MP
+## Coordination
 
-1. Add seed to `MP_SEEDS` array in `lib/products.js`
-2. Add title matcher to `TITLE_MATCHERS` in same file
-3. If the matcher key differs from the seed ID, add an alias to `ALIASES`
-4. Test: `node -e "const p = require('./lib/products'); console.log(p.matchProduct('Your Shopify Title'))"`
-5. The new MP will automatically appear in `/api/products/masters` on next sync
-
-## How to Add a New Netlify Function
-
-```javascript
-const { createHandler, RouteError } = require('../../lib/handler');
-const cache = require('../../lib/cache');
-
-async function myHandler(client, { params, body, pathParams }) {
-  // client = ShopifyClient (null if noClient: true)
-  // params = query string parameters
-  // body = parsed JSON body (POST/PATCH)
-  // pathParams = { id: '123' } from path ':id'
-  return { data: 'response' };
-}
-
-const ROUTES = [
-  { method: 'GET', path: '', handler: myHandler },
-];
-
-exports.handler = createHandler(ROUTES, 'my-endpoint');
-```
-
-Then add to `netlify.toml`:
-```toml
-[[redirects]]
-  from   = "/api/my-endpoint/*"
-  to     = "/.netlify/functions/my-endpoint/:splat"
-  status = 200
-```
+This repo is shared between multiple Claude sessions. Push to main directly (no branch protection enforced yet). Always pull before working. The architecture session (Nikita) governs lib/ and overall system design. Shendrao-san (Claude Code) handles feature implementation. If you're unsure about a pattern, check `docs/ARCHITECTURE.md`.
