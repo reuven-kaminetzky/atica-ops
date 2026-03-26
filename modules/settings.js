@@ -58,7 +58,15 @@ function render() {
           <div class="conn-detail">Domain: ${s.domain}</div>
           <div class="conn-detail">Plan: ${s.plan}</div>
           <div class="conn-detail">Currency: ${s.currency}</div>
-        ` : `<div class="conn-detail">${s?.message || 'Not connected'}</div>`}
+          <div class="conn-detail">API Version: ${s.apiVersion || '—'}</div>
+          <div class="conn-detail">Store URL: ${s.storeUrl || '—'}</div>
+        ` : `
+          <div class="conn-detail" style="color:var(--danger)">${s?.message || 'Not connected'}</div>
+          ${s?.hint ? `<div class="conn-detail" style="font-size:0.78rem;color:var(--text-dim);margin-top:0.5rem">${s.hint}</div>` : ''}
+          ${s?.apiVersion ? `<div class="conn-detail">Tried API: ${s.apiVersion}</div>` : ''}
+          ${s?.storeUrl ? `<div class="conn-detail">Tried Store: ${s.storeUrl}</div>` : ''}
+          ${s?.baseUrl ? `<div class="conn-detail" style="font-family:var(--font-mono);font-size:0.75rem;word-break:break-all">${s.baseUrl}</div>` : ''}
+        `}
       </div>
     </div>
 
@@ -93,6 +101,12 @@ function render() {
     <div class="settings-section">
       <h3>Webhooks</h3>
       <button id="settings-webhooks" class="btn btn-secondary">Setup Webhooks</button>
+    </div>
+
+    <div class="settings-section">
+      <h3>Diagnostics</h3>
+      <button id="settings-test-connection" class="btn btn-secondary">Test Shopify Connection</button>
+      <div id="settings-diag" style="margin-top:0.5rem;font-size:0.82rem;font-family:var(--font-mono);white-space:pre-wrap"></div>
     </div>
   `;
 }

@@ -9,7 +9,7 @@
  *   GET  /api/customers/segments     → customer segments (new/returning/vip/dormant)
  */
 
-const { createHandler, RouteError } = require('../../lib/handler');
+const { createHandler, RouteError, validate } = require('../../lib/handler');
 const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
 
@@ -62,7 +62,7 @@ async function getCustomer(client, { pathParams }) {
 }
 
 async function topCustomers(client, { params }) {
-  const days = Math.min(parseInt(params.days || '90', 10), 365);
+  const days = validate.days(params, 90);
   const ck = cache.makeKey('top-customers', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -104,7 +104,7 @@ async function topCustomers(client, { params }) {
 }
 
 async function customerSegments(client, { params }) {
-  const days = Math.min(parseInt(params.days || '90', 10), 365);
+  const days = validate.days(params, 90);
   const ck = cache.makeKey('customer-segments', { days });
   const cached = cache.get(ck);
   if (cached) return cached;

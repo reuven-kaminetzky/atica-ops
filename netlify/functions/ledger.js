@@ -8,7 +8,7 @@
  *   GET  /api/ledger/snapshots  → list snapshots
  */
 
-const { createHandler } = require('../../lib/handler');
+const { createHandler, validate } = require('../../lib/handler');
 const { mapLedgerEntry, mapSnapshotProduct } = require('../../lib/mappers');
 const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
@@ -17,7 +17,7 @@ const store = require('../../lib/store');
 // ── Handlers ────────────────────────────────────────────────
 
 async function listLedger(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('ledger', { days });
   const cached = cache.get(ck);
   if (cached) return { ...cached, _cached: true };

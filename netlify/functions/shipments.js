@@ -13,7 +13,7 @@
  *   POST /api/shipments/:id/arrive  → mark arrived + inventory adjust
  */
 
-const { createHandler, RouteError } = require('../../lib/handler');
+const { createHandler, RouteError, validate } = require('../../lib/handler');
 const cache = require('../../lib/cache');
 const store = require('../../lib/store');
 

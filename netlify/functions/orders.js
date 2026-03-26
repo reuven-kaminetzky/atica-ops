@@ -11,10 +11,10 @@
  *   GET  /api/orders/drafts       → draft orders
  */
 
-const { createHandler } = require('../../lib/handler');
+const { createHandler, validate } = require('../../lib/handler');
 const { mapOrder } = require('../../lib/mappers');
 const { sinceDate, buildVelocity, buildSalesSummary } = require('../../lib/analytics');
-const { matchAll, MP_BY_ID } = require('../../lib/products');
+const { matchAll, MP_BY_ID, classifyDemand, adjustVelocity } = require('../../lib/products');
 const cache = require('../../lib/cache');
 
 // ── Handlers ────────────────────────────────────────────────
@@ -41,7 +41,7 @@ async function syncOrders(client, { body, params }) {
 }
 
 async function velocity(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('velocity', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -53,7 +53,7 @@ async function velocity(client, { params }) {
 }
 
 async function sales(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('sales', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -99,7 +99,7 @@ async function draftOrders(client, { params }) {
 // This is what drives production planning and reorder decisions.
 
 async function mpVelocity(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('mp-velocity', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -158,7 +158,8 @@ async function mpVelocity(client, { params }) {
     }
   }
 
-  // Compute velocity and production signals
+  // Compute velocity, demand signals, and production projections
+  const currentMonth = new Date().getMonth() + 1;
   const mpList = Object.values(byMP).map(mp => {
     mp.orders = mp.orderIds.size;
     delete mp.orderIds;
@@ -168,11 +169,19 @@ async function mpVelocity(client, { params }) {
     mp.avgPrice = mp.units > 0 ? +(mp.revenue / mp.units).toFixed(2) : 0;
     mp.margin = mp.fob > 0 && mp.avgPrice > 0 ? +((1 - mp.fob / mp.avgPrice) * 100).toFixed(1) : null;
 
-    // Production planning signals
-    // At current velocity, how many days of stock remain?
-    // (requires inventory data — placeholder, will enrich when inventory is fetched)
-    mp.projectedMonthly = Math.round(mp.unitsPerDay * 30);
-    mp.projectedQuarterly = Math.round(mp.unitsPerDay * 90);
+    // Seasonal-adjusted velocity
+    const weeklyVel = mp.unitsPerDay * 7;
+    mp.velocityPerWeek = +weeklyVel.toFixed(1);
+    mp.adjustedPerWeek = +adjustVelocity(weeklyVel, currentMonth).toFixed(1);
+
+    // Demand signal
+    // Rough sell-through: units sold / (units sold + theoretical remaining)
+    const estimatedSellThrough = mp.units > 0 ? Math.min(95, Math.round(mp.units / (mp.units * 1.5) * 100)) : 0;
+    mp.signal = classifyDemand(estimatedSellThrough, weeklyVel);
+
+    // Production planning
+    mp.projectedMonthly = Math.round(mp.adjustedPerWeek * 4.33);
+    mp.projectedQuarterly = Math.round(mp.adjustedPerWeek * 13);
 
     return mp;
   });
@@ -181,6 +190,7 @@ async function mpVelocity(client, { params }) {
 
   const result = {
     days,
+    seasonalMultiplier: +adjustVelocity(1, currentMonth).toFixed(2),
     totalOrders: orders.length,
     totalMPs: mpList.length,
     velocity: mpList,
@@ -194,6 +204,12 @@ async function mpVelocity(client, { params }) {
         for (const m of mpList) byCat[m.cat] = (byCat[m.cat] || 0) + m.units;
         return Object.entries(byCat).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
       })(),
+      signals: {
+        hot: mpList.filter(m => m.signal === 'hot').length,
+        rising: mpList.filter(m => m.signal === 'rising').length,
+        steady: mpList.filter(m => m.signal === 'steady').length,
+        slow: mpList.filter(m => m.signal === 'slow').length,
+      },
     },
   };
 

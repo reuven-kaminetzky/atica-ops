@@ -14,12 +14,32 @@
  *   POST /api/products/sku-map/confirm-all → confirm all
  */
 
-const { createHandler, RouteError } = require('../../lib/handler');
+const { createHandler, RouteError, validate } = require('../../lib/handler');
 const { mapProduct, mapSKU, buildProductTree } = require('../../lib/mappers');
-const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias } = require('../../lib/products');
+const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias,
+        adjustVelocity, classifyDemand, suggestDistribution, landedCost, DISTRIBUTION_WEIGHTS } = require('../../lib/products');
 const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
 const store = require('../../lib/store');
+
+// ── Shared Helpers ─────────────────────────────────────────
+// Inventory fetch is expensive (sequential per location).
+// Cache it within this function's memory so reorder + stock share it.
+
+async function fetchAllInventory(client) {
+  const ck = cache.makeKey('_inv_all', {});
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  const { locations } = await client.getLocations();
+  const result = [];
+  for (const loc of locations) {
+    const { inventory_levels } = await client.getInventoryLevels(loc.id);
+    result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
+  }
+  cache.set(ck, result, cache.CACHE_TTL.inventory);
+  return result;
+}
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -178,8 +198,8 @@ async function seedCatalog() {
 // ── Production Planning — what to reorder ───────────────────
 
 async function reorderPlan(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
-  const coverDays = parseInt(params.cover || '90', 10); // target days of stock to maintain
+  const days = validate.days(params);
+  const coverDays = validate.intParam(params, 'cover', { min: 30, max: 365, fallback: 140 }); // 20 weeks — business target is 16-24 weeks
   const ck = cache.makeKey('reorder', { days, coverDays });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -188,15 +208,7 @@ async function reorderPlan(client, { params }) {
   const [productsData, ordersData, inventoryData] = await Promise.all([
     client.getProducts(),
     client.getOrders({ created_at_min: sinceDate(days) }),
-    (async () => {
-      const { locations } = await client.getLocations();
-      const result = [];
-      for (const loc of locations) {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
-      }
-      return result;
-    })(),
+    fetchAllInventory(client),
   ]);
 
   const products = productsData.products;
@@ -259,11 +271,15 @@ async function reorderPlan(client, { params }) {
     poByMP[po.mpId].push({ id: po.id, stage: po.stage, units: po.units || 0 });
   }
 
-  // 6. Build reorder plan
+  // 6. Build reorder plan with seasonal adjustment + demand signals
+  const currentMonth = new Date().getMonth() + 1;
   const plan = MP_SEEDS.map(seed => {
     const vel = mpVelocity[seed.id] || { units: 0, revenue: 0 };
     const stock = mpInventory[seed.id] || 0;
-    const unitsPerDay = vel.units / days;
+    const rawPerDay = vel.units / days;
+    // Seasonal adjustment: project forward using adjusted velocity
+    const adjustedPerDay = adjustVelocity(rawPerDay * 7, currentMonth) / 7;
+    const unitsPerDay = adjustedPerDay; // use adjusted for all planning
     const daysOfStock = unitsPerDay > 0 ? Math.round(stock / unitsPerDay) : stock > 0 ? 999 : 0;
     const activePOsForMP = poByMP[seed.id] || [];
     const incomingUnits = activePOsForMP.reduce((s, po) => s + po.units, 0);
@@ -276,7 +292,6 @@ async function reorderPlan(client, { params }) {
     const suggestedCost = +(suggestedQty * (seed.fob || 0)).toFixed(2);
 
     // Lead-time-aware ordering
-    // When should you place the order so stock doesn't run out?
     const leadDays = seed.lead || 0;
     const orderByDaysFromNow = effectiveDays - leadDays;
     const orderByDate = effectiveDays < 999
@@ -288,30 +303,41 @@ async function reorderPlan(client, { params }) {
       : orderByDaysFromNow <= 30 ? 'soon'
       : 'planned';
 
+    // Demand signal
+    const velocityPerWeek = rawPerDay * 7;
+    const totalEver = stock + vel.units; // rough proxy
+    const sellThrough = totalEver > 0 ? Math.round((vel.units / totalEver) * 100) : 0;
+    const signal = stock === 0 && vel.units > 0 ? 'stockout' : classifyDemand(sellThrough, velocityPerWeek);
+
+    // Distribution suggestion for incoming PO
+    const distribution = suggestedQty > 0 ? suggestDistribution(suggestedQty) : null;
+
     return {
       mpId: seed.id,
       name: seed.name,
       code: seed.code,
       cat: seed.cat,
       vendor: seed.vendor,
-      // Current state
       currentStock: stock,
       incomingUnits,
       activePOs: activePOsForMP,
-      unitsPerDay: +unitsPerDay.toFixed(2),
+      unitsPerDay: +rawPerDay.toFixed(2),
+      adjustedPerDay: +adjustedPerDay.toFixed(2),
       unitsSold: vel.units,
       revenue: +vel.revenue.toFixed(2),
       daysOfStock,
       effectiveDays,
-      // Lead-time ordering
+      signal,
+      sellThrough,
+      velocityPerWeek: +velocityPerWeek.toFixed(1),
       lead: leadDays,
       orderByDate,
       orderByDaysFromNow: effectiveDays < 999 ? orderByDaysFromNow : null,
       urgency,
-      // Reorder signal
       needsReorder,
       suggestedQty,
       suggestedCost,
+      distribution,
       moq: seed.moq || 0,
       fob: seed.fob || 0,
     };
@@ -333,6 +359,7 @@ async function reorderPlan(client, { params }) {
   const result = {
     days,
     coverDays,
+    seasonalMultiplier: +(adjustVelocity(1, currentMonth)).toFixed(2),
     summary: {
       totalMPs: plan.length,
       needReorder: reorderItems.length,
@@ -344,6 +371,13 @@ async function reorderPlan(client, { params }) {
       avgDaysOfStock: plan.length
         ? Math.round(plan.reduce((s, p) => s + Math.min(p.daysOfStock, 365), 0) / plan.length)
         : 0,
+      signals: {
+        hot: plan.filter(p => p.signal === 'hot').length,
+        rising: plan.filter(p => p.signal === 'rising').length,
+        steady: plan.filter(p => p.signal === 'steady').length,
+        slow: plan.filter(p => p.signal === 'slow').length,
+        stockout: plan.filter(p => p.signal === 'stockout').length,
+      },
     },
     plan,
   };
@@ -361,15 +395,7 @@ async function stockByLocation(client) {
 
   const [productsData, inventoryData] = await Promise.all([
     client.getProducts(),
-    (async () => {
-      const { locations } = await client.getLocations();
-      const result = [];
-      for (const loc of locations) {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
-      }
-      return result;
-    })(),
+    fetchAllInventory(client),
   ]);
 
   const { matched } = matchAll(productsData.products);
@@ -428,6 +454,8 @@ async function stockByLocation(client) {
 }
 
 // ── PLM Stage Tracking ──────────────────────────────────────
+// Persists which lifecycle stage each MP is at.
+// Data in Netlify Blobs (store.plm), not Shopify.
 
 async function getPlmStages() {
   const all = await store.plm.getAll();
@@ -436,7 +464,6 @@ async function getPlmStages() {
     byMP[entry.mpId || entry.key] = entry;
   }
 
-  // Merge with seeds so every MP has a PLM record
   const stages = MP_SEEDS.map(seed => {
     const stored = byMP[seed.id];
     return {
@@ -448,65 +475,56 @@ async function getPlmStages() {
       plmStageId: stored?.plmStageId || 1,
       updatedAt: stored?._updatedAt || null,
       updatedBy: stored?.updatedBy || null,
-      notes: stored?.notes || null,
+      history: stored?.history || [],
     };
   });
 
-  return {
-    count: stages.length,
-    plmStageDefinitions: PLM_STAGES,
-    stages,
-  };
+  return { count: stages.length, plmStageDefinitions: PLM_STAGES, stages };
 }
 
 async function updatePlmStage(_, { pathParams, body }) {
-  const mpId = pathParams.id;
+  const mpId = decodeURIComponent(pathParams.id);
   const seed = MP_BY_ID[mpId];
   if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
 
-  const stageName = body.stage;
-  if (!stageName) throw new RouteError(400, 'Missing required field: stage');
+  const stageName = body.stage || body.plmStage;
+  if (!stageName) throw new RouteError(400, 'Missing required field: stage or plmStage');
 
-  const stageDef = PLM_STAGES.find(s => s.name === stageName);
+  const stageDef = PLM_STAGES.find(s => s.name === stageName || s.id === stageName);
   if (!stageDef) throw new RouteError(400, `Invalid PLM stage: ${stageName}`);
 
-  // Check gate requirements
-  if (stageDef.gate && !body.checkedBy) {
-    throw new RouteError(400, `Stage "${stageName}" requires checkedBy (gate: ${stageDef.gate})`);
+  // Gate enforcement
+  if (stageDef.gate && !body.checkedBy && !body.updatedBy) {
+    throw new RouteError(400, `Stage "${stageDef.name}" requires checkedBy (gate: ${stageDef.gate})`);
   }
 
-  // Get existing record
   const existing = await store.plm.get(mpId) || {};
+  const now = new Date().toISOString();
 
   const record = {
+    ...existing,
     mpId,
-    plmStage: stageName,
+    plmStage: stageDef.name,
     plmStageId: stageDef.id,
     previousStage: existing.plmStage || 'Concept',
+    updatedAt: now,
     updatedBy: body.checkedBy || body.updatedBy || null,
     notes: body.notes || null,
     history: [
       ...(existing.history || []),
       {
         from: existing.plmStage || 'Concept',
-        to: stageName,
+        to: stageDef.name,
         by: body.checkedBy || body.updatedBy || null,
         notes: body.notes || null,
-        at: new Date().toISOString(),
+        at: now,
       },
     ],
   };
 
   await store.plm.put(mpId, record);
 
-  return {
-    mpId,
-    name: seed.name,
-    plmStage: stageName,
-    plmStageId: stageDef.id,
-    gate: stageDef.gate,
-    updated: true,
-  };
+  return { updated: true, mpId, name: seed.name, plmStage: stageDef.name, plmStageId: stageDef.id, gate: stageDef.gate };
 }
 
 // ── Routes ──────────────────────────────────────────────────
