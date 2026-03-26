@@ -9,6 +9,10 @@
 import { emit, on } from '../modules/event-bus.js';
 
 const NAV_ITEMS = [
+  // Dashboard
+  { section: 'Dashboard', items: [
+    { id: 'home',        label: 'Overview',        icon: '◉' },
+  ]},
   // Trunk
   { section: 'Operations', items: [
     { id: 'pos',         label: 'Point of Sale',  icon: '◎' },
@@ -29,7 +33,7 @@ const NAV_ITEMS = [
   ]},
 ];
 
-let currentRoute = 'pos';
+let currentRoute = 'home';
 
 export function renderSidebar(container) {
   container.innerHTML = `

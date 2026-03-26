@@ -58,6 +58,17 @@
   to     = "/.netlify/functions/webhooks-shopify"
   status = 200
 
+# ── V2 Modular Shell ─────────────────────────────────────────
+[[redirects]]
+  from   = "/v2"
+  to     = "/atica_v2.html"
+  status = 200
+
+[[redirects]]
+  from   = "/v2/*"
+  to     = "/atica_v2.html"
+  status = 200
+
 # ── SPA fallback (must be last) ───────────────────────────────────────
 [[redirects]]
   from   = "/*"

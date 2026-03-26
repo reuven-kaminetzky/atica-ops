@@ -18,25 +18,11 @@ let state = {
   loaded: false,
   salesData: null,
   ledger: [],
-  purchaseOrders: [], // stored in localStorage until backend PO storage exists
+  purchaseOrders: [],
   view: 'overview',
 };
 
 let _container = null;
-
-// ── PO Storage (localStorage until we have a real backend) ──
-
-const PO_STORAGE_KEY = 'atica_purchase_orders_v1';
-
-function loadPOs() {
-  try {
-    return JSON.parse(localStorage.getItem(PO_STORAGE_KEY) || '[]');
-  } catch { return []; }
-}
-
-function savePOs(pos) {
-  localStorage.setItem(PO_STORAGE_KEY, JSON.stringify(pos));
-}
 
 // ── Init ────────────────────────────────────────────────────
 
@@ -54,15 +40,15 @@ export async function init(container) {
     <div id="cf-content">${skeleton(6)}</div>
   `;
 
-  state.purchaseOrders = loadPOs();
-
   try {
-    const [sales, ledger] = await Promise.all([
+    const [sales, ledger, posData] = await Promise.all([
       api.get('/api/orders/sales', { days: 30 }),
       api.get('/api/ledger', { days: 30 }),
+      api.get('/api/purchase-orders'),
     ]);
     state.salesData = sales;
     state.ledger = ledger.ledger || [];
+    state.purchaseOrders = posData.purchaseOrders || [];
     state.loaded = true;
     render();
   } catch (err) {
@@ -81,7 +67,7 @@ function render() {
 
   if (state.view === 'overview') {
     const s = state.salesData;
-    const totalPOCost = state.purchaseOrders.reduce((sum, po) => sum + (po.totalCost || 0), 0);
+    const totalPOCost = state.purchaseOrders.reduce((sum, po) => sum + ((po.fob || 0) * (po.units || 0)), 0);
     el.innerHTML = `
       <div class="stat-row">
         <div class="stat-card"><div class="stat-label">Revenue (30d)</div><div class="stat-value">${formatCurrency(s?.totalRevenue || 0)}</div></div>
@@ -110,11 +96,11 @@ function render() {
           ? '<div class="empty-state">No purchase orders yet</div>'
           : state.purchaseOrders.map(po => `
             <div class="po-card" data-id="${po.id}">
-              <div class="po-vendor">${po.vendor}</div>
-              <div class="po-product">${po.product}</div>
-              <div class="po-cost">${formatCurrency(po.totalCost)}</div>
-              <div class="po-stage badge">${po.stage}</div>
-              <div class="po-date">${formatDate(po.createdAt)}</div>
+              <div class="po-vendor">${po.vendor || 'Unknown'}</div>
+              <div class="po-product">${po.mpName || po.mpId || '—'}</div>
+              <div class="po-cost">${formatCurrency((po.fob || 0) * (po.units || 0))}</div>
+              <div class="po-stage badge">${po.stage || 'draft'}</div>
+              <div class="po-date">${po._updatedAt ? formatDate(po._updatedAt) : '—'}</div>
             </div>
           `).join('')}
       </div>

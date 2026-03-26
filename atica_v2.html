@@ -11,7 +11,7 @@
   <div class="app-shell">
     <nav class="sidebar" id="sidebar"></nav>
     <header class="topbar">
-      <div class="topbar-title" id="topbar-title">Point of Sale</div>
+      <div class="topbar-title" id="topbar-title">Overview</div>
       <div class="topbar-actions">
         <div class="topbar-sync-indicator" id="sync-indicator">
           <span class="sync-dot"></span>
@@ -33,6 +33,7 @@
 
     // ── Route → Module mapping ────────────────────────
     const ROUTE_TITLES = {
+      'home':        'Overview',
       'pos':         'Point of Sale',
       'cash-flow':   'Cash Flow',
       'marketplace': 'Marketplace',
@@ -54,7 +55,8 @@
     renderSidebar(sidebar);
 
     // Load initial module
-    loadModule('pos', content);
+    topbarTitle.textContent = 'Overview';
+    loadModule('home', content);
 
     // ── Navigation ────────────────────────────────────
     on('nav:change', async ({ route }) => {
