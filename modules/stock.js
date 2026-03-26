@@ -19,6 +19,7 @@ let state = {
   loaded: false,
   masters: [],
   locations: [],
+  stockMatrix: null,
   view: 'by-mp',
   filter: '',
 };
@@ -33,7 +34,8 @@ export async function init(container) {
         <input type="text" id="stock-search" placeholder="Search..." class="input-search" />
         <div class="module-tabs" style="margin-left:0.5rem">
           <button class="tab active" data-view="by-mp">By Product</button>
-          <button class="tab" data-view="by-location">By Location</button>
+          <button class="tab" data-view="matrix">By Store</button>
+          <button class="tab" data-view="by-location">Locations</button>
         </div>
       </div>
     </div>
@@ -41,12 +43,14 @@ export async function init(container) {
   `;
 
   try {
-    const [masters, inv] = await Promise.all([
+    const [masters, inv, matrix] = await Promise.allSettled([
       api.get('/api/products/masters'),
       api.get('/api/inventory'),
+      api.get('/api/products/stock'),
     ]);
-    state.masters = masters.masters || [];
-    state.locations = inv.locations || [];
+    state.masters = masters.status === 'fulfilled' ? (masters.value.masters || []) : [];
+    state.locations = inv.status === 'fulfilled' ? (inv.value.locations || []) : [];
+    state.stockMatrix = matrix.status === 'fulfilled' ? matrix.value : null;
     state.loaded = true;
     render();
   } catch (err) {
@@ -62,6 +66,7 @@ function render() {
   if (!el || !state.loaded) return;
 
   if (state.view === 'by-mp') renderByMP(el);
+  else if (state.view === 'matrix') renderMatrix(el);
   else renderByLocation(el);
 }
 
@@ -132,6 +137,59 @@ function renderByMP(el) {
         }).join('')}
       </tbody>
     </table>
+  `;
+}
+
+function renderMatrix(el) {
+  const m = state.stockMatrix;
+  if (!m) {
+    el.innerHTML = '<div class="empty-state">Loading store matrix...</div>';
+    return;
+  }
+
+  let rows = m.inventory || [];
+  if (state.filter) {
+    const q = state.filter.toLowerCase();
+    rows = rows.filter(r => r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q));
+  }
+
+  const stores = m.storeNames || [];
+  const totalByStore = {};
+  for (const store of stores) totalByStore[store] = 0;
+  for (const row of rows) {
+    for (const store of stores) totalByStore[store] += (row.stores[store] || 0);
+  }
+
+  el.innerHTML = `
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table class="data-table" style="min-width:${400 + stores.length * 80}px">
+        <thead><tr>
+          <th>Product</th>
+          <th>Code</th>
+          ${stores.map(s => `<th style="text-align:right;font-size:0.7rem;min-width:70px">${s}</th>`).join('')}
+          <th style="text-align:right;font-weight:700">Total</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td style="font-weight:600;white-space:nowrap">${row.name}</td>
+              <td style="font-family:var(--font-mono);font-size:0.78rem;color:var(--text-dim)">${row.code}</td>
+              ${stores.map(s => {
+                const qty = row.stores[s] || 0;
+                const color = qty === 0 ? 'color:var(--text-muted)' : qty < 10 ? 'color:var(--danger);font-weight:600' : '';
+                return `<td style="text-align:right;font-family:var(--font-mono);font-size:0.82rem;${color}">${qty || '—'}</td>`;
+              }).join('')}
+              <td style="text-align:right;font-family:var(--font-mono);font-weight:700">${formatNumber(row.total)}</td>
+            </tr>
+          `).join('')}
+          <tr style="background:var(--surface-2);font-weight:700">
+            <td colspan="2">Total</td>
+            ${stores.map(s => `<td style="text-align:right;font-family:var(--font-mono)">${formatNumber(totalByStore[s] || 0)}</td>`).join('')}
+            <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(Object.values(totalByStore).reduce((a, b) => a + b, 0))}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -220,5 +278,5 @@ on('po:received', async () => {
 
 export function destroy() {
   _container = null;
-  state = { loaded: false, masters: [], locations: [], view: 'by-mp', filter: '' };
+  state = { loaded: false, masters: [], locations: [], stockMatrix: null, view: 'by-mp', filter: '' };
 }

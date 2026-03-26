@@ -352,6 +352,81 @@ async function reorderPlan(client, { params }) {
   return result;
 }
 
+// ── Stock by Location per MP ────────────────────────────────
+
+async function stockByLocation(client) {
+  const ck = cache.makeKey('stock-by-location', {});
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  const [productsData, inventoryData] = await Promise.all([
+    client.getProducts(),
+    (async () => {
+      const { locations } = await client.getLocations();
+      const result = [];
+      for (const loc of locations) {
+        const { inventory_levels } = await client.getInventoryLevels(loc.id);
+        result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
+      }
+      return result;
+    })(),
+  ]);
+
+  const { matched } = matchAll(productsData.products);
+
+  // Build inventoryItemId → MP lookup
+  const itemToMP = {};
+  for (const [seedId, shopifyProducts] of Object.entries(matched)) {
+    for (const sp of shopifyProducts) {
+      for (const v of sp.variants) {
+        if (v.inventory_item_id) itemToMP[v.inventory_item_id] = seedId;
+      }
+    }
+  }
+
+  // Normalize location names
+  const { normalize } = require('../../lib/locations');
+  const locationNames = inventoryData.map(l => ({ id: l.id, name: normalize(l.name) }));
+
+  // Build MP × Location matrix
+  const matrix = {};
+  for (const loc of inventoryData) {
+    const locName = normalize(loc.name);
+    for (const level of loc.levels) {
+      const mpId = itemToMP[level.inventory_item_id];
+      if (!mpId) continue;
+      if (!matrix[mpId]) matrix[mpId] = {};
+      matrix[mpId][locName] = (matrix[mpId][locName] || 0) + (level.available || 0);
+    }
+  }
+
+  // Build response
+  const storeNames = [...new Set(locationNames.map(l => l.name))].sort();
+  const rows = MP_SEEDS.map(seed => {
+    const stores = matrix[seed.id] || {};
+    const total = Object.values(stores).reduce((s, v) => s + v, 0);
+    return {
+      mpId: seed.id,
+      name: seed.name,
+      code: seed.code,
+      cat: seed.cat,
+      total,
+      stores,
+    };
+  }).filter(r => r.total > 0 || Object.keys(r.stores).length > 0);
+
+  rows.sort((a, b) => b.total - a.total);
+
+  const result = {
+    storeNames,
+    count: rows.length,
+    inventory: rows,
+  };
+
+  cache.set(ck, result, cache.CACHE_TTL.inventory);
+  return result;
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
@@ -362,6 +437,7 @@ const ROUTES = [
   { method: 'GET',   path: 'masters',         handler: masterProducts },
   { method: 'GET',   path: 'seeds',           handler: seedCatalog,    noClient: true },
   { method: 'GET',   path: 'reorder',         handler: reorderPlan },
+  { method: 'GET',   path: 'stock',           handler: stockByLocation },
   { method: 'GET',   path: 'sku-map',         handler: skuMap },
   { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },
