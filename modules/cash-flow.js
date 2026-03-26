@@ -226,52 +226,54 @@ function openPODetail(po) {
       </div>
 
       <!-- Editable Details -->
-      <div style="background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.75rem;margin-bottom:1rem">
-        <div class="form-row" style="margin-bottom:0.5rem">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Vendor</label>
-            <input id="pod-vendor" class="form-input" value="${po.vendor || ''}" />
+      <div style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+          <h3 style="font-size:0.85rem;margin:0">Details</h3>
+          <button id="po-edit-toggle" class="btn btn-sm">Edit</button>
+        </div>
+        <div id="po-detail-view" style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1.5rem;font-size:0.82rem;
+          background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.75rem">
+          <div><span style="color:var(--text-dim)">Vendor:</span> ${po.vendor || '—'}</div>
+          <div><span style="color:var(--text-dim)">Units:</span> ${formatNumber(po.units || 0)}</div>
+          <div><span style="color:var(--text-dim)">FOB:</span> ${formatCurrency(po.fob || 0)}</div>
+          <div><span style="color:var(--text-dim)">FOB Total:</span> <strong>${formatCurrency(po.fobTotal || 0)}</strong></div>
+          <div><span style="color:var(--text-dim)">Landed Cost:</span> ${po.landedCost ? formatCurrency(po.landedCost) : '—'}</div>
+          <div><span style="color:var(--text-dim)">MOQ:</span> ${po.moq || '—'}</div>
+          <div><span style="color:var(--text-dim)">Lead:</span> ${po.lead ? po.lead + 'd' : '—'}</div>
+          <div><span style="color:var(--text-dim)">ETD:</span> ${po.etd ? formatDate(po.etd) : '—'}</div>
+          <div><span style="color:var(--text-dim)">ETA:</span> ${po.eta ? formatDate(po.eta) : '—'}</div>
+          ${po.container ? `<div><span style="color:var(--text-dim)">Container:</span> ${po.container}</div>` : ''}
+          ${po.vessel ? `<div><span style="color:var(--text-dim)">Vessel:</span> ${po.vessel}</div>` : ''}
+        </div>
+        <div id="po-edit-form" style="display:none">
+          <div class="form-row" style="margin-bottom:0.5rem">
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">Vendor</label><input id="pod-vendor" class="form-input" value="${po.vendor || ''}" /></div>
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">Units</label><input id="pod-units" type="number" class="form-input" value="${po.units || 0}" min="0" /></div>
           </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Units</label>
-            <input id="pod-units" type="number" class="form-input" value="${po.units || 0}" min="0" />
+          <div class="form-row" style="margin-bottom:0.5rem">
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">FOB ($)</label><input id="pod-fob" type="number" step="0.01" class="form-input" value="${po.fob || 0}" /></div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label">FOB Total</label>
+              <div id="pod-total" style="font-family:var(--font-mono);font-weight:600;padding:0.5rem 0">${formatCurrency(po.fobTotal || 0)}</div>
+            </div>
+          </div>
+          <div class="form-row" style="margin-bottom:0.5rem">
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">ETD</label><input id="pod-etd" type="date" class="form-input" value="${po.etd ? po.etd.slice(0, 10) : ''}" /></div>
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">ETA</label><input id="pod-eta" type="date" class="form-input" value="${po.eta ? po.eta.slice(0, 10) : ''}" /></div>
+          </div>
+          <div class="form-row" style="margin-bottom:0.5rem">
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">Container</label><input id="pod-container" class="form-input" value="${po.container || ''}" placeholder="Container #" /></div>
+            <div class="form-group" style="margin-bottom:0"><label class="form-label">Vessel</label><input id="pod-vessel" class="form-input" value="${po.vessel || ''}" placeholder="Vessel name" /></div>
+          </div>
+          <div class="form-group" style="margin-bottom:0.5rem">
+            <label class="form-label">Notes</label>
+            <input id="pod-notes" class="form-input" value="${po.notes || ''}" />
+          </div>
+          <div class="form-actions" style="margin-top:0.5rem">
+            <button id="pod-cancel" class="btn btn-sm">Cancel</button>
+            <button id="pod-save" class="btn btn-sm btn-primary">Save Changes</button>
           </div>
         </div>
-        <div class="form-row" style="margin-bottom:0.5rem">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">FOB ($)</label>
-            <input id="pod-fob" type="number" step="0.01" class="form-input" value="${po.fob || 0}" />
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">FOB Total</label>
-            <div id="pod-total" style="font-family:var(--font-mono);font-weight:600;padding:0.5rem 0">${formatCurrency(po.fobTotal || 0)}</div>
-          </div>
-        </div>
-        <div class="form-row" style="margin-bottom:0.5rem">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">ETD</label>
-            <input id="pod-etd" type="date" class="form-input" value="${po.etd ? po.etd.slice(0, 10) : ''}" />
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">ETA</label>
-            <input id="pod-eta" type="date" class="form-input" value="${po.eta ? po.eta.slice(0, 10) : ''}" />
-          </div>
-        </div>
-        <div class="form-row" style="margin-bottom:0.5rem">
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Container</label>
-            <input id="pod-container" class="form-input" value="${po.container || ''}" placeholder="Container #" />
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label class="form-label">Vessel</label>
-            <input id="pod-vessel" class="form-input" value="${po.vessel || ''}" placeholder="Vessel name" />
-          </div>
-        </div>
-        <div class="form-group" style="margin-bottom:0.5rem">
-          <label class="form-label">Notes</label>
-          <input id="pod-notes" class="form-input" value="${po.notes || ''}" />
-        </div>
-        <button id="pod-save" class="btn btn-primary btn-sm">Save Changes</button>
       </div>
 
       <!-- Check-ins -->
@@ -326,6 +328,24 @@ function openPODetail(po) {
       ` : `<div style="text-align:center;color:var(--success);font-weight:600;padding:0.75rem 0">Distribution complete</div>`}
     `,
     onMount: (body) => {
+      // ── Edit toggle ──
+      const detailView = body.querySelector('#po-detail-view');
+      const editForm = body.querySelector('#po-edit-form');
+      const editToggle = body.querySelector('#po-edit-toggle');
+
+      editToggle?.addEventListener('click', () => {
+        const editing = editForm.style.display !== 'none';
+        editForm.style.display = editing ? 'none' : 'block';
+        detailView.style.display = editing ? 'grid' : 'none';
+        editToggle.textContent = editing ? 'Edit' : 'Cancel';
+      });
+
+      body.querySelector('#pod-cancel')?.addEventListener('click', () => {
+        editForm.style.display = 'none';
+        detailView.style.display = 'grid';
+        editToggle.textContent = 'Edit';
+      });
+
       // Live FOB total update
       const fobInput = body.querySelector('#pod-fob');
       const unitsInput = body.querySelector('#pod-units');
@@ -359,7 +379,7 @@ function openPODetail(po) {
 
           await api.patch(`/api/purchase-orders/${po.id}`, updates);
           emit('modal:close');
-          emit('toast:show', { message: 'PO updated', type: 'success' });
+          emit('toast:show', { message: `PO ${po.id} updated`, type: 'success' });
           emit('po:updated', { id: po.id });
 
           const posData = await api.get('/api/purchase-orders');
@@ -373,7 +393,7 @@ function openPODetail(po) {
         }
       });
 
-      // Advance stage
+      // ── Stage advancement ──
       if (!nextStage) return;
       body.querySelector('#po-adv-btn')?.addEventListener('click', async () => {
         const btn = body.querySelector('#po-adv-btn');
