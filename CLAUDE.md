@@ -49,7 +49,8 @@ Atica Man is a menswear retail operations platform. Static HTML + Netlify Functi
 ```
 GET  /api/products/masters      → MPs enriched with live Shopify data (styles, inventory, images, margin)
 GET  /api/products/seeds        → Raw MP catalog + PLM stages (no Shopify needed)
-GET  /api/products/reorder      → Production planning: velocity + inventory = reorder signals
+GET  /api/products/reorder      → Production planning: velocity + inventory + POs = reorder signals
+GET  /api/products/stock        → MP × Store inventory matrix
 GET  /api/products/trees        → Product tree Style→Fit→Size
 GET  /api/orders/mp-velocity    → Velocity by Master Product (production planning)
 GET  /api/orders/sales          → Revenue summary with daily breakdown
@@ -76,9 +77,10 @@ Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Sh
 ### Frontend V2 (9 modules at /v2)
 
 - **home.js** — Large navigation tiles (no KPIs, no data)
-- **marketplace.js** — MP cards from `/api/products/masters`, category tabs, color swatches, click → detail modal with styles/fits/sizes
-- **cash-flow.js** — 4 tabs: Overview (revenue + POs), Purchase Orders (table + "+ New PO" modal form), Production (reorder plan), Ledger
-- **stock.js** — Inventory grouped by MP (not raw SKUs), by-location view
+- **marketplace.js** — MP cards from `/api/products/masters`, category tabs, color swatches, click → detail modal with styles/fits/sizes, Quick PO button
+- **cash-flow.js** — 4 tabs: Overview (revenue + POs), Purchase Orders (table + create/edit/advance), Production (lead-time reorder plan), Ledger
+- **stock.js** — By Product (MP totals), By Store (MP × Location matrix), Locations (raw)
+- **vendors.js** — Vendor cards with MP product lines, PO rollup, expandable details
 - **pos.js** — Today's sales, feed, by-store (data feed only — not priority)
 - **ledger.js** — Financial entries with configurable day range
 - **settings.js** — Shopify status, sync controls, cache, webhooks
@@ -86,7 +88,8 @@ Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Sh
 - **event-bus.js** — Pub/sub with EVENTS registry
 
 **Shell (atica_v2.html):**
-- Sidebar nav → emits `nav:change` → shell swaps modules via `loadModule()`
+- Sidebar: Catalog (Master Products, Stock) → Operations (Cash Flow, Vendors) → Finance (Ledger, Sales Feed) → System (Settings)
+- Mobile: hamburger toggle, backdrop overlay, auto-close on nav
 - Modal system → `emit('modal:open', { title, html, onMount, onClose, wide })`
 - Toast notifications → `emit('toast:show', { message, type })`
 - Sync indicator → listens to `sync:start/complete/error`
@@ -129,7 +132,7 @@ netlify/functions/          # 12 Netlify Functions
   oauth-callback.js         # OAuth token exchange
 
 modules/                    # V2 frontend ES modules
-  [9 modules — see above]
+  [10 modules — see above]
 
 docs/ARCHITECTURE.md        # Full system architecture
 ```
@@ -206,30 +209,34 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 ## What Needs Work
 
 ### High Priority
-- [ ] PO edit form — clicking a PO should let you edit fields (vendor, units, FOB, ETD), not just view/advance
-- [ ] Inventory by MP per location — show which stores have which MPs (stock module needs per-store breakdown per MP)
-- [ ] PO auto-shipment — when PO hits "Shipped" stage, auto-create shipment record via /api/shipments
 - [ ] MP PLM stage tracking — persist which PLM stage each MP is at (concept→in-store→reorder review→EOL)
+- [ ] Analytics module — dedicated analytics page with MP velocity charts, category breakdown, trend lines
+- [ ] MP detail needs size grid — show available sizes per fit per style (the full matrix)
+- [ ] Cash-flow overview should show real cost breakdown (PO costs vs revenue, not just revenue)
 
 ### Medium Priority
 - [ ] Sales pulse backoff in monolith — if syncSalesPulse fails, double interval up to 15 min
-- [ ] v2 event bus end-to-end testing — po:created and po:updated are emitted but only cash-flow listens
-- [ ] Vendor management view — group POs by vendor, show total committed cost, lead time averages
-- [ ] Analytics module — dedicated analytics page with MP velocity charts, category breakdown, trend lines
+- [ ] v2 event bus end-to-end testing — events fire but some subscriptions are stubs
+- [ ] PO bulk actions — select multiple POs, advance stage, or export
+- [ ] Inventory transfer UI — stock module has the tab but no form yet
 
 ### Lower Priority
 - [ ] Monolith → v2 migration plan (both run on same backend, v2 is the long-term)
 - [ ] Branch protection in GitHub
 - [ ] CI test pipeline (endpoint tests exist but DNS blocked from CI)
-- [ ] Mobile responsive v2 shell (sidebar collapse, bottom nav)
 
 ### Done (do not rebuild)
-- [x] MP detail with PO creation shortcut (Quick PO button with MOQ pre-fill)
+- [x] MP detail with Quick PO + Full Form shortcuts
 - [x] PO detail view with stage track, check-ins, history, stage advancement
-- [x] Reorder plan cross-references active POs (won't suggest reorder if PO in pipeline)
-- [x] Lead-time-aware ordering (orderByDate, urgency: overdue/urgent/soon/planned)
+- [x] PO edit form — editable fields (vendor, units, FOB, ETD, ETA, container, vessel, notes)
+- [x] PO auto-shipment — when PO hits "In Transit", auto-creates shipment in Blobs
+- [x] Reorder plan cross-references active POs + lead-time urgency
+- [x] Inventory by MP per location — stock matrix (Product × Store grid)
+- [x] Vendor management view — MPs grouped by vendor, PO rollup, product chips
 - [x] Modal system (modal:open with onMount callback for form binding)
 - [x] PO creation form with MP dropdown and seed auto-fill
+- [x] Mobile sidebar toggle (hamburger + backdrop + auto-close on nav)
+- [x] API version configurable via SHOPIFY_API_VERSION env var
 
 ## Testing
 
