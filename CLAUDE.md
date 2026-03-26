@@ -206,21 +206,30 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 ## What Needs Work
 
 ### High Priority
-- [ ] MP detail view in marketplace needs PLM stage display and PO creation shortcut
-- [ ] PO detail view — click a PO row → see full history, stage track, check-ins, advance stage
-- [ ] Cash-flow overview needs real cost data from POs, not just revenue
-- [ ] Production planning should cross-reference active POs (don't suggest reorder if PO already in pipeline)
+- [ ] PO edit form — clicking a PO should let you edit fields (vendor, units, FOB, ETD), not just view/advance
+- [ ] Inventory by MP per location — show which stores have which MPs (stock module needs per-store breakdown per MP)
+- [ ] PO auto-shipment — when PO hits "Shipped" stage, auto-create shipment record via /api/shipments
+- [ ] MP PLM stage tracking — persist which PLM stage each MP is at (concept→in-store→reorder review→EOL)
 
 ### Medium Priority
-- [ ] Inventory by MP per location — show which stores have which MPs
-- [ ] PO auto-shipment — when PO hits "Shipped", auto-create shipment record
-- [ ] Sales pulse backoff in monolith — if sync fails, double interval up to 15 min
-- [ ] v2 event bus end-to-end testing
+- [ ] Sales pulse backoff in monolith — if syncSalesPulse fails, double interval up to 15 min
+- [ ] v2 event bus end-to-end testing — po:created and po:updated are emitted but only cash-flow listens
+- [ ] Vendor management view — group POs by vendor, show total committed cost, lead time averages
+- [ ] Analytics module — dedicated analytics page with MP velocity charts, category breakdown, trend lines
 
 ### Lower Priority
-- [ ] Monolith → v2 migration plan (both run on same backend)
+- [ ] Monolith → v2 migration plan (both run on same backend, v2 is the long-term)
 - [ ] Branch protection in GitHub
 - [ ] CI test pipeline (endpoint tests exist but DNS blocked from CI)
+- [ ] Mobile responsive v2 shell (sidebar collapse, bottom nav)
+
+### Done (do not rebuild)
+- [x] MP detail with PO creation shortcut (Quick PO button with MOQ pre-fill)
+- [x] PO detail view with stage track, check-ins, history, stage advancement
+- [x] Reorder plan cross-references active POs (won't suggest reorder if PO in pipeline)
+- [x] Lead-time-aware ordering (orderByDate, urgency: overdue/urgent/soon/planned)
+- [x] Modal system (modal:open with onMount callback for form binding)
+- [x] PO creation form with MP dropdown and seed auto-fill
 
 ## Testing
 
