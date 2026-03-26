@@ -209,6 +209,10 @@ function openMPDetail(mp) {
         </div>
         <button id="mpd-create-po" class="btn btn-primary" style="width:100%">Create PO for ${mp.code}</button>
       </div>
+
+      <div class="form-actions">
+        <button id="mp-create-po" class="btn btn-primary">Create Purchase Order</button>
+      </div>
     `,
     onMount: (body) => {
       const unitsInput = body.querySelector('#mpd-units');
@@ -234,6 +238,12 @@ function openMPDetail(mp) {
           createBtn.disabled = false;
           createBtn.textContent = `Create PO for ${mp.code}`;
         }
+      });
+
+      body.querySelector('#mp-create-po')?.addEventListener('click', () => {
+        emit('modal:close');
+        emit('po:create-from-mp', { mpId: mp.id });
+        emit('nav:change', { route: 'cash-flow' });
       });
     },
   });
