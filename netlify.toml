@@ -52,12 +52,7 @@
   to     = "/.netlify/functions/shipments/:splat"
   status = 200
 
-# ── Legacy Shopify routes (keep alive) ───────────────────────────────
-[[redirects]]
-  from   = "/api/shopify/*"
-  to     = "/.netlify/functions/shopify/:splat"
-  status = 200
-
+# ── Webhooks ──────────────────────────────────────────────────
 [[redirects]]
   from   = "/api/webhooks/shopify"
   to     = "/.netlify/functions/webhooks-shopify"
