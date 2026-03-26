@@ -11,7 +11,7 @@ Atica Man is a menswear retail operations platform. Static HTML + Netlify Functi
 - **V2 URL:** https://atica-ops.netlify.app/v2 (modular — long-term replacement)
 - **Repo:** github.com/reuven-kaminetzky/atica-ops
 - **Shopify Store:** aticaman.myshopify.com
-- **Shopify API Version:** `2024-10` — DO NOT CHANGE without curl-testing first
+- **Shopify API Version:** `2025-10` — DO NOT CHANGE without curl-testing first
 
 ## Priority Stack — What Matters
 

@@ -120,7 +120,7 @@ const { orders } = await client.getOrders({ created_at_min: since });
 The client handles: 8s request timeout, 25s pagination timeout, 3x retry with backoff,
 429 rate limit retry (capped at 3), cached `createClient` (5 min).
 
-**API version: `2024-10`** — do NOT change without testing:
+**API version: `2025-10`** — do NOT change without testing:
 ```bash
 curl https://aticaman.myshopify.com/admin/api/YYYY-MM/shop.json \
   -H "X-Shopify-Access-Token: $TOKEN"
