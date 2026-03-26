@@ -17,6 +17,7 @@
 const { createHandler, RouteError } = require('../../lib/handler');
 const { mapProduct, mapSKU, buildProductTree } = require('../../lib/mappers');
 const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias } = require('../../lib/products');
+const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
 
 // ── Handlers ────────────────────────────────────────────────
@@ -173,6 +174,137 @@ async function seedCatalog() {
   };
 }
 
+// ── Production Planning — what to reorder ───────────────────
+
+async function reorderPlan(client, { params }) {
+  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const coverDays = parseInt(params.cover || '90', 10); // target days of stock to maintain
+  const ck = cache.makeKey('reorder', { days, coverDays });
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  // Fetch all three data sources in parallel
+  const [productsData, ordersData, inventoryData] = await Promise.all([
+    client.getProducts(),
+    client.getOrders({ created_at_min: sinceDate(days) }),
+    (async () => {
+      const { locations } = await client.getLocations();
+      const result = [];
+      for (const loc of locations) {
+        const { inventory_levels } = await client.getInventoryLevels(loc.id);
+        result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
+      }
+      return result;
+    })(),
+  ]);
+
+  const products = productsData.products;
+  const orders = ordersData.orders;
+
+  // 1. Match products to MPs
+  const { matched } = matchAll(products);
+
+  // 2. Build product_id → MP lookup
+  const productIdToMP = {};
+  const mpInventoryItemIds = {}; // mpId → [inventoryItemId, ...]
+  for (const [seedId, shopifyProducts] of Object.entries(matched)) {
+    for (const sp of shopifyProducts) {
+      productIdToMP[sp.id] = seedId;
+      if (!mpInventoryItemIds[seedId]) mpInventoryItemIds[seedId] = [];
+      for (const v of sp.variants) {
+        if (v.inventory_item_id) mpInventoryItemIds[seedId].push(v.inventory_item_id);
+      }
+    }
+  }
+
+  // 3. Compute velocity by MP from orders
+  const mpVelocity = {};
+  for (const order of orders) {
+    for (const li of order.line_items) {
+      const mpId = productIdToMP[li.product_id];
+      if (!mpId) continue;
+      if (!mpVelocity[mpId]) mpVelocity[mpId] = { units: 0, revenue: 0 };
+      mpVelocity[mpId].units += li.quantity;
+      mpVelocity[mpId].revenue += parseFloat(li.price) * li.quantity;
+    }
+  }
+
+  // 4. Compute inventory by MP from all locations
+  const allLevels = {};
+  for (const loc of inventoryData) {
+    for (const level of loc.levels) {
+      allLevels[level.inventory_item_id] = (allLevels[level.inventory_item_id] || 0) + (level.available || 0);
+    }
+  }
+
+  const mpInventory = {};
+  for (const [mpId, itemIds] of Object.entries(mpInventoryItemIds)) {
+    mpInventory[mpId] = itemIds.reduce((s, id) => s + (allLevels[id] || 0), 0);
+  }
+
+  // 5. Build reorder plan
+  const plan = MP_SEEDS.map(seed => {
+    const vel = mpVelocity[seed.id] || { units: 0, revenue: 0 };
+    const stock = mpInventory[seed.id] || 0;
+    const unitsPerDay = vel.units / days;
+    const daysOfStock = unitsPerDay > 0 ? Math.round(stock / unitsPerDay) : stock > 0 ? 999 : 0;
+    const needsReorder = daysOfStock < coverDays && daysOfStock < 999;
+    const suggestedQty = needsReorder
+      ? Math.max(seed.moq || 0, Math.ceil(unitsPerDay * coverDays) - stock)
+      : 0;
+    const suggestedCost = +(suggestedQty * (seed.fob || 0)).toFixed(2);
+
+    return {
+      mpId: seed.id,
+      name: seed.name,
+      code: seed.code,
+      cat: seed.cat,
+      vendor: seed.vendor,
+      // Current state
+      currentStock: stock,
+      unitsPerDay: +unitsPerDay.toFixed(2),
+      unitsSold: vel.units,
+      revenue: +vel.revenue.toFixed(2),
+      daysOfStock,
+      // Reorder signal
+      needsReorder,
+      suggestedQty,
+      suggestedCost,
+      moq: seed.moq || 0,
+      lead: seed.lead || 0,
+      fob: seed.fob || 0,
+    };
+  });
+
+  // Sort: needs reorder first, then by days of stock ascending
+  plan.sort((a, b) => {
+    if (a.needsReorder !== b.needsReorder) return a.needsReorder ? -1 : 1;
+    return a.daysOfStock - b.daysOfStock;
+  });
+
+  const reorderItems = plan.filter(p => p.needsReorder);
+  const totalReorderCost = reorderItems.reduce((s, p) => s + p.suggestedCost, 0);
+  const totalReorderUnits = reorderItems.reduce((s, p) => s + p.suggestedQty, 0);
+
+  const result = {
+    days,
+    coverDays,
+    summary: {
+      totalMPs: plan.length,
+      needReorder: reorderItems.length,
+      totalReorderCost: +totalReorderCost.toFixed(2),
+      totalReorderUnits,
+      avgDaysOfStock: plan.length
+        ? Math.round(plan.reduce((s, p) => s + Math.min(p.daysOfStock, 365), 0) / plan.length)
+        : 0,
+    },
+    plan,
+  };
+
+  cache.set(ck, result, cache.CACHE_TTL.velocity);
+  return result;
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
@@ -182,6 +314,7 @@ const ROUTES = [
   { method: 'GET',   path: 'trees',           handler: productTrees },
   { method: 'GET',   path: 'masters',         handler: masterProducts },
   { method: 'GET',   path: 'seeds',           handler: seedCatalog,    noClient: true },
+  { method: 'GET',   path: 'reorder',         handler: reorderPlan },
   { method: 'GET',   path: 'sku-map',         handler: skuMap },
   { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },

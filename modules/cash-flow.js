@@ -4,11 +4,11 @@
  * THE TRUNK — connects MPs (roots) to analytics (branches).
  * 
  * API endpoints:
- *   GET  /api/orders/sales         → revenue data
- *   GET  /api/orders/mp-velocity   → velocity by MP (production planning)
- *   GET  /api/purchase-orders      → POs with stage gates
+ *   GET  /api/orders/sales           → revenue data
+ *   GET  /api/products/reorder       → reorder plan (velocity + inventory)
+ *   GET  /api/purchase-orders        → POs with stage gates
  *   GET  /api/purchase-orders/stages → stage definitions
- *   GET  /api/ledger               → ledger entries
+ *   GET  /api/ledger                 → ledger entries
  * 
  * Publishes: po:created, po:updated
  * Subscribes: sync:complete
@@ -20,7 +20,7 @@ import { api, formatCurrency, formatNumber, formatDate, skeleton } from './core.
 let state = {
   loaded: false,
   salesData: null,
-  mpVelocity: null,
+  reorderPlan: null,
   purchaseOrders: [],
   stages: [],
   ledger: [],
@@ -45,16 +45,16 @@ export async function init(container) {
   `;
 
   try {
-    const [sales, pos, stages, velocity] = await Promise.allSettled([
+    const [sales, pos, stages, reorder] = await Promise.allSettled([
       api.get('/api/orders/sales', { days: 30 }),
       api.get('/api/purchase-orders'),
       api.get('/api/purchase-orders/stages'),
-      api.get('/api/orders/mp-velocity', { days: 30 }),
+      api.get('/api/products/reorder', { days: 30, cover: 90 }),
     ]);
     state.salesData = sales.status === 'fulfilled' ? sales.value : null;
     state.purchaseOrders = pos.status === 'fulfilled' ? (pos.value.purchaseOrders || []) : [];
     state.stages = stages.status === 'fulfilled' ? (stages.value.stages || []) : [];
-    state.mpVelocity = velocity.status === 'fulfilled' ? velocity.value : null;
+    state.reorderPlan = reorder.status === 'fulfilled' ? reorder.value : null;
     state.loaded = true;
     render();
   } catch (err) {
@@ -173,56 +173,88 @@ function renderPOs(el) {
 }
 
 function renderProduction(el) {
-  const v = state.mpVelocity;
-  if (!v) {
-    el.innerHTML = '<div class="empty-state">Loading MP velocity...</div>';
+  const r = state.reorderPlan;
+  if (!r) {
+    el.innerHTML = '<div class="empty-state">Loading reorder plan...</div>';
     return;
   }
 
-  const velocity = v.velocity || [];
+  const plan = r.plan || [];
+  const reorderItems = plan.filter(p => p.needsReorder);
 
   el.innerHTML = `
     <div class="stat-row">
       <div class="stat-card">
-        <div class="stat-label">Units Sold (${v.days}d)</div>
-        <div class="stat-value">${formatNumber(v.summary?.totalUnits || 0)}</div>
+        <div class="stat-label">Need Reorder</div>
+        <div class="stat-value" style="${reorderItems.length > 0 ? 'color:var(--danger)' : ''}">${reorderItems.length}</div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">of ${plan.length} MPs</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Revenue</div>
-        <div class="stat-value">${formatCurrency(v.summary?.totalRevenue || 0)}</div>
+        <div class="stat-label">Reorder Cost</div>
+        <div class="stat-value">${formatCurrency(r.summary?.totalReorderCost || 0)}</div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">${formatNumber(r.summary?.totalReorderUnits || 0)} units</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Top Category</div>
-        <div class="stat-value" style="font-size:1.1rem">${v.summary?.topCategory || '—'}</div>
+        <div class="stat-label">Avg Days of Stock</div>
+        <div class="stat-value">${r.summary?.avgDaysOfStock || 0}</div>
+        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">target: ${r.coverDays}d</div>
       </div>
     </div>
 
-    <h3>MP Velocity — What to Order</h3>
+    ${reorderItems.length > 0 ? `
+      <h3 style="color:var(--danger)">Reorder Now</h3>
+      <table class="data-table" style="margin-bottom:1.5rem">
+        <thead><tr>
+          <th>Product</th><th>Vendor</th>
+          <th style="text-align:right">Stock</th>
+          <th style="text-align:right">Days Left</th>
+          <th style="text-align:right">Units/Day</th>
+          <th style="text-align:right">Order Qty</th>
+          <th style="text-align:right">Cost</th>
+        </tr></thead>
+        <tbody>
+          ${reorderItems.map(p => `
+            <tr>
+              <td style="font-weight:600">${p.name}</td>
+              <td style="font-size:0.8rem;color:var(--text-dim)">${p.vendor || '—'}</td>
+              <td style="text-align:right;font-family:var(--font-mono);${p.currentStock === 0 ? 'color:var(--danger);font-weight:600' : ''}">${formatNumber(p.currentStock)}</td>
+              <td style="text-align:right;font-family:var(--font-mono);color:var(--danger);font-weight:600">${p.daysOfStock}</td>
+              <td style="text-align:right;font-family:var(--font-mono)">${p.unitsPerDay}</td>
+              <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatNumber(p.suggestedQty)}</td>
+              <td style="text-align:right">${formatCurrency(p.suggestedCost)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : ''}
+
+    <h3>All Products — Stock Status</h3>
     <table class="data-table">
       <thead><tr>
-        <th>MP</th><th>Category</th><th>Units</th><th>Units/Day</th>
-        <th style="text-align:right">Revenue</th><th style="text-align:right">Margin</th>
-        <th style="text-align:right">Proj. Monthly</th>
+        <th>Product</th><th>Category</th>
+        <th style="text-align:right">Stock</th>
+        <th style="text-align:right">Days Left</th>
+        <th style="text-align:right">Sold (${r.days}d)</th>
+        <th style="text-align:right">Revenue</th>
       </tr></thead>
       <tbody>
-        ${velocity.slice(0, 30).map(mp => `
-          <tr>
-            <td style="font-weight:600">${mp.name}</td>
-            <td style="font-size:0.8rem;color:var(--text-dim)">${mp.cat}</td>
-            <td style="text-align:right">${formatNumber(mp.units)}</td>
-            <td style="text-align:right;font-family:var(--font-mono)">${mp.unitsPerDay}</td>
-            <td style="text-align:right">${formatCurrency(mp.revenue)}</td>
-            <td style="text-align:right">${mp.margin !== null ? mp.margin + '%' : '—'}</td>
-            <td style="text-align:right;font-weight:600">${formatNumber(mp.projectedMonthly)}</td>
-          </tr>
-        `).join('')}
+        ${plan.slice(0, 40).map(p => {
+          const stockColor = p.daysOfStock === 0 ? 'color:var(--danger);font-weight:600'
+            : p.daysOfStock < 30 ? 'color:#b38600;font-weight:600'
+            : p.daysOfStock >= 999 ? 'color:var(--text-dim)' : '';
+          return `
+            <tr>
+              <td style="font-weight:600">${p.name}</td>
+              <td style="font-size:0.8rem;color:var(--text-dim)">${p.cat}</td>
+              <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(p.currentStock)}</td>
+              <td style="text-align:right;font-family:var(--font-mono);${stockColor}">${p.daysOfStock >= 999 ? '∞' : p.daysOfStock}</td>
+              <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(p.unitsSold)}</td>
+              <td style="text-align:right">${formatCurrency(p.revenue)}</td>
+            </tr>
+          `;
+        }).join('')}
       </tbody>
     </table>
-    ${v.summary?.unmatchedUnits > 0 ? `
-      <div style="margin-top:0.75rem;font-size:0.78rem;color:var(--text-dim)">
-        ${formatNumber(v.summary.unmatchedUnits)} units (${formatCurrency(v.summary.unmatchedRevenue)}) from unmatched Shopify products
-      </div>
-    ` : ''}
   `;
 }
 
@@ -288,5 +320,5 @@ on('sync:complete', async () => {
 
 export function destroy() {
   _container = null;
-  state = { loaded: false, salesData: null, mpVelocity: null, purchaseOrders: [], stages: [], ledger: [], view: 'overview' };
+  state = { loaded: false, salesData: null, reorderPlan: null, purchaseOrders: [], stages: [], ledger: [], view: 'overview' };
 }
