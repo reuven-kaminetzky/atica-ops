@@ -166,6 +166,17 @@
       if (e.target === modalOverlay) closeModal();
     });
 
+    // ── Global error boundary ───────────────────────────
+    window.addEventListener('unhandledrejection', (e) => {
+      console.error('[shell] Unhandled promise rejection:', e.reason);
+      emit('toast:show', { message: 'Something went wrong', type: 'error' });
+      e.preventDefault(); // Prevent console noise
+    });
+
+    window.addEventListener('error', (e) => {
+      console.error('[shell] Uncaught error:', e.error || e.message);
+    });
+
     // ── Ready ─────────────────────────────────────────
     emit('nav:ready');
     console.log('[atica] App shell ready — modular v2');

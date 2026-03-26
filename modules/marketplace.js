@@ -13,6 +13,7 @@
 import { on, emit } from './event-bus.js';
 import { api, formatCurrency, formatNumber, skeleton } from './core.js';
 
+let _unsubs = [];
 let state = { loaded: false, masters: [], unmatched: [], categories: [], filter: '', activeCat: null };
 let _container = null;
 
@@ -293,6 +294,8 @@ on('sync:complete', async ({ source }) => {
 });
 
 export function destroy() {
+  _unsubs.forEach(fn => fn());
+  _unsubs = [];
   _container = null;
   state = { loaded: false, masters: [], unmatched: [], categories: [], filter: '', activeCat: null };
 }

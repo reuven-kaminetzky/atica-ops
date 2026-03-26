@@ -14,26 +14,45 @@ import { emit } from './event-bus.js';
 // ── API Client ──────────────────────────────────────────────
 
 const API_BASE = '/api';
+const API_TIMEOUT_MS = 15000;
 
 async function apiRequest(method, path, body = null) {
   const url = path.startsWith('/') ? path : `${API_BASE}/${path}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json' },
+    signal: controller.signal,
   };
   if (body) opts.body = JSON.stringify(body);
 
   try {
     const res = await fetch(url, opts);
+    clearTimeout(timer);
+
     if (res.status === 304) return { _cached: true, _notModified: true };
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || `API ${res.status}`);
+      const msg = err.error || `${res.status} ${res.statusText}`;
+      // Better Shopify error messages
+      if (msg.includes('404') && msg.includes('Not Found')) {
+        throw new Error('Shopify API unavailable — check API version and store URL in Settings');
+      }
+      if (msg.includes('not configured') || msg.includes('SHOPIFY_STORE_URL')) {
+        throw new Error('Shopify not connected — check environment variables');
+      }
+      throw new Error(msg);
     }
     return await res.json();
   } catch (err) {
-    console.error(`[api] ${method} ${url}:`, err);
-    emit('toast:show', { message: `API error: ${err.message}`, type: 'error' });
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      err.message = 'Request timed out — try again';
+    }
+    console.error(`[api] ${method} ${url}:`, err.message);
+    emit('toast:show', { message: err.message, type: 'error' });
     throw err;
   }
 }
@@ -51,16 +70,24 @@ export const api = {
 // ── Module Loader ───────────────────────────────────────────
 
 const loadedModules = {};
+let _activeModule = null;
 
 /**
  * Load and initialize a module into a container element.
  * Each module must export an `init(container)` function.
+ * Optionally exports `destroy()` for cleanup.
  */
 export async function loadModule(name, container) {
-  // Destroy previous module if loaded
-  if (loadedModules[name]?.destroy) {
-    loadedModules[name].destroy();
+  // Destroy CURRENTLY ACTIVE module, not the one being loaded
+  if (_activeModule && loadedModules[_activeModule]?.destroy) {
+    try {
+      loadedModules[_activeModule].destroy();
+    } catch (err) {
+      console.warn(`[core] destroy() failed for "${_activeModule}":`, err);
+    }
   }
+
+  _activeModule = name;
 
   try {
     const mod = await import(`./${name}.js`);
@@ -73,12 +100,17 @@ export async function loadModule(name, container) {
   } catch (err) {
     console.error(`[core] Failed to load module "${name}":`, err);
     container.innerHTML = `
-      <div style="padding:2rem;text-align:center;color:#f87171;">
-        <h3>Failed to load ${name}</h3>
-        <p>${err.message}</p>
+      <div style="padding:2rem;text-align:center;color:var(--danger,#f87171);">
+        <div style="font-size:1.5rem;margin-bottom:0.5rem">⚠</div>
+        <h3 style="margin-bottom:0.5rem">Failed to load ${name}</h3>
+        <p style="font-size:0.85rem;color:var(--text-dim,#888)">${err.message}</p>
+        <button onclick="location.reload()" style="margin-top:1rem;padding:0.4rem 1rem;
+          border:1px solid var(--border,#ddd);border-radius:4px;cursor:pointer;background:none">
+          Reload
+        </button>
       </div>
     `;
-    throw err;
+    // Don't throw — the error is displayed, the app can still navigate
   }
 }
 
