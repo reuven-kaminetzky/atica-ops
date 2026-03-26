@@ -30,6 +30,7 @@ export const EVENTS = {
   'po:created':          'Cash Flow → Stock. Data: PO object',
   'po:updated':          'Cash Flow → Stock. Data: PO object',
   'po:received':         'Cash Flow → Stock, Marketplace. Data: { po, items }',
+  'po:create-from-mp':   'Marketplace → Cash Flow. Data: { mpId }',
 
   // Products / Stock (Shrek publishes)
   'product:updated':     'Marketplace → Cash Flow. Data: product object',

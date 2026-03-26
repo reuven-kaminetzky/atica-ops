@@ -527,7 +527,9 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
+  margin-bottom: 0.75rem;
 }
+.form-row.full { grid-template-columns: 1fr; }
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -540,4 +542,47 @@ h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
   font-size: 0.72rem;
   color: var(--text-muted);
   margin-top: 0.2rem;
+}
+
+/* ── Stage Progress ───────────────────────────────────── */
+
+.stage-track {
+  display: flex;
+  gap: 2px;
+  margin: 0.75rem 0;
+}
+.stage-step {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-light);
+}
+.stage-step.done { background: var(--success); }
+.stage-step.current { background: var(--primary); }
+
+/* ── Detail sections ──────────────────────────────────── */
+
+.detail-section { margin-bottom: 1.25rem; }
+.detail-section h4 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.detail-item {
+  font-size: 0.85rem;
+}
+.detail-label {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+.detail-value {
+  font-weight: 600;
 }

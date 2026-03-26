@@ -119,7 +119,7 @@
     });
 
     // ── Modal system ──────────────────────────────────
-    // Any module can open: emit('modal:open', { title, html, onMount })
+    // Any module can open: emit('modal:open', { title, html, onMount, onClose, wide })
     // onMount(modalBody) is called after html is inserted — use it to bind events.
     let _modalOnClose = null;
 

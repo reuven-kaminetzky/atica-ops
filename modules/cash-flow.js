@@ -1,17 +1,17 @@
 /**
  * Cash Flow Module — Revenue, POs with stage gates, production cost tracking
- * 
+ *
  * THE TRUNK — connects MPs (roots) to analytics (branches).
- * 
+ *
  * API endpoints:
  *   GET  /api/orders/sales           → revenue data
  *   GET  /api/products/reorder       → reorder plan (velocity + inventory)
  *   GET  /api/purchase-orders        → POs with stage gates
  *   GET  /api/purchase-orders/stages → stage definitions
  *   GET  /api/ledger                 → ledger entries
- * 
+ *
  * Publishes: po:created, po:updated
- * Subscribes: sync:complete
+ * Subscribes: sync:complete, po:create-from-mp
  */
 
 import { on, emit } from './event-bus.js';
@@ -121,7 +121,7 @@ function renderOverview(el) {
       <h3>Active Purchase Orders</h3>
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden">
         ${activePOs.slice(0, 10).map(po => `
-          <div class="po-card">
+          <div class="po-card po-row" data-id="${po.id}" style="cursor:pointer">
             <div class="po-vendor">${po.vendor || '—'}</div>
             <div class="po-product">${po.mpName || po.mpCode || '—'}</div>
             <div class="po-cost">${formatCurrency(po.fobTotal || 0)}</div>
@@ -293,7 +293,7 @@ function openPODetail(po) {
             <button id="po-adv-btn" class="btn btn-primary">Advance to ${nextStage.name}</button>
           </div>
         </div>
-      ` : `<div style="text-align:center;color:var(--success);font-weight:600;padding:0.75rem 0">✓ Distribution complete</div>`}
+      ` : `<div style="text-align:center;color:var(--success);font-weight:600;padding:0.75rem 0">Distribution complete</div>`}
     `,
     onMount: (body) => {
       if (!nextStage) return;
@@ -379,6 +379,7 @@ function renderProduction(el) {
           <th style="text-align:right">Order By</th>
           <th style="text-align:right">Qty</th>
           <th style="text-align:right">Cost</th>
+          <th></th>
         </tr></thead>
         <tbody>
           ${actionItems.map(p => {
@@ -394,9 +395,10 @@ function renderProduction(el) {
                 <td style="text-align:right;font-size:0.8rem;color:${urgColor};font-weight:600">${p.orderByDate || '—'}</td>
                 <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatNumber(p.suggestedQty)}</td>
                 <td style="text-align:right">${formatCurrency(p.suggestedCost)}</td>
+                <td><button class="btn btn-sm btn-primary reorder-po-btn" data-mp-id="${p.mpId}" data-units="${p.suggestedQty}" data-vendor="${p.vendor || ''}" data-fob="${p.fob || ''}">Order</button></td>
               </tr>
               ${p.activePOs?.length ? `
-                <tr><td colspan="8" style="padding:0.3rem 0.75rem;font-size:0.72rem;color:var(--text-dim);background:var(--surface-2)">
+                <tr><td colspan="9" style="padding:0.3rem 0.75rem;font-size:0.72rem;color:var(--text-dim);background:var(--surface-2)">
                   Active POs: ${p.activePOs.map(po => `${po.id} (${po.stage}, ${formatNumber(po.units)} units)`).join(' · ')}
                 </td></tr>
               ` : ''}
@@ -425,7 +427,7 @@ function renderProduction(el) {
               <td style="font-weight:600">${p.name}</td>
               <td style="font-size:0.8rem;color:var(--text-dim)">${p.cat}</td>
               <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(p.currentStock)}</td>
-              <td style="text-align:right;font-family:var(--font-mono);${stockColor}">${p.daysOfStock >= 999 ? '∞' : p.daysOfStock}</td>
+              <td style="text-align:right;font-family:var(--font-mono);${stockColor}">${p.daysOfStock >= 999 ? '\u221E' : p.daysOfStock}</td>
               <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(p.unitsSold)}</td>
               <td style="text-align:right">${formatCurrency(p.revenue)}</td>
             </tr>
@@ -484,6 +486,20 @@ function bindEvents() {
     });
   });
   bindPOButton();
+
+  // Delegated clicks inside content area
+  document.getElementById('cf-content')?.addEventListener('click', (e) => {
+    const reorderBtn = e.target.closest('.reorder-po-btn');
+    if (reorderBtn) {
+      openPOFormWithPrefill(reorderBtn.dataset.mpId);
+      return;
+    }
+    const poRow = e.target.closest('.po-row');
+    if (poRow) {
+      const po = state.purchaseOrders.find(p => p.id === poRow.dataset.id);
+      if (po) openPODetail(po);
+    }
+  });
 }
 
 function bindPOButton() {
@@ -492,6 +508,18 @@ function bindPOButton() {
 }
 
 // ── PO Creation Form ────────────────────────────────────────
+
+function openPOFormWithPrefill(mpId) {
+  openPOForm();
+  // After modal mounts, select the MP
+  setTimeout(() => {
+    const select = document.getElementById('po-mp');
+    if (select && mpId) {
+      select.value = mpId;
+      select.dispatchEvent(new Event('change'));
+    }
+  }, 50);
+}
 
 function openPOForm() {
   const seeds = state.seeds;
@@ -634,6 +662,17 @@ function openPOForm() {
     },
   });
 }
+
+// Listen for PO creation triggered from marketplace detail view
+on('po:create-from-mp', ({ mpId }) => {
+  // Wait a tick for cash-flow module to init after nav:change
+  setTimeout(() => {
+    state.view = 'pos';
+    render();
+    bindPOButton();
+    openPOFormWithPrefill(mpId);
+  }, 100);
+});
 
 on('sync:complete', async () => {
   if (!_container) return;
