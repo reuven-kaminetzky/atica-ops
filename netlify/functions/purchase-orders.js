@@ -276,7 +276,38 @@ async function advanceStage(client, { pathParams, body }) {
   };
 
   await store.po.put(id, updated);
-  return { advanced: true, purchaseOrder: updated, gate: targetDef };
+
+  // Auto-create shipment when PO hits "In Transit"
+  let shipment = null;
+  if (targetStage === 'In Transit') {
+    try {
+      const shipData = {
+        id: 'SHIP-' + Date.now().toString(36).toUpperCase(),
+        poId: id,
+        poNum: id,
+        mpId: existing.mpId || null,
+        mpName: existing.mpName || null,
+        vendor: existing.vendor || null,
+        container: existing.container || null,
+        vessel: existing.vessel || null,
+        etd: existing.etd || null,
+        eta: existing.eta || null,
+        units: existing.units || 0,
+        fobTotal: existing.fobTotal || 0,
+        status: 'in-transit',
+        createdAt: now,
+        updatedAt: now,
+        arrivedAt: null,
+        events: [{ type: 'created', date: now, note: `Auto-created from PO ${id} stage advance` }],
+      };
+      await store.shipments.put(shipData.id, shipData);
+      shipment = shipData;
+    } catch (e) {
+      console.error(`[purchase-orders] Failed to auto-create shipment for ${id}:`, e.message);
+    }
+  }
+
+  return { advanced: true, purchaseOrder: updated, gate: targetDef, shipment };
 }
 
 async function deletePO(client, { pathParams }) {
