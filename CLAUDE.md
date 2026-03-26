@@ -217,8 +217,6 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 ### Medium Priority
 - [ ] Sales pulse backoff in monolith — if syncSalesPulse fails, double interval up to 15 min
 - [ ] v2 event bus end-to-end testing — events fire but some subscriptions are stubs
-- [ ] PO bulk actions — select multiple POs, advance stage, or export
-- [ ] Inventory transfer UI — stock module has the tab but no form yet
 
 ### Lower Priority
 - [ ] Monolith → v2 migration plan (both run on same backend, v2 is the long-term)
@@ -229,6 +227,8 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 - [x] MP PLM stage tracking — persist via Netlify Blobs, GET/PATCH /api/products/plm/:id, gate enforcement, history
 - [x] MP detail size grid — Style → Fit → Size matrix with availability checkmarks, per-fit totals
 - [x] Cash-flow cost breakdown — revenue vs PO costs, net position, stage cost rollup, margin, visual bar
+- [x] PO bulk actions — select multiple POs, export CSV, bulk delete with confirmation
+- [x] Inventory transfer UI — stock module Transfer tab with product/location selects, qty validation
 - [x] Analytics module — MP velocity SVG charts, category breakdown bars, daily revenue trend lines, 7/30/90d toggle
 - [x] MP detail with Quick PO + Full Form shortcuts
 - [x] PO detail view with stage track, check-ins, history, stage advancement

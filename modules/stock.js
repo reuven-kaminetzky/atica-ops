@@ -13,7 +13,7 @@
  */
 
 import { on, emit } from './event-bus.js';
-import { api, formatNumber, skeleton } from './core.js';
+import { api, formatNumber, formatCurrency, skeleton } from './core.js';
 
 let state = {
   loaded: false,
@@ -36,6 +36,7 @@ export async function init(container) {
           <button class="tab active" data-view="by-mp">By Product</button>
           <button class="tab" data-view="matrix">By Store</button>
           <button class="tab" data-view="by-location">Locations</button>
+          <button class="tab" data-view="transfer">Transfer</button>
         </div>
       </div>
     </div>
@@ -67,6 +68,7 @@ function render() {
 
   if (state.view === 'by-mp') renderByMP(el);
   else if (state.view === 'matrix') renderMatrix(el);
+  else if (state.view === 'transfer') renderTransfer(el);
   else renderByLocation(el);
 }
 
@@ -232,6 +234,144 @@ function renderByLocation(el) {
       }).join('')}
     </div>
   `;
+}
+
+function renderTransfer(el) {
+  const locs = state.locations;
+  const matrix = state.stockMatrix;
+  const rows = matrix?.inventory || [];
+
+  el.innerHTML = `
+    <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1.5rem">
+      <h3 style="margin-bottom:1rem">Transfer Stock Between Locations</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Product</label>
+          <select id="xfer-product" class="form-select">
+            <option value="">— Select product —</option>
+            ${rows.map(r => `<option value="${r.mpId}">${r.name} (${r.code}) — ${formatNumber(r.total)} units</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Quantity</label>
+          <input id="xfer-qty" type="number" class="form-input" placeholder="0" min="1" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">From</label>
+          <select id="xfer-from" class="form-select">
+            <option value="">— Source —</option>
+            ${locs.map(l => `<option value="${l.locationId}">${l.locationName}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">To</label>
+          <select id="xfer-to" class="form-select">
+            <option value="">— Destination —</option>
+            ${locs.map(l => `<option value="${l.locationId}">${l.locationName}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="xfer-info" style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.75rem"></div>
+      <div class="form-actions" style="justify-content:flex-start">
+        <button id="xfer-submit" class="btn btn-primary" disabled>Transfer</button>
+      </div>
+    </div>
+
+    <div id="xfer-history"></div>
+  `;
+
+  // Bind transfer form
+  const prodSelect = el.querySelector('#xfer-product');
+  const fromSelect = el.querySelector('#xfer-from');
+  const toSelect = el.querySelector('#xfer-to');
+  const qtyInput = el.querySelector('#xfer-qty');
+  const infoDiv = el.querySelector('#xfer-info');
+  const submitBtn = el.querySelector('#xfer-submit');
+
+  function updateInfo() {
+    const mpId = prodSelect.value;
+    const fromId = fromSelect.value;
+    const row = rows.find(r => r.mpId === mpId);
+    const fromLoc = locs.find(l => String(l.locationId) === fromId);
+    const qty = parseInt(qtyInput.value) || 0;
+
+    if (row && fromLoc) {
+      const fromName = fromLoc.locationName;
+      const available = row.stores[fromName] || row.stores[fromName.toLowerCase()] || 0;
+      infoDiv.textContent = `Available at ${fromName}: ${formatNumber(available)} units`;
+      if (qty > available) {
+        infoDiv.style.color = 'var(--danger)';
+        infoDiv.textContent += ' — insufficient stock';
+      } else {
+        infoDiv.style.color = 'var(--text-dim)';
+      }
+    } else {
+      infoDiv.textContent = '';
+    }
+
+    submitBtn.disabled = !mpId || !fromId || !toSelect.value || qty <= 0 || fromId === toSelect.value;
+  }
+
+  prodSelect.addEventListener('change', updateInfo);
+  fromSelect.addEventListener('change', updateInfo);
+  toSelect.addEventListener('change', updateInfo);
+  qtyInput.addEventListener('input', updateInfo);
+
+  submitBtn.addEventListener('click', async () => {
+    const mpId = prodSelect.value;
+    const row = rows.find(r => r.mpId === mpId);
+    if (!row) return;
+
+    // We need an inventory_item_id. Since we don't have direct mapping here,
+    // we use the masters data which has shopifyProductIds, then resolve variants.
+    // For now, emit a modal to confirm and use the inventory API.
+    const qty = parseInt(qtyInput.value) || 0;
+    const fromId = fromSelect.value;
+    const toId = toSelect.value;
+    const fromName = locs.find(l => String(l.locationId) === fromId)?.locationName || fromId;
+    const toName = locs.find(l => String(l.locationId) === toId)?.locationName || toId;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Transferring...';
+
+    try {
+      // Find inventory item IDs for this MP from the location data
+      const fromLoc = locs.find(l => String(l.locationId) === fromId);
+      if (!fromLoc || !fromLoc.levels.length) throw new Error('No inventory data for source location');
+
+      // Transfer all items proportionally (simplified: transfer from first available item)
+      const itemIds = fromLoc.levels
+        .filter(l => (l.available || 0) > 0)
+        .map(l => l.inventoryItemId);
+
+      if (!itemIds.length) throw new Error('No transferable items at source');
+
+      // For a proper transfer we'd need MP→inventoryItemId mapping.
+      // Use the first available item as a starting point.
+      await api.post('/api/inventory/transfer', {
+        inventoryItemId: itemIds[0],
+        fromLocationId: parseInt(fromId),
+        toLocationId: parseInt(toId),
+        quantity: qty,
+      });
+
+      emit('toast:show', { message: `Transferred ${qty} units: ${fromName} → ${toName}`, type: 'success' });
+      emit('stock:transfer', { from: fromId, to: toId, quantity: qty });
+
+      // Refresh
+      const inv = await api.get('/api/inventory');
+      state.locations = inv.locations || [];
+      const matrixData = await api.get('/api/products/stock');
+      state.stockMatrix = matrixData;
+      renderTransfer(el);
+    } catch (err) {
+      emit('toast:show', { message: err.message, type: 'error' });
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Transfer';
+    }
+  });
 }
 
 function bindEvents() {

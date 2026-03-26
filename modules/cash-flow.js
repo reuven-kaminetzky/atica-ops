@@ -26,6 +26,7 @@ let state = {
   seeds: [],
   ledger: [],
   view: 'overview',
+  selectedPOs: new Set(),
 };
 
 let _container = null;
@@ -230,18 +231,36 @@ function renderOverview(el) {
 
 function renderPOs(el) {
   const pos = state.purchaseOrders;
+  const selected = state.selectedPOs;
+  const allChecked = pos.length > 0 && pos.every(p => selected.has(p.id));
+
+  const earlyStages = ['Concept', 'Design', 'Sample', 'Approved', 'Costed'];
+  const midStages = ['Ordered', 'Production', 'QC'];
+  function stageBadgeClass(stage) {
+    if (earlyStages.includes(stage)) return 'early';
+    if (midStages.includes(stage)) return 'mid';
+    return 'late';
+  }
 
   el.innerHTML = `
     <div class="po-header">
       <h3>Purchase Orders (${pos.length})</h3>
-      <button id="cf-new-po" class="btn btn-primary">+ New PO</button>
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        ${selected.size > 0 ? `
+          <span style="font-size:0.78rem;color:var(--text-dim)">${selected.size} selected</span>
+          <button id="cf-bulk-export" class="btn btn-sm">Export CSV</button>
+          <button id="cf-bulk-delete" class="btn btn-sm btn-danger">Delete</button>
+        ` : ''}
+        <button id="cf-new-po" class="btn btn-primary">+ New PO</button>
+      </div>
     </div>
     ${pos.length === 0
       ? '<div class="empty-state">No purchase orders yet</div>'
       : `<div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden">
           <table class="data-table">
             <thead><tr>
-              <th>ID</th><th>Product</th><th>Vendor</th><th>Units</th><th>FOB Total</th><th>Stage</th><th>ETD</th>
+              <th style="width:32px"><input type="checkbox" id="po-check-all" ${allChecked ? 'checked' : ''} /></th>
+              <th>ID</th><th>Product</th><th>Vendor</th><th style="text-align:right">Units</th><th style="text-align:right">FOB Total</th><th>Stage</th><th>ETD</th>
             </tr></thead>
             <tbody>
               ${pos.map(po => {
@@ -249,13 +268,14 @@ function renderPOs(el) {
                 const hasGate = state.stages[stageIdx]?.gate;
                 return `
                   <tr class="po-row" data-id="${po.id}" style="cursor:pointer">
+                    <td><input type="checkbox" class="po-check" data-id="${po.id}" ${selected.has(po.id) ? 'checked' : ''} /></td>
                     <td style="font-family:var(--font-mono);font-size:0.8rem">${po.id}</td>
                     <td>${po.mpName || po.mpCode || '—'}</td>
                     <td>${po.vendor || '—'}</td>
                     <td style="text-align:right">${formatNumber(po.units || 0)}</td>
                     <td style="text-align:right">${formatCurrency(po.fobTotal || 0)}</td>
                     <td>
-                      <span class="badge">${po.stage || 'Concept'}</span>
+                      <span class="po-stage-badge ${stageBadgeClass(po.stage || 'Concept')}">${po.stage || 'Concept'}</span>
                       ${hasGate ? `<span style="font-size:0.65rem;color:var(--text-dim);margin-left:4px">${hasGate.toUpperCase()}</span>` : ''}
                     </td>
                     <td style="font-size:0.8rem;color:var(--text-dim)">${po.etd ? formatDate(po.etd) : '—'}</td>
@@ -268,9 +288,88 @@ function renderPOs(el) {
     }
   `;
 
-  // Bind row clicks
+  // Bind checkboxes
+  el.querySelector('#po-check-all')?.addEventListener('change', (e) => {
+    if (e.target.checked) {
+      pos.forEach(p => selected.add(p.id));
+    } else {
+      selected.clear();
+    }
+    renderPOs(el);
+    bindPOButton();
+  });
+
+  el.querySelectorAll('.po-check').forEach(cb => {
+    cb.addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (cb.checked) selected.add(cb.dataset.id);
+      else selected.delete(cb.dataset.id);
+      renderPOs(el);
+      bindPOButton();
+    });
+  });
+
+  // Bind bulk export
+  el.querySelector('#cf-bulk-export')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const selectedPOs = pos.filter(p => selected.has(p.id));
+    const headers = ['ID', 'Product', 'Vendor', 'Units', 'FOB', 'FOB Total', 'Stage', 'ETD', 'ETA', 'Notes'];
+    const csvRows = [headers.join(',')];
+    for (const po of selectedPOs) {
+      csvRows.push([
+        po.id,
+        `"${(po.mpName || po.mpCode || '').replace(/"/g, '""')}"`,
+        `"${(po.vendor || '').replace(/"/g, '""')}"`,
+        po.units || 0,
+        po.fob || 0,
+        po.fobTotal || 0,
+        po.stage || 'Concept',
+        po.etd || '',
+        po.eta || '',
+        `"${(po.notes || '').replace(/"/g, '""')}"`,
+      ].join(','));
+    }
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `purchase-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    emit('toast:show', { message: `Exported ${selectedPOs.length} POs to CSV`, type: 'success' });
+  });
+
+  // Bind bulk delete
+  el.querySelector('#cf-bulk-delete')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const count = selected.size;
+    if (!confirm(`Delete ${count} purchase order${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+
+    const btn = el.querySelector('#cf-bulk-delete');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+
+    try {
+      for (const id of selected) {
+        await api.del(`/api/purchase-orders/${id}`);
+      }
+      selected.clear();
+      const posData = await api.get('/api/purchase-orders');
+      state.purchaseOrders = posData.purchaseOrders || [];
+      emit('toast:show', { message: `Deleted ${count} POs`, type: 'success' });
+      render();
+      bindPOButton();
+    } catch (err) {
+      emit('toast:show', { message: err.message, type: 'error' });
+      btn.disabled = false;
+      btn.textContent = 'Delete';
+    }
+  });
+
+  // Bind row clicks (skip if clicking checkbox)
   el.querySelectorAll('.po-row').forEach(row => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', (e) => {
+      if (e.target.type === 'checkbox') return;
       const po = pos.find(p => p.id === row.dataset.id);
       if (po) openPODetail(po);
     });
@@ -881,5 +980,5 @@ on('sync:complete', async () => {
 
 export function destroy() {
   _container = null;
-  state = { loaded: false, salesData: null, reorderPlan: null, purchaseOrders: [], stages: [], seeds: [], ledger: [], view: 'overview' };
+  state = { loaded: false, salesData: null, reorderPlan: null, purchaseOrders: [], stages: [], seeds: [], ledger: [], view: 'overview', selectedPOs: new Set() };
 }
