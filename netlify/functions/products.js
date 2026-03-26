@@ -582,34 +582,47 @@ async function updateStackData(client, { pathParams, body }) {
 
   const existing = await store.stack.get(mpId) || {};
 
-  // Flatten: allow updating individual sections or flat fields
+  // Optimistic locking — if client sends _updatedAt, verify it matches
+  if (body._updatedAt && existing._updatedAt && body._updatedAt !== existing._updatedAt) {
+    throw new RouteError(409, 'Conflict: stack data was modified since you loaded it. Reload and try again.');
+  }
+
   const updated = { ...existing };
   const allowed = [
-    // Materials
     'fabricType', 'fabricWeight', 'fabricComp', 'fabricMill', 'colorways', 'washCare',
-    // Construction
     'seams', 'stitching', 'buttons', 'zippers', 'lining', 'interlining', 'labels', 'packaging',
-    // Sizing
     'sizeChart', 'grading', 'fitNotes', 'tolerances', 'measurementPoints',
-    // Quality
     'aqlLevel', 'qcChecklist', 'testReports', 'approvedSamples',
-    // Logistics
     'packingInstructions', 'labelRequirements', 'shippingMarks', 'cartonSpecs',
-    // Compliance
     'countryOfOrigin', 'careLabels', 'hangTags',
-    // Content
     'description', 'tagline', 'features', 'heroImage', 'additionalImages',
   ];
 
+  // Track what changed for audit trail
+  const changes = [];
   for (const key of allowed) {
-    if (body[key] !== undefined) updated[key] = body[key];
+    if (body[key] !== undefined && JSON.stringify(body[key]) !== JSON.stringify(existing[key])) {
+      changes.push({ field: key, from: existing[key] || null, to: body[key] });
+      updated[key] = body[key];
+    }
   }
 
+  if (changes.length === 0) {
+    return { updated: false, mpId, message: 'No changes detected' };
+  }
+
+  // Audit trail
   updated.mpId = mpId;
+  updated.history = [...(existing.history || []), {
+    at: new Date().toISOString(),
+    by: body.updatedBy || null,
+    changes,
+  }];
+
   await store.stack.put(mpId, updated);
 
   // Compute completeness
-  let filled = 0, total = allowed.length;
+  let filled = 0;
   for (const key of allowed) {
     const val = updated[key];
     if (val && val !== '' && !(Array.isArray(val) && val.length === 0)) filled++;
@@ -618,7 +631,8 @@ async function updateStackData(client, { pathParams, body }) {
   return {
     updated: true,
     mpId,
-    completeness: Math.round((filled / total) * 100),
+    changesCount: changes.length,
+    completeness: Math.round((filled / allowed.length) * 100),
     updatedAt: updated._updatedAt,
   };
 }

@@ -165,6 +165,11 @@ async function updatePO(client, { pathParams, body }) {
   const existing = await store.po.get(id);
   if (!existing) throw new RouteError(404, `PO not found: ${id}`);
 
+  // Optimistic locking — prevent concurrent overwrites
+  if (body._updatedAt && existing.updatedAt && body._updatedAt !== existing.updatedAt) {
+    throw new RouteError(409, 'Conflict: PO was modified since you loaded it. Reload and try again.');
+  }
+
   validatePO(body, true);
 
   // Merge — only update fields that are present in body
