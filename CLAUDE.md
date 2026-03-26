@@ -132,7 +132,7 @@ lib/                        # Shared backend — EVERY function imports from her
   shopify.js                # Shopify client — auto-detects store URL + API version
   handler.js                # DRY handler factory + validate helpers + RouteError
   cache.js                  # In-memory TTL cache (deterministic keys)
-  store.js                  # Netlify Blobs: po, shipments, snapshots, settings, plm
+  store.js                  # Netlify Blobs: po, shipments, snapshots, settings, plm, stack
   workflow.js               # Workflow engine: product stack, MP↔PO triggers, cash flow, factory packages
   auth.js                   # CORS, JSON response, authentication (SKIP_AUTH=true)
   mappers.js                # Proxy → shopify/mappers.js
@@ -255,6 +255,9 @@ GET  /api/products/reorder        → Production planning: velocity + inventory 
 GET  /api/products/stock          → MP × Store inventory matrix
 GET  /api/products/plm            → PLM stages for all MPs
 PATCH /api/products/plm/:id       → Advance PLM stage with history
+GET  /api/products/stack/:id      → Product stack data (materials, construction, sizing, QC, compliance)
+PATCH /api/products/stack/:id     → Update stack data (any fields: fabricType, sizeChart, qcChecklist, etc.)
+GET  /api/products/factory-package/:id → Full tech pack for vendor (merges seed + stack + PO data, completeness %)
 GET  /api/products/trees          → Style→Fit→Size hierarchy
 ```
 
@@ -343,6 +346,7 @@ GET  /api/workflow/health         → System health: active POs, overdue, commit
 | Purchase orders | Netlify Blobs (`store.po`) | `store.po.get/put/getAll` |
 | Shipments | Netlify Blobs (`store.shipments`) | same |
 | PLM stages | Netlify Blobs (`store.plm`) | same |
+| Product stack | Netlify Blobs (`store.stack`) | fabric, construction, sizing, QC, compliance per MP |
 | Inventory snapshots | Netlify Blobs (`store.snapshots`) | same |
 | App settings | Netlify Blobs (`store.settings`) | same |
 
@@ -382,7 +386,7 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 
 ### High Priority — Data Enrichment
 - [ ] **PO payment schedules** — add payments[] array to POs (deposit/balance/final with due dates + status). Wire to cash flow projection.
-- [ ] **Product Stack data persistence** — store fabric specs, construction details, sizing charts per MP in Blobs. This is what populates factory packages.
+- [ ] **Product Stack data persistence UI** — frontend form for editing stack data (materials, construction, sizing, QC). Backend endpoints ready: `GET/PATCH /api/products/stack/:id`
 - [ ] **MP size grid** — available sizes per fit per style (the full matrix from Shopify variants)
 - [ ] **Customers module** — wire 4 existing endpoints to a UI
 
@@ -431,6 +435,11 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 - [x] Cash flow projection model (planned vs actual, inflow vs outflow)
 - [x] Factory package builder (7-section tech pack with completeness score)
 - [x] Unified MP status (phase + POs + stock + velocity + flags + health)
+- [x] Product stack blob store (`store.stack`) + CRUD endpoints (`GET/PATCH /api/products/stack/:id`)
+- [x] Factory package enhanced — merges seed + stack + PO data with completeness %
+- [x] Side effects engine (lib/effects.js) — PO stage → shipment, MP advance, payment gen
+- [x] Finance endpoints (projection, margins, AP) — `/api/finance/*`
+- [x] Dead code removed: stocky.js, oauth-callback.js, 7 TS files (1,295 lines)
 
 ## How to Add a New MP
 

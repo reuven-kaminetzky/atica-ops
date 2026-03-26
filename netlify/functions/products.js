@@ -517,6 +517,129 @@ async function updatePlmStage(client, { pathParams, body }) {
 // Generates everything a vendor needs to produce a product.
 // Combines MP seed data + PLM artifacts + PO details.
 
+// ── Product Stack Data ──────────────────────────────────────
+// Persists per-MP specifications that populate factory packages.
+// Fabric, construction, sizing charts, QC requirements, etc.
+// This is the "tech pack data" layer.
+
+async function getStackData(client, { pathParams }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  const data = await store.stack.get(mpId) || {};
+  const plm = await store.plm.get(mpId) || {};
+
+  return {
+    mpId,
+    name: seed.name,
+    code: seed.code,
+    cat: seed.cat,
+    phase: plm.plmStage || 'In-Store',
+    // Stack data sections — empty defaults for anything not yet filled
+    materials: {
+      fabricType: data.fabricType || '',
+      fabricWeight: data.fabricWeight || '',
+      fabricComp: data.fabricComp || '',
+      fabricMill: data.fabricMill || '',
+      colorways: data.colorways || [],
+      washCare: data.washCare || '',
+    },
+    construction: {
+      seams: data.seams || '',
+      stitching: data.stitching || '',
+      buttons: data.buttons || '',
+      zippers: data.zippers || '',
+      lining: data.lining || '',
+      interlining: data.interlining || '',
+      labels: data.labels || '',
+      packaging: data.packaging || '',
+    },
+    sizing: {
+      sizeChart: data.sizeChart || null,
+      grading: data.grading || null,
+      fitNotes: data.fitNotes || '',
+      tolerances: data.tolerances || '',
+      measurementPoints: data.measurementPoints || [],
+    },
+    quality: {
+      aqlLevel: data.aqlLevel || '2.5',
+      qcChecklist: data.qcChecklist || [],
+      testReports: data.testReports || [],
+      approvedSamples: data.approvedSamples || [],
+    },
+    logistics: {
+      packingInstructions: data.packingInstructions || '',
+      labelRequirements: data.labelRequirements || '',
+      shippingMarks: data.shippingMarks || '',
+      cartonSpecs: data.cartonSpecs || '',
+    },
+    compliance: {
+      countryOfOrigin: data.countryOfOrigin || seed.country || '',
+      careLabels: data.careLabels || '',
+      hangTags: data.hangTags || '',
+    },
+    content: {
+      description: data.description || '',
+      tagline: data.tagline || '',
+      features: data.features || seed.features || [],
+      heroImage: data.heroImage || seed.heroImg || null,
+      additionalImages: data.additionalImages || [],
+    },
+    updatedAt: data._updatedAt || null,
+  };
+}
+
+async function updateStackData(client, { pathParams, body }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  const existing = await store.stack.get(mpId) || {};
+
+  // Flatten: allow updating individual sections or flat fields
+  const updated = { ...existing };
+  const allowed = [
+    // Materials
+    'fabricType', 'fabricWeight', 'fabricComp', 'fabricMill', 'colorways', 'washCare',
+    // Construction
+    'seams', 'stitching', 'buttons', 'zippers', 'lining', 'interlining', 'labels', 'packaging',
+    // Sizing
+    'sizeChart', 'grading', 'fitNotes', 'tolerances', 'measurementPoints',
+    // Quality
+    'aqlLevel', 'qcChecklist', 'testReports', 'approvedSamples',
+    // Logistics
+    'packingInstructions', 'labelRequirements', 'shippingMarks', 'cartonSpecs',
+    // Compliance
+    'countryOfOrigin', 'careLabels', 'hangTags',
+    // Content
+    'description', 'tagline', 'features', 'heroImage', 'additionalImages',
+  ];
+
+  for (const key of allowed) {
+    if (body[key] !== undefined) updated[key] = body[key];
+  }
+
+  updated.mpId = mpId;
+  await store.stack.put(mpId, updated);
+
+  // Compute completeness
+  let filled = 0, total = allowed.length;
+  for (const key of allowed) {
+    const val = updated[key];
+    if (val && val !== '' && !(Array.isArray(val) && val.length === 0)) filled++;
+  }
+
+  return {
+    updated: true,
+    mpId,
+    completeness: Math.round((filled / total) * 100),
+    updatedAt: updated._updatedAt,
+  };
+}
+
+// ── Factory Package (enhanced with stack data) ──────────────
+
 const { FACTORY_PACKAGE_SECTIONS, MP_STATUS_RULES } = require('../../lib/domain');
 
 async function factoryPackage(client, { pathParams }) {
@@ -524,19 +647,17 @@ async function factoryPackage(client, { pathParams }) {
   const seed = MP_BY_ID[mpId];
   if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
 
-  // Get PLM data
-  const plm = await store.plm.get(mpId) || {};
+  // Get PLM + stack data + POs in parallel
+  const [plm, stackData, allPOs] = await Promise.all([
+    store.plm.get(mpId).catch(() => ({})),
+    store.stack.get(mpId).catch(() => ({})),
+    store.po.getAll().catch(() => []),
+  ]);
 
-  // Get active POs for this MP
-  let pos = [];
-  try {
-    const allPOs = await store.po.getAll();
-    pos = allPOs.filter(po => po.mpId === mpId);
-  } catch (e) { /* empty */ }
-
+  const pos = allPOs.filter(po => po.mpId === mpId);
   const latestPO = pos.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0] || null;
+  const sd = stackData || {};
 
-  // Build package
   const pkg = {
     generatedAt: new Date().toISOString(),
     mpId: seed.id,
@@ -545,14 +666,27 @@ async function factoryPackage(client, { pathParams }) {
       code: seed.code,
       category: seed.cat,
       vendor: seed.vendor,
-      heroImg: seed.heroImg || null,
-      shopifyUrl: seed.shopifyUrl || null,
+      description: sd.description || '',
+      tagline: sd.tagline || '',
+      features: sd.features || seed.features || [],
+      heroImg: sd.heroImage || seed.heroImg || null,
     },
     techSpecs: {
       fits: seed.fits || [],
       sizes: seed.sizes || null,
-      features: seed.features || [],
-      construction: seed.construction || null,
+      construction: sd.construction || '',
+    },
+    materials: {
+      fabricType: sd.fabricType || '',
+      fabricWeight: sd.fabricWeight || '',
+      fabricComp: sd.fabricComp || '',
+      fabricMill: sd.fabricMill || '',
+      colorways: sd.colorways || [],
+      washCare: sd.washCare || '',
+      lining: sd.lining || '',
+      buttons: sd.buttons || '',
+      labels: sd.labels || '',
+      packaging: sd.packaging || '',
     },
     costing: {
       fob: seed.fob,
@@ -562,32 +696,49 @@ async function factoryPackage(client, { pathParams }) {
       landedCost: +(seed.fob * (1 + (seed.duty || 0) / 100 + 0.08)).toFixed(2),
       margin: seed.retail > 0 ? +((1 - seed.fob * 1.34 / seed.retail) * 100).toFixed(1) : null,
       moq: seed.moq || null,
-      leadTimeDays: seed.lead || null,
+      lead: seed.lead || null,
     },
-    plmStatus: {
-      currentStage: plm.plmStage || 'Concept',
-      stageId: plm.plmStageId || 1,
-      updatedAt: plm.updatedAt || null,
-      updatedBy: plm.updatedBy || null,
+    sizing: {
+      sizeChart: sd.sizeChart || null,
+      grading: sd.grading || null,
+      fitNotes: sd.fitNotes || '',
+      tolerances: sd.tolerances || '',
     },
-    activePOs: pos.map(po => ({
-      id: po.id,
-      stage: po.stage,
-      units: po.units || 0,
-      fobTotal: po.fobTotal || 0,
-      etd: po.etd || null,
-      vendor: po.vendor || seed.vendor,
-    })),
-    latestPO: latestPO ? {
-      id: latestPO.id,
-      units: latestPO.units || 0,
-      styles: latestPO.styles || [],
-      sizeBreakdown: latestPO.sizeBreakdown || null,
+    quality: {
+      aqlLevel: sd.aqlLevel || '2.5',
+      qcChecklist: sd.qcChecklist || [],
+    },
+    shipping: latestPO ? {
       etd: latestPO.etd || null,
       container: latestPO.container || null,
-    } : null,
+      packingInstructions: sd.packingInstructions || '',
+    } : { etd: null, container: null, packingInstructions: sd.packingInstructions || '' },
+    compliance: {
+      countryOfOrigin: sd.countryOfOrigin || seed.country || '',
+      careLabels: sd.careLabels || '',
+      hangTags: sd.hangTags || '',
+    },
+    plmStatus: {
+      currentStage: (plm || {}).plmStage || 'Concept',
+      stageId: (plm || {}).plmStageId || 1,
+    },
+    activePOs: pos.map(po => ({
+      id: po.id, stage: po.stage, units: po.units || 0,
+      fobTotal: po.fobTotal || 0, etd: po.etd || null,
+    })),
     sections: FACTORY_PACKAGE_SECTIONS.map(s => s.label),
   };
+
+  // Compute completeness — how much of the tech pack is filled
+  const checkFields = [
+    sd.fabricType, sd.fabricWeight, sd.fabricComp, sd.fabricMill,
+    sd.sizeChart, sd.grading, sd.fitNotes,
+    sd.description, sd.countryOfOrigin,
+    seed.fob, seed.hts, seed.fits, seed.sizes,
+    latestPO?.etd, latestPO?.styles,
+  ];
+  const filled = checkFields.filter(v => v && v !== '' && !(Array.isArray(v) && v.length === 0)).length;
+  pkg.completeness = Math.round((filled / checkFields.length) * 100);
 
   return { package: pkg };
 }
@@ -694,6 +845,8 @@ const ROUTES = [
   { method: 'GET',   path: 'status',             handler: mpStatus },
   { method: 'GET',   path: 'plm',                handler: getPlmStatus,      noClient: true },
   { method: 'PATCH', path: 'plm/:id',            handler: updatePlmStage,    noClient: true },
+  { method: 'GET',   path: 'stack/:id',          handler: getStackData,      noClient: true },
+  { method: 'PATCH', path: 'stack/:id',          handler: updateStackData,   noClient: true },
   { method: 'GET',   path: 'factory-package/:id', handler: factoryPackage,   noClient: true },
   { method: 'GET',   path: 'sku-map',            handler: skuMap },
   { method: 'PATCH', path: 'sku-map/:sku',       handler: updateSKU,         noClient: true },
