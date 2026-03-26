@@ -52,6 +52,8 @@ GET  /api/products/seeds        → Raw MP catalog + PLM stages (no Shopify need
 GET  /api/products/reorder      → Production planning: velocity + inventory + POs = reorder signals
 GET  /api/products/stock        → MP × Store inventory matrix
 GET  /api/products/trees        → Product tree Style→Fit→Size
+GET  /api/products/plm          → PLM stages for all MPs (persisted)
+PATCH /api/products/plm/:id    → Advance MP PLM stage (with gate enforcement)
 GET  /api/orders/mp-velocity    → Velocity by Master Product (production planning)
 GET  /api/orders/sales          → Revenue summary with daily breakdown
 GET  /api/orders/velocity       → Velocity by individual SKU
@@ -210,9 +212,7 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 ## What Needs Work
 
 ### High Priority
-- [ ] MP PLM stage tracking — persist which PLM stage each MP is at (concept→in-store→reorder review→EOL)
-- [ ] MP detail needs size grid — show available sizes per fit per style (the full matrix)
-- [ ] Cash-flow overview should show real cost breakdown (PO costs vs revenue, not just revenue)
+(all done — see Done list below)
 
 ### Medium Priority
 - [ ] Sales pulse backoff in monolith — if syncSalesPulse fails, double interval up to 15 min
@@ -226,6 +226,9 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 - [ ] CI test pipeline (endpoint tests exist but DNS blocked from CI)
 
 ### Done (do not rebuild)
+- [x] MP PLM stage tracking — persist via Netlify Blobs, GET/PATCH /api/products/plm/:id, gate enforcement, history
+- [x] MP detail size grid — Style → Fit → Size matrix with availability checkmarks, per-fit totals
+- [x] Cash-flow cost breakdown — revenue vs PO costs, net position, stage cost rollup, margin, visual bar
 - [x] Analytics module — MP velocity SVG charts, category breakdown bars, daily revenue trend lines, 7/30/90d toggle
 - [x] MP detail with Quick PO + Full Form shortcuts
 - [x] PO detail view with stage track, check-ins, history, stage advancement

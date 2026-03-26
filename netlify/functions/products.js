@@ -427,6 +427,88 @@ async function stockByLocation(client) {
   return result;
 }
 
+// ── PLM Stage Tracking ──────────────────────────────────────
+
+async function getPlmStages() {
+  const all = await store.plm.getAll();
+  const byMP = {};
+  for (const entry of all) {
+    byMP[entry.mpId || entry.key] = entry;
+  }
+
+  // Merge with seeds so every MP has a PLM record
+  const stages = MP_SEEDS.map(seed => {
+    const stored = byMP[seed.id];
+    return {
+      mpId: seed.id,
+      name: seed.name,
+      code: seed.code,
+      cat: seed.cat,
+      plmStage: stored?.plmStage || 'Concept',
+      plmStageId: stored?.plmStageId || 1,
+      updatedAt: stored?._updatedAt || null,
+      updatedBy: stored?.updatedBy || null,
+      notes: stored?.notes || null,
+    };
+  });
+
+  return {
+    count: stages.length,
+    plmStageDefinitions: PLM_STAGES,
+    stages,
+  };
+}
+
+async function updatePlmStage(_, { pathParams, body }) {
+  const mpId = pathParams.id;
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  const stageName = body.stage;
+  if (!stageName) throw new RouteError(400, 'Missing required field: stage');
+
+  const stageDef = PLM_STAGES.find(s => s.name === stageName);
+  if (!stageDef) throw new RouteError(400, `Invalid PLM stage: ${stageName}`);
+
+  // Check gate requirements
+  if (stageDef.gate && !body.checkedBy) {
+    throw new RouteError(400, `Stage "${stageName}" requires checkedBy (gate: ${stageDef.gate})`);
+  }
+
+  // Get existing record
+  const existing = await store.plm.get(mpId) || {};
+
+  const record = {
+    mpId,
+    plmStage: stageName,
+    plmStageId: stageDef.id,
+    previousStage: existing.plmStage || 'Concept',
+    updatedBy: body.checkedBy || body.updatedBy || null,
+    notes: body.notes || null,
+    history: [
+      ...(existing.history || []),
+      {
+        from: existing.plmStage || 'Concept',
+        to: stageName,
+        by: body.checkedBy || body.updatedBy || null,
+        notes: body.notes || null,
+        at: new Date().toISOString(),
+      },
+    ],
+  };
+
+  await store.plm.put(mpId, record);
+
+  return {
+    mpId,
+    name: seed.name,
+    plmStage: stageName,
+    plmStageId: stageDef.id,
+    gate: stageDef.gate,
+    updated: true,
+  };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
@@ -438,6 +520,8 @@ const ROUTES = [
   { method: 'GET',   path: 'seeds',           handler: seedCatalog,    noClient: true },
   { method: 'GET',   path: 'reorder',         handler: reorderPlan },
   { method: 'GET',   path: 'stock',           handler: stockByLocation },
+  { method: 'GET',   path: 'plm',             handler: getPlmStages,   noClient: true },
+  { method: 'PATCH', path: 'plm/:id',         handler: updatePlmStage, noClient: true },
   { method: 'GET',   path: 'sku-map',         handler: skuMap },
   { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
   { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },

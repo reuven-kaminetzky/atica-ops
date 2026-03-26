@@ -80,43 +80,137 @@ function render() {
 
 function renderOverview(el) {
   const s = state.salesData;
-  const activePOs = state.purchaseOrders.filter(po => !['Received', 'Distribution'].includes(po.stage));
+  const allPOs = state.purchaseOrders;
+  const activePOs = allPOs.filter(po => !['Received', 'Distribution'].includes(po.stage));
+  const completedPOs = allPOs.filter(po => ['Received', 'Distribution'].includes(po.stage));
+
+  // Cost aggregation
   const totalPOCost = activePOs.reduce((sum, po) => sum + (po.fobTotal || 0), 0);
   const totalPOUnits = activePOs.reduce((sum, po) => sum + (po.units || 0), 0);
+  const completedPOCost = completedPOs.reduce((sum, po) => sum + (po.fobTotal || 0), 0);
+  const totalCommittedCost = allPOs.reduce((sum, po) => sum + (po.fobTotal || 0), 0);
+  const revenue = s?.totalRevenue || 0;
+  const netPosition = revenue - totalCommittedCost;
+  const grossMargin = revenue > 0 ? +((1 - totalCommittedCost / revenue) * 100).toFixed(1) : 0;
+  const dailyBurn = activePOs.length > 0
+    ? +(totalPOCost / Math.max(activePOs.length, 1) / 30).toFixed(2)
+    : 0;
+
+  // PO stage breakdown
+  const stageCounts = {};
+  const stageCosts = {};
+  for (const po of activePOs) {
+    const st = po.stage || 'Concept';
+    stageCounts[st] = (stageCounts[st] || 0) + 1;
+    stageCosts[st] = (stageCosts[st] || 0) + (po.fobTotal || 0);
+  }
+
+  // Stage badge color
+  const earlyStages = ['Concept', 'Design', 'Sample', 'Approved', 'Costed'];
+  const midStages = ['Ordered', 'Production', 'QC'];
+
+  function stageBadgeClass(stage) {
+    if (earlyStages.includes(stage)) return 'early';
+    if (midStages.includes(stage)) return 'mid';
+    return 'late';
+  }
+
+  // Revenue/cost proportion for visual bar
+  const totalBar = revenue + totalCommittedCost || 1;
+  const revPct = (revenue / totalBar * 100).toFixed(1);
+  const costPct = (totalCommittedCost / totalBar * 100).toFixed(1);
 
   el.innerHTML = `
+    <!-- KPI Cards -->
     <div class="stat-row">
       <div class="stat-card">
         <div class="stat-label">Revenue (30d)</div>
-        <div class="stat-value">${formatCurrency(s?.totalRevenue || 0)}</div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">${formatNumber(s?.totalOrders || 0)} orders</div>
+        <div class="stat-value">${formatCurrency(revenue)}</div>
+        <div class="stat-card-sub">${formatNumber(s?.totalOrders || 0)} orders</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Active PO Cost</div>
-        <div class="stat-value">${formatCurrency(totalPOCost)}</div>
-        <div style="font-size:0.75rem;color:var(--text-dim);margin-top:0.2rem">${activePOs.length} POs · ${formatNumber(totalPOUnits)} units</div>
+        <div class="stat-label">Total PO Committed</div>
+        <div class="stat-value">${formatCurrency(totalCommittedCost)}</div>
+        <div class="stat-card-sub">${allPOs.length} POs total</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net Position</div>
+        <div class="stat-value" style="color:${netPosition >= 0 ? 'var(--success)' : 'var(--danger)'}">${netPosition >= 0 ? '+' : ''}${formatCurrency(netPosition)}</div>
+        <div class="stat-card-sub">${grossMargin}% gross margin</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Avg Order Value</div>
         <div class="stat-value">${formatCurrency(s?.avgOrderValue || 0)}</div>
+        <div class="stat-card-sub">${formatCurrency(revenue / Math.max(30, 1))}/day</div>
       </div>
     </div>
 
-    ${s?.dailySales?.length ? `
-      <h3>Daily Revenue — Last 30 Days</h3>
-      <div class="daily-chart" style="margin-bottom:1.5rem">
-        ${s.dailySales.map(d => {
-          const maxRev = Math.max(...s.dailySales.map(x => x.revenue || 0), 1);
-          return `
-            <div class="daily-bar" title="${d.date}: ${formatCurrency(d.revenue || 0)}">
-              <div class="bar-fill" style="height:${Math.max(2, ((d.revenue || 0) / maxRev) * 100)}%"></div>
-              <div class="bar-label">${(d.date || '').slice(5)}</div>
+    <!-- Cost Breakdown Panels -->
+    <div class="cf-overview-grid">
+      <div class="cf-panel">
+        <h3>Revenue vs Cost</h3>
+        <div class="cf-kpi-row">
+          <span class="cf-kpi-label">Revenue (30d)</span>
+          <span class="cf-kpi-value positive">${formatCurrency(revenue)}</span>
+        </div>
+        <div class="cf-kpi-row">
+          <span class="cf-kpi-label">Active PO Cost</span>
+          <span class="cf-kpi-value negative">${formatCurrency(totalPOCost)}</span>
+        </div>
+        <div class="cf-kpi-row">
+          <span class="cf-kpi-label">Completed PO Cost</span>
+          <span class="cf-kpi-value">${formatCurrency(completedPOCost)}</span>
+        </div>
+        <div class="cf-kpi-row" style="font-weight:700">
+          <span class="cf-kpi-label">Net Position</span>
+          <span class="cf-kpi-value ${netPosition >= 0 ? 'positive' : 'negative'}">${netPosition >= 0 ? '+' : ''}${formatCurrency(netPosition)}</span>
+        </div>
+        <div class="cf-net-bar">
+          <div class="cf-net-bar-revenue" style="width:${revPct}%"></div>
+          <div class="cf-net-bar-cost" style="width:${costPct}%"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.68rem;color:var(--text-dim)">
+          <span>Revenue ${revPct}%</span>
+          <span>Cost ${costPct}%</span>
+        </div>
+      </div>
+
+      <div class="cf-panel">
+        <h3>Active POs by Stage</h3>
+        ${activePOs.length === 0 ? '<div class="empty-state" style="padding:1rem">No active POs</div>' : `
+          ${Object.entries(stageCounts).sort((a, b) => b[1] - a[1]).map(([stage, count]) => `
+            <div class="cf-kpi-row">
+              <span><span class="po-stage-badge ${stageBadgeClass(stage)}">${stage}</span></span>
+              <span class="cf-kpi-value">${count} POs · ${formatCurrency(stageCosts[stage] || 0)}</span>
             </div>
-          `;
-        }).join('')}
+          `).join('')}
+          <div class="cf-kpi-row" style="font-weight:700;margin-top:0.25rem">
+            <span class="cf-kpi-label">Total Active</span>
+            <span class="cf-kpi-value">${activePOs.length} POs · ${formatCurrency(totalPOCost)}</span>
+          </div>
+          <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.5rem">${formatNumber(totalPOUnits)} units on order</div>
+        `}
+      </div>
+    </div>
+
+    <!-- Daily Revenue Chart -->
+    ${s?.dailySales?.length ? `
+      <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1.5rem">
+        <h3 style="margin-bottom:0.5rem">Daily Revenue — Last 30 Days</h3>
+        <div class="daily-chart">
+          ${s.dailySales.map(d => {
+            const maxRev = Math.max(...s.dailySales.map(x => x.revenue || 0), 1);
+            return `
+              <div class="daily-bar" title="${d.date}: ${formatCurrency(d.revenue || 0)}">
+                <div class="bar-fill" style="height:${Math.max(2, ((d.revenue || 0) / maxRev) * 100)}%"></div>
+              </div>
+            `;
+          }).join('')}
+        </div>
       </div>
     ` : ''}
 
+    <!-- Active PO List -->
     ${activePOs.length ? `
       <h3>Active Purchase Orders</h3>
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);overflow:hidden">
@@ -125,7 +219,7 @@ function renderOverview(el) {
             <div class="po-vendor">${po.vendor || '—'}</div>
             <div class="po-product">${po.mpName || po.mpCode || '—'}</div>
             <div class="po-cost">${formatCurrency(po.fobTotal || 0)}</div>
-            <div class="po-stage badge">${po.stage || 'Concept'}</div>
+            <div><span class="po-stage-badge ${stageBadgeClass(po.stage || 'Concept')}">${po.stage || 'Concept'}</span></div>
             <div class="po-date">${po.etd ? formatDate(po.etd) : '—'}</div>
           </div>
         `).join('')}
