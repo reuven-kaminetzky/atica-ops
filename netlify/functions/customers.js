@@ -62,7 +62,7 @@ async function getCustomer(client, { pathParams }) {
 }
 
 async function topCustomers(client, { params }) {
-  const days = parseInt(params.days || '90', 10);
+  const days = Math.min(parseInt(params.days || '90', 10), 365);
   const ck = cache.makeKey('top-customers', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -104,7 +104,7 @@ async function topCustomers(client, { params }) {
 }
 
 async function customerSegments(client, { params }) {
-  const days = parseInt(params.days || '90', 10);
+  const days = Math.min(parseInt(params.days || '90', 10), 365);
   const ck = cache.makeKey('customer-segments', { days });
   const cached = cache.get(ck);
   if (cached) return cached;

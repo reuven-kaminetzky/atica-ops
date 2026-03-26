@@ -81,6 +81,7 @@ Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Sh
 - **cash-flow.js** — 4 tabs: Overview (revenue + POs), Purchase Orders (table + create/edit/advance), Production (lead-time reorder plan), Ledger
 - **stock.js** — By Product (MP totals), By Store (MP × Location matrix), Locations (raw)
 - **vendors.js** — Vendor cards with MP product lines, PO rollup, expandable details
+- **analytics.js** — MP velocity SVG charts, category breakdown bars, daily revenue trend lines, 7/30/90d toggle
 - **pos.js** — Today's sales, feed, by-store (data feed only — not priority)
 - **ledger.js** — Financial entries with configurable day range
 - **settings.js** — Shopify status, sync controls, cache, webhooks
@@ -88,7 +89,7 @@ Data gates enforce: vendor before Design, FOB+units before Costed, ETD before Sh
 - **event-bus.js** — Pub/sub with EVENTS registry
 
 **Shell (atica_v2.html):**
-- Sidebar: Catalog (Master Products, Stock) → Operations (Cash Flow, Vendors) → Finance (Ledger, Sales Feed) → System (Settings)
+- Sidebar: Catalog (Master Products, Stock) → Operations (Cash Flow, Vendors, Analytics) → Finance (Ledger, Sales Feed) → System (Settings)
 - Mobile: hamburger toggle, backdrop overlay, auto-close on nav
 - Modal system → `emit('modal:open', { title, html, onMount, onClose, wide })`
 - Toast notifications → `emit('toast:show', { message, type })`
@@ -132,7 +133,7 @@ netlify/functions/          # 12 Netlify Functions
   oauth-callback.js         # OAuth token exchange
 
 modules/                    # V2 frontend ES modules
-  [10 modules — see above]
+  [11 modules — see above]
 
 docs/ARCHITECTURE.md        # Full system architecture
 ```
@@ -210,7 +211,6 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 
 ### High Priority
 - [ ] MP PLM stage tracking — persist which PLM stage each MP is at (concept→in-store→reorder review→EOL)
-- [ ] Analytics module — dedicated analytics page with MP velocity charts, category breakdown, trend lines
 - [ ] MP detail needs size grid — show available sizes per fit per style (the full matrix)
 - [ ] Cash-flow overview should show real cost breakdown (PO costs vs revenue, not just revenue)
 
@@ -226,6 +226,7 @@ Then add redirect to `netlify.toml` before the SPA fallback.
 - [ ] CI test pipeline (endpoint tests exist but DNS blocked from CI)
 
 ### Done (do not rebuild)
+- [x] Analytics module — MP velocity SVG charts, category breakdown bars, daily revenue trend lines, 7/30/90d toggle
 - [x] MP detail with Quick PO + Full Form shortcuts
 - [x] PO detail view with stage track, check-ins, history, stage advancement
 - [x] PO edit form — editable fields (vendor, units, FOB, ETD, ETA, container, vessel, notes)

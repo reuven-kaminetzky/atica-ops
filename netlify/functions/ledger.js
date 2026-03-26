@@ -17,7 +17,7 @@ const store = require('../../lib/store');
 // ── Handlers ────────────────────────────────────────────────
 
 async function listLedger(client, { params }) {
-  const days = parseInt(params.days || '30', 10);
+  const days = Math.min(parseInt(params.days || '30', 10), 365);
   const ck = cache.makeKey('ledger', { days });
   const cached = cache.get(ck);
   if (cached) return { ...cached, _cached: true };

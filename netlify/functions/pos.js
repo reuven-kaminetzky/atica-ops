@@ -83,7 +83,7 @@ async function todaySales(client) {
 }
 
 async function byLocation(client, { params }) {
-  const days = parseInt(params.days || '7', 10);
+  const days = Math.min(parseInt(params.days || '7', 10), 365);
   const ck = cache.makeKey('pos-location', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
