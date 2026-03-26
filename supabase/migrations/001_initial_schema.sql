@@ -44,6 +44,38 @@ CREATE TYPE shipment_status AS ENUM (
   'cleared', 'delivered'
 );
 
+-- ── Vendors ───────────────────────────────────────────────
+
+CREATE TABLE vendors (
+  id TEXT PRIMARY KEY,               -- 'tal', 'shandong', etc.
+  name TEXT NOT NULL,
+  short_name TEXT,
+  country TEXT,
+  tier vendor_tier DEFAULT 'standard',
+  
+  -- Performance
+  lead_days INTEGER DEFAULT 0,
+  moq INTEGER DEFAULT 0,
+  on_time_pct NUMERIC(5,2),
+  quality_score NUMERIC(5,2),
+  
+  -- Contact
+  contact_name TEXT,
+  contact_email TEXT,
+  contact_phone TEXT,
+  
+  -- Categories they supply
+  categories TEXT[],
+  
+  -- Computed
+  total_pos INTEGER DEFAULT 0,
+  total_units INTEGER DEFAULT 0,
+  total_fob NUMERIC(14,2) DEFAULT 0,
+  
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── Master Products ───────────────────────────────────────
 
 CREATE TABLE master_products (
@@ -143,38 +175,6 @@ CREATE TABLE product_stack (
   -- Completeness tracking
   completeness INTEGER DEFAULT 0,
   
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- ── Vendors ───────────────────────────────────────────────
-
-CREATE TABLE vendors (
-  id TEXT PRIMARY KEY,               -- 'tal', 'shandong', etc.
-  name TEXT NOT NULL,
-  short_name TEXT,
-  country TEXT,
-  tier vendor_tier DEFAULT 'standard',
-  
-  -- Performance
-  lead_days INTEGER DEFAULT 0,
-  moq INTEGER DEFAULT 0,
-  on_time_pct NUMERIC(5,2),
-  quality_score NUMERIC(5,2),
-  
-  -- Contact
-  contact_name TEXT,
-  contact_email TEXT,
-  contact_phone TEXT,
-  
-  -- Categories they supply
-  categories TEXT[],
-  
-  -- Computed
-  total_pos INTEGER DEFAULT 0,
-  total_units INTEGER DEFAULT 0,
-  total_fob NUMERIC(14,2) DEFAULT 0,
-  
-  created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
