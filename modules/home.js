@@ -6,12 +6,12 @@
 import { emit } from './event-bus.js';
 
 const TILES = [
-  { id: 'pos',         label: 'Point of Sale',   desc: 'Today\'s transactions, store feed',            icon: '◎', color: '#714b67' },
-  { id: 'cash-flow',   label: 'Cash Flow',        desc: 'Revenue, costs, purchase orders',              icon: '◫', color: '#2d6a4f' },
-  { id: 'marketplace', label: 'Marketplace',      desc: 'Products, styles, Shopify catalog',            icon: '▤', color: '#1d3557' },
-  { id: 'stock',       label: 'Stock',             desc: 'Inventory by location, transfers',             icon: '▦', color: '#6c584c' },
-  { id: 'ledger',      label: 'Ledger',            desc: 'Financial entries from orders',                icon: '◈', color: '#3a0ca3' },
-  { id: 'settings',    label: 'Settings',          desc: 'Shopify connection, sync, cache',              icon: '⚙', color: '#495057' },
+  { id: 'marketplace', label: 'Master Products', desc: 'Products, styles, fits, Shopify catalog',          icon: '▤', color: '#1d3557' },
+  { id: 'cash-flow',   label: 'Cash Flow',        desc: 'Revenue, POs, production planning',               icon: '◫', color: '#2d6a4f' },
+  { id: 'stock',       label: 'Stock',             desc: 'Inventory by product and location',               icon: '▦', color: '#6c584c' },
+  { id: 'vendors',     label: 'Vendors',           desc: 'Vendor management, PO rollup',                    icon: '⊞', color: '#714b67' },
+  { id: 'ledger',      label: 'Ledger',            desc: 'Financial entries from orders',                   icon: '◈', color: '#3a0ca3' },
+  { id: 'settings',    label: 'Settings',          desc: 'Shopify connection, sync, cache',                 icon: '⚙', color: '#495057' },
 ];
 
 export async function init(container) {

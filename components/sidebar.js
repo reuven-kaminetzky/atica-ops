@@ -13,19 +13,20 @@ const NAV_ITEMS = [
   { section: 'Dashboard', items: [
     { id: 'home',        label: 'Overview',        icon: '◉' },
   ]},
-  // Trunk
-  { section: 'Operations', items: [
-    { id: 'pos',         label: 'Point of Sale',  icon: '◎' },
-    { id: 'cash-flow',   label: 'Cash Flow',      icon: '◫' },
-  ]},
-  // Branches
+  // Root — products
   { section: 'Catalog', items: [
-    { id: 'marketplace', label: 'Marketplace',     icon: '▤' },
+    { id: 'marketplace', label: 'Master Products', icon: '▤' },
     { id: 'stock',       label: 'Stock',           icon: '▦' },
   ]},
-  // Leaves
+  // Trunk — orders + cash
+  { section: 'Operations', items: [
+    { id: 'cash-flow',   label: 'Cash Flow',       icon: '◫' },
+    { id: 'vendors',     label: 'Vendors',         icon: '⊞' },
+  ]},
+  // Finance
   { section: 'Finance', items: [
     { id: 'ledger',      label: 'Ledger',          icon: '◈' },
+    { id: 'pos',         label: 'Sales Feed',      icon: '◎' },
   ]},
   // System
   { section: 'System', items: [
