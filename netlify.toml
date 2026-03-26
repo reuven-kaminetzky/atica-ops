@@ -38,6 +38,11 @@
   status = 200
 
 [[redirects]]
+  from   = "/api/workflow/*"
+  to     = "/.netlify/functions/workflow/:splat"
+  status = 200
+
+[[redirects]]
   from   = "/api/purchase-orders/*"
   to     = "/.netlify/functions/purchase-orders/:splat"
   status = 200
