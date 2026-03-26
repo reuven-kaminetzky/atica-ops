@@ -26,23 +26,12 @@ async function invalidateCaches(topic) {
   const targets = CACHE_MAP[topic];
   if (!targets || !targets.length) return [];
 
-  const base = process.env.URL || 'https://atica-ops.netlify.app';
   const results = [];
-
   for (const target of targets) {
-    // Each modular function has its own cache — but we can't clear it externally
-    // because esbuild bundles separate copies. The real fix: reduce TTL on
-    // webhook-affected data so it expires fast.
-    // For now, log what would be invalidated.
-    results.push({ target, action: 'ttl-expiry', note: `${target} cache TTL handles freshness` });
-  }
-
-  // Also clear the god-function cache if it's still serving traffic
-  try {
-    await fetch(`${base}/api/shopify/cache/clear`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-    results.push({ target: 'shopify-legacy', action: 'cleared' });
-  } catch (e) {
-    results.push({ target: 'shopify-legacy', action: 'failed', error: e.message });
+    // Each modular function has its own esbuild-bundled cache.
+    // We can't clear cross-function caches. TTLs handle freshness:
+    // orders=60s, pos=60s, inventory=120s, products=300s
+    results.push({ target, action: 'ttl-expiry', note: `${target} cache expires in ≤${target === 'products' ? '5min' : target === 'inventory' ? '2min' : '1min'}` });
   }
 
   return results;

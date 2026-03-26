@@ -2,7 +2,7 @@
 // Uses env vars: SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET
 exports.handler = async (event) => {
   const code = event.queryStringParameters?.code;
-  const shop = event.queryStringParameters?.shop || 'atica-brand.myshopify.com';
+  const shop = event.queryStringParameters?.shop || process.env.SHOPIFY_STORE_URL;
 
   if (!code) {
     return {

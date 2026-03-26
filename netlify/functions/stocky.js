@@ -9,9 +9,9 @@
  */
 
 const STOCKY_BASE = 'https://stocky.shopifyapps.com/api/v2';
-const STORE_NAME  = 'atica-brand.myshopify.com';
 
-const getApiKey = () => process.env.STOCKY_API_KEY || 'b30b0fd9671ef5dc5da8599dd2c48b67';
+const getStoreName = () => process.env.SHOPIFY_STORE_URL || '';
+const getApiKey    = () => process.env.STOCKY_API_KEY || '';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -59,7 +59,7 @@ exports.handler = async (event) => {
     const resp = await fetch(url, {
       method: 'GET',
       headers: {
-        'Store-Name': STORE_NAME,
+        'Store-Name': getStoreName(),
         'Authorization': 'API KEY=' + apiKey,
         'Accept': 'application/json',
       },
