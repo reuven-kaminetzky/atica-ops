@@ -6,6 +6,8 @@
 import { emit } from './event-bus.js';
 import { api, formatCurrency, formatNumber } from './core.js';
 
+let _container = null;
+
 const TILES = [
   { id: 'marketplace', label: 'Master Products', desc: 'Products, styles, fits, Shopify catalog',    icon: '▤', color: '#1d3557' },
   { id: 'cash-flow',   label: 'Cash Flow',        desc: 'Revenue, POs, production planning',         icon: '◫', color: '#2d6a4f' },
@@ -16,6 +18,7 @@ const TILES = [
 ];
 
 export async function init(container) {
+  _container = container;
   container.innerHTML = `
     <div style="max-width:800px;margin:2rem auto;padding:0 1rem">
       <div style="margin-bottom:2rem">
@@ -62,8 +65,8 @@ async function loadSummary() {
 
   try {
     const [status, health] = await Promise.all([
-      api.get('/api/status').catch(() => null),
-      api.get('/api/workflow/health').catch(() => null),
+      api.silent.get('/api/status').catch(() => null),
+      api.silent.get('/api/workflow/health').catch(() => null),
     ]);
 
     let html = '';
@@ -107,4 +110,4 @@ async function loadSummary() {
   } catch (e) { /* silent */ }
 }
 
-export function destroy() {}
+export function destroy() { _container = null; }
