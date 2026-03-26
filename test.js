@@ -332,6 +332,92 @@ test('cache.clear works', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
+console.log('\n9. LOCATIONS');
+// ═══════════════════════════════════════════════════════════
+
+const locations = require('./lib/locations');
+
+test('normalize handles canonical names', () => {
+  assert(locations.normalize('Lakewood') === 'Lakewood');
+  assert(locations.normalize('Crown Heights') === 'Crown Heights');
+  assert(locations.normalize('Online') === 'Online');
+});
+
+test('normalize handles case insensitivity', () => {
+  assert(locations.normalize('lakewood') === 'Lakewood');
+  assert(locations.normalize('CROWN HEIGHTS') === 'Crown Heights');
+  assert(locations.normalize('flatbush') === 'Flatbush');
+});
+
+test('normalize handles abbreviations', () => {
+  assert(locations.normalize('CH') === 'Crown Heights');
+  assert(locations.normalize('FB') === 'Flatbush');
+  assert(locations.normalize('Mon') === 'Monsey');
+});
+
+test('normalize handles Shopify location variants', () => {
+  assert(locations.normalize('Brooklyn Store') === 'Flatbush');
+  assert(locations.normalize('Spring Valley') === 'Monsey');
+  assert(locations.normalize('Warehouse A') === 'Reserve');
+});
+
+test('normalize returns input for unknown locations', () => {
+  assert(locations.normalize('Mars Colony') === 'Mars Colony');
+});
+
+test('normalize handles null/empty', () => {
+  assert(locations.normalize(null) === 'Online');
+  assert(locations.normalize('') === 'Online');
+});
+
+test('STORES has 6 canonical stores', () => {
+  assert(locations.STORES.length === 6, `Got ${locations.STORES.length}`);
+});
+
+test('buildLocationMap works', () => {
+  const map = locations.buildLocationMap([
+    { id: 1, name: 'Lakewood Store' },
+    { id: 2, name: 'Crown Heights' },
+  ]);
+  assert(map[1] === 'Lakewood');
+  assert(map[2] === 'Crown Heights');
+});
+
+// ═══════════════════════════════════════════════════════════
+console.log('\n10. AUTH');
+// ═══════════════════════════════════════════════════════════
+
+const auth = require('./lib/auth');
+
+test('cors returns proper headers', () => {
+  const headers = auth.cors();
+  assert(headers['Access-Control-Allow-Methods'].includes('GET'));
+  assert(headers['Access-Control-Allow-Methods'].includes('POST'));
+  assert(headers['Access-Control-Max-Age'] === '86400');
+});
+
+test('json returns proper response shape', () => {
+  const res = auth.json(200, { test: true });
+  assert(res.statusCode === 200);
+  assert(res.headers['Content-Type'] === 'application/json');
+  assert(JSON.parse(res.body).test === true);
+});
+
+test('authenticate allows OPTIONS', () => {
+  const result = auth.authenticate({ httpMethod: 'OPTIONS', headers: {} });
+  assert(result.ok === true);
+});
+
+test('authenticate allows when SKIP_AUTH=true', () => {
+  const orig = process.env.SKIP_AUTH;
+  process.env.SKIP_AUTH = 'true';
+  const result = auth.authenticate({ httpMethod: 'GET', headers: {} });
+  assert(result.ok === true);
+  assert(result.source === 'skip');
+  process.env.SKIP_AUTH = orig;
+});
+
+// ═══════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(50)}`);
 console.log(`RESULTS: ${passed} passed, ${failed} failed`);
 console.log(`${'═'.repeat(50)}\n`);
