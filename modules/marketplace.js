@@ -1,100 +1,129 @@
 /**
- * Marketplace Module — Master Products, Styles, Vendors
- * Owner: Shrek
+ * Marketplace Module — Master Products with real Shopify data
  * 
- * API endpoints used:
- *   GET  /api/products          → product list
- *   GET  /api/products/sku-map  → SKU mapping
- *   GET  /api/inventory         → stock levels (read-only)
+ * Shows MPs grouped by category, enriched with live styles,
+ * inventory, pricing, and images from Shopify.
  * 
- * Events published:
- *   product:updated      → when product data changes
- *   product:costUpdated  → when cost is edited
+ * API: GET /api/products/masters
  * 
- * Events subscribed:
- *   order:synced    → update sell-through counts
- *   stock:updated   → refresh stock badges
- *   po:received     → update incoming stock
+ * Publishes: product:updated
+ * Subscribes: sync:complete
  */
 
 import { on, emit } from './event-bus.js';
-import { api, formatCurrency, formatNumber, skeleton, html } from './core.js';
+import { api, formatCurrency, formatNumber, skeleton } from './core.js';
 
-// ── State (private) ─────────────────────────────────────────
-
-let state = {
-  loaded: false,
-  products: [],
-  filter: '',
-  view: 'grid', // 'grid' | 'list'
-};
-
+let state = { loaded: false, masters: [], unmatched: [], categories: [], filter: '', activeCat: null };
 let _container = null;
-
-// ── Init ────────────────────────────────────────────────────
 
 export async function init(container) {
   _container = container;
   container.innerHTML = `
     <div class="module-header">
-      <h2>Marketplace</h2>
+      <h2>Master Products</h2>
       <div class="module-actions">
-        <input type="text" id="mp-search" placeholder="Search products..." class="input-search" />
+        <input type="text" id="mp-search" placeholder="Search MPs..." class="input-search" />
         <button id="mp-sync" class="btn btn-secondary">Sync</button>
       </div>
     </div>
+    <div id="mp-cats"></div>
     <div id="mp-content">${skeleton(8)}</div>
   `;
 
   try {
-    const data = await api.get('/api/products');
-    state.products = data.products || [];
+    const data = await api.get('/api/products/masters');
+    state.masters = data.masters || [];
+    state.unmatched = data.unmatched || [];
+    state.categories = data.categories || [];
     state.loaded = true;
+    renderCats();
     render();
   } catch (err) {
-    document.getElementById('mp-content').innerHTML = `
-      <div class="empty-state">Failed to load products: ${err.message}</div>
-    `;
+    document.getElementById('mp-content').innerHTML =
+      `<div class="empty-state">Failed to load products: ${err.message}</div>`;
   }
 
   bindEvents();
 }
 
-// ── Render ──────────────────────────────────────────────────
+function renderCats() {
+  const el = document.getElementById('mp-cats');
+  if (!el) return;
+
+  const counts = {};
+  for (const m of state.masters) counts[m.cat] = (counts[m.cat] || 0) + 1;
+
+  el.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap">
+      <button class="tab ${!state.activeCat ? 'active' : ''}" data-cat="">All (${state.masters.length})</button>
+      ${state.categories.filter(c => counts[c]).map(cat => `
+        <button class="tab ${state.activeCat === cat ? 'active' : ''}" data-cat="${cat}">${cat} (${counts[cat] || 0})</button>
+      `).join('')}
+      ${state.unmatched.length ? `<span style="font-size:0.75rem;color:var(--text-dim);padding:0.4rem 0.5rem">${state.unmatched.length} unmatched</span>` : ''}
+    </div>
+  `;
+
+  el.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.activeCat = btn.dataset.cat || null;
+      renderCats();
+      render();
+    });
+  });
+}
 
 function render() {
-  const content = document.getElementById('mp-content');
-  if (!content) return;
+  const el = document.getElementById('mp-content');
+  if (!el || !state.loaded) return;
 
-  const filtered = state.filter
-    ? state.products.filter(p =>
-        p.title.toLowerCase().includes(state.filter.toLowerCase()) ||
-        p.vendor.toLowerCase().includes(state.filter.toLowerCase())
-      )
-    : state.products;
+  let filtered = state.masters;
+  if (state.activeCat) filtered = filtered.filter(m => m.cat === state.activeCat);
+  if (state.filter) {
+    const q = state.filter.toLowerCase();
+    filtered = filtered.filter(m =>
+      m.name.toLowerCase().includes(q) ||
+      m.code.toLowerCase().includes(q) ||
+      m.vendor.toLowerCase().includes(q) ||
+      m.id.toLowerCase().includes(q)
+    );
+  }
 
   if (filtered.length === 0) {
-    content.innerHTML = `<div class="empty-state">No products found</div>`;
+    el.innerHTML = `<div class="empty-state">No master products found</div>`;
     return;
   }
 
-  content.innerHTML = `
-    <div class="product-grid">
-      ${filtered.map(p => `
-        <div class="product-card" data-id="${p.shopifyId}">
-          ${p.images[0] ? `<img src="${p.images[0].src}&width=200" class="product-img" />` : '<div class="product-img-placeholder">No image</div>'}
-          <div class="product-info">
-            <div class="product-title">${p.title}</div>
-            <div class="product-meta">${p.vendor} · ${p.variants.length} variants</div>
-            <div class="product-price">${formatCurrency(p.variants[0]?.price || 0)}</div>
+  el.innerHTML = `
+    <div class="product-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+      ${filtered.map(mp => `
+        <div class="product-card" data-id="${mp.id}" style="cursor:pointer">
+          ${mp.images && mp.images[0]
+            ? `<img src="${mp.images[0]}&width=300" class="product-img" style="height:180px" />`
+            : `<div class="product-img-placeholder" style="height:180px">${mp.code}</div>`}
+          <div class="product-info" style="padding:0.85rem">
+            <div class="product-title">${mp.name}</div>
+            <div class="product-meta">${mp.vendor || '—'} · ${mp.code}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem">
+              <div class="product-price">${formatCurrency(mp.liveRetail || mp.retail)}</div>
+              <div style="font-size:0.75rem;color:var(--text-dim)">${formatNumber(mp.totalInventory)} units</div>
+            </div>
+            ${mp.styleCount > 0 ? `
+              <div style="margin-top:0.5rem;display:flex;gap:4px;flex-wrap:wrap">
+                ${mp.styles.slice(0, 6).map(s => `
+                  <span style="width:18px;height:18px;border-radius:50%;background:${s.color};border:1px solid var(--border);display:inline-block" title="${s.name} (${s.qty})"></span>
+                `).join('')}
+                ${mp.styles.length > 6 ? `<span style="font-size:0.7rem;color:var(--text-dim);padding:2px 4px">+${mp.styles.length - 6}</span>` : ''}
+              </div>
+            ` : ''}
+            <div style="margin-top:0.4rem;font-size:0.72rem;color:var(--text-dim)">
+              FOB ${formatCurrency(mp.fob)} · ${mp.margin ? mp.margin + '% margin' : '—'} · ${mp.shopifyProductCount} Shopify products
+            </div>
           </div>
         </div>
       `).join('')}
     </div>
   `;
 }
-
-// ── Events ──────────────────────────────────────────────────
 
 function bindEvents() {
   const search = document.getElementById('mp-search');
@@ -112,11 +141,14 @@ function bindEvents() {
       syncBtn.textContent = 'Syncing...';
       emit('sync:start', { source: 'marketplace' });
       try {
-        const data = await api.post('/api/products/sync');
-        state.products = data.products || [];
+        await api.post('/api/products/sync');
+        const data = await api.get('/api/products/masters');
+        state.masters = data.masters || [];
+        state.unmatched = data.unmatched || [];
+        renderCats();
         render();
-        emit('sync:complete', { source: 'marketplace', count: state.products.length });
-        emit('toast:show', { message: `Synced ${state.products.length} products`, type: 'success' });
+        emit('sync:complete', { source: 'marketplace', count: state.masters.length });
+        emit('toast:show', { message: `Synced ${state.masters.length} master products`, type: 'success' });
       } catch (err) {
         emit('sync:error', { source: 'marketplace', error: err.message });
       } finally {
@@ -127,26 +159,17 @@ function bindEvents() {
   }
 }
 
-// ── Subscriptions ───────────────────────────────────────────
-
-on('order:synced', (data) => {
-  // TODO: Update sell-through counts on product cards
-  console.log('[marketplace] Orders synced, update sell-through');
+on('sync:complete', async ({ source }) => {
+  if (!_container || source === 'marketplace') return;
+  try {
+    const data = await api.get('/api/products/masters');
+    state.masters = data.masters || [];
+    renderCats();
+    render();
+  } catch (e) { /* ignore */ }
 });
-
-on('stock:updated', (data) => {
-  // TODO: Refresh stock badges on product cards
-  console.log('[marketplace] Stock updated, refresh badges');
-});
-
-on('po:received', (data) => {
-  // TODO: Show incoming stock on relevant products
-  console.log('[marketplace] PO received, update incoming');
-});
-
-// ── Cleanup ─────────────────────────────────────────────────
 
 export function destroy() {
   _container = null;
-  state = { loaded: false, products: [], filter: '', view: 'grid' };
+  state = { loaded: false, masters: [], unmatched: [], categories: [], filter: '', activeCat: null };
 }
