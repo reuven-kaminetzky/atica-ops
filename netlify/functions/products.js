@@ -16,7 +16,8 @@
 
 const { createHandler, RouteError, validate } = require('../../lib/handler');
 const { mapProduct, mapSKU, buildProductTree } = require('../../lib/mappers');
-const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias } = require('../../lib/products');
+const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias,
+        adjustVelocity, classifyDemand, suggestDistribution, landedCost, DISTRIBUTION_WEIGHTS } = require('../../lib/products');
 const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
 const store = require('../../lib/store');
@@ -270,11 +271,15 @@ async function reorderPlan(client, { params }) {
     poByMP[po.mpId].push({ id: po.id, stage: po.stage, units: po.units || 0 });
   }
 
-  // 6. Build reorder plan
+  // 6. Build reorder plan with seasonal adjustment + demand signals
+  const currentMonth = new Date().getMonth() + 1;
   const plan = MP_SEEDS.map(seed => {
     const vel = mpVelocity[seed.id] || { units: 0, revenue: 0 };
     const stock = mpInventory[seed.id] || 0;
-    const unitsPerDay = vel.units / days;
+    const rawPerDay = vel.units / days;
+    // Seasonal adjustment: project forward using adjusted velocity
+    const adjustedPerDay = adjustVelocity(rawPerDay * 7, currentMonth) / 7;
+    const unitsPerDay = adjustedPerDay; // use adjusted for all planning
     const daysOfStock = unitsPerDay > 0 ? Math.round(stock / unitsPerDay) : stock > 0 ? 999 : 0;
     const activePOsForMP = poByMP[seed.id] || [];
     const incomingUnits = activePOsForMP.reduce((s, po) => s + po.units, 0);
@@ -287,7 +292,6 @@ async function reorderPlan(client, { params }) {
     const suggestedCost = +(suggestedQty * (seed.fob || 0)).toFixed(2);
 
     // Lead-time-aware ordering
-    // When should you place the order so stock doesn't run out?
     const leadDays = seed.lead || 0;
     const orderByDaysFromNow = effectiveDays - leadDays;
     const orderByDate = effectiveDays < 999
@@ -299,30 +303,41 @@ async function reorderPlan(client, { params }) {
       : orderByDaysFromNow <= 30 ? 'soon'
       : 'planned';
 
+    // Demand signal
+    const velocityPerWeek = rawPerDay * 7;
+    const totalEver = stock + vel.units; // rough proxy
+    const sellThrough = totalEver > 0 ? Math.round((vel.units / totalEver) * 100) : 0;
+    const signal = stock === 0 && vel.units > 0 ? 'stockout' : classifyDemand(sellThrough, velocityPerWeek);
+
+    // Distribution suggestion for incoming PO
+    const distribution = suggestedQty > 0 ? suggestDistribution(suggestedQty) : null;
+
     return {
       mpId: seed.id,
       name: seed.name,
       code: seed.code,
       cat: seed.cat,
       vendor: seed.vendor,
-      // Current state
       currentStock: stock,
       incomingUnits,
       activePOs: activePOsForMP,
-      unitsPerDay: +unitsPerDay.toFixed(2),
+      unitsPerDay: +rawPerDay.toFixed(2),
+      adjustedPerDay: +adjustedPerDay.toFixed(2),
       unitsSold: vel.units,
       revenue: +vel.revenue.toFixed(2),
       daysOfStock,
       effectiveDays,
-      // Lead-time ordering
+      signal,
+      sellThrough,
+      velocityPerWeek: +velocityPerWeek.toFixed(1),
       lead: leadDays,
       orderByDate,
       orderByDaysFromNow: effectiveDays < 999 ? orderByDaysFromNow : null,
       urgency,
-      // Reorder signal
       needsReorder,
       suggestedQty,
       suggestedCost,
+      distribution,
       moq: seed.moq || 0,
       fob: seed.fob || 0,
     };
@@ -344,6 +359,7 @@ async function reorderPlan(client, { params }) {
   const result = {
     days,
     coverDays,
+    seasonalMultiplier: +(adjustVelocity(1, currentMonth)).toFixed(2),
     summary: {
       totalMPs: plan.length,
       needReorder: reorderItems.length,
@@ -355,6 +371,13 @@ async function reorderPlan(client, { params }) {
       avgDaysOfStock: plan.length
         ? Math.round(plan.reduce((s, p) => s + Math.min(p.daysOfStock, 365), 0) / plan.length)
         : 0,
+      signals: {
+        hot: plan.filter(p => p.signal === 'hot').length,
+        rising: plan.filter(p => p.signal === 'rising').length,
+        steady: plan.filter(p => p.signal === 'steady').length,
+        slow: plan.filter(p => p.signal === 'slow').length,
+        stockout: plan.filter(p => p.signal === 'stockout').length,
+      },
     },
     plan,
   };

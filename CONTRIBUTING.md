@@ -1,58 +1,154 @@
 # Contributing to Atica Ops
 
-## Branch rules — read before touching anything
+## Git Workflow
 
-**Never push directly to `main`.** It's protected. Use your branch.
-
-| Session | Branch | Owns |
-|---------|--------|------|
-| Shrek | `feat/shrek-mps` | Master products, styles, product stack |
-| Deshawn | `feat/deshawn-cashflow` | Cash flow, POs, stage gates, AP |
-| Stallon | `feat/stallon-api` | Netlify functions, Shopify API layer, `/api/*` routes |
-| Nikita | `feat/nikita-modules` | Module split, v2 architecture, `modules/` |
-| Oboosu | `feat/oboosu-backend` | Backend infra, `lib/`, caching, data layer |
-
-## Workflow
-
-```
-1. Pull main into your branch before starting work
-   git checkout feat/your-branch
-   git pull origin main
-
-2. Make your changes
-
-3. Push to your branch (NOT main)
-   git push origin feat/your-branch
-
-4. Open a PR → main when ready
+```bash
+git pull origin main          # Always pull first
+# ... make changes ...
+node --check <file>           # Every JS file you touched
+git add -A && git commit -m "type: description"
+git push origin main
 ```
 
-## Files — who owns what
+Commit types: `feat:`, `fix:`, `refactor:`, `arch:`, `docs:`, `chore:`
 
-- `atica_app.html` — **everyone touches this, everyone must pull first**
-- `netlify.toml` — **Stallon only**. Do not touch this without pulling.
-- `netlify/functions/shopify.js` — Stallon
-- `netlify/functions/products|orders|inventory|pos|ledger|status.js` — Stallon/Oboosu
-- `modules/cash-flow.js` — Deshawn
-- `modules/marketplace.js` — Shrek
-- `lib/` — Oboosu
-- `modules/event-bus.js` — Nikita
+Everyone pushes to main directly. No branch protection (yet). Pull before working.
 
-## Critical: `netlify.toml` must always have
+## Backend Patterns
 
-1. `included_files = ["lib/**"]` under `[functions]`
-2. SPA fallback at the bottom:
-```toml
-[[redirects]]
-  from   = "/*"
-  to     = "/atica_app.html"
-  status = 200
+### Every Netlify Function
+
+```javascript
+const { createHandler, RouteError, validate } = require('../../lib/handler');
+const cache = require('../../lib/cache');
+
+async function myHandler(client, { params, body, pathParams }) {
+  const days = validate.days(params);
+  validate.required(body, ['vendor', 'units']);
+
+  const ck = cache.makeKey('my-data', { days });
+  const cached = cache.get(ck);
+  if (cached) return cached;
+
+  const result = { /* ... */ };
+  cache.set(ck, result, cache.CACHE_TTL.products);
+  return result;
+}
+
+const ROUTES = [
+  { method: 'GET', path: '',    handler: myHandler },
+  { method: 'GET', path: ':id', handler: getById },    // static paths before :params
+];
+exports.handler = createHandler(ROUTES, 'my-prefix');
 ```
 
-Removing either breaks the entire site.
+### Input Validation
 
-## Data version
+```javascript
+validate.required(body, ['vendor', 'units', 'mpId']);           // throws 400
+validate.days(params);                                          // default 30, max 365
+validate.days(params, 90);                                      // default 90
+validate.intParam(params, 'limit', { min: 1, max: 200, fallback: 50 });
+```
 
-`DATA_VERSION` in `window.onload` controls localStorage cache invalidation.
-Bump it (v31 → v32 etc.) only when seed data structure changes.
-**One bump per deploy max** — coordinate with Deshawn before bumping.
+**Never** do: `const days = parseInt(params.days || '30', 10);`
+
+### Error Handling
+
+```javascript
+throw new RouteError(400, 'Units must be positive');   // expected — user sees message
+throw new RouteError(404, `PO not found: ${id}`);      // expected — 404
+// Unexpected errors: just let them throw, handler catches and returns 500
+```
+
+### Persistence
+
+| Data | Where |
+|------|-------|
+| Products, orders, inventory | Shopify + in-memory cache |
+| Purchase orders | `store.po` (Netlify Blobs) |
+| Shipments | `store.shipments` |
+| PLM stages | `store.plm` |
+| **Never** | `let _data = []` — dies on cold start |
+
+### Business Logic (lib/products.js)
+
+```javascript
+// Seasonal velocity adjustment
+const adjusted = adjustVelocity(rawVelocity, month);  // 0.85x–1.6x by season
+
+// Demand signal classification
+const signal = classifyDemand(sellThrough, velocityPerWeek);  // hot/rising/steady/slow
+
+// Distribution weights for incoming PO stock
+const allocation = suggestDistribution(totalUnits);  // {Lakewood:30, Flatbush:20, ...}
+
+// Landed cost
+const landed = landedCost(fob, dutyPct);  // FOB × (1 + duty% + 8% freight)
+
+// MP matching
+const mpId = matchProduct('Londoner White Shirt');  // → 'londoner'
+const { matched, unmatched } = matchAll(shopifyProducts);
+```
+
+## Frontend Patterns
+
+### Module Lifecycle
+
+```javascript
+import { on, emit } from './event-bus.js';
+import { api, formatCurrency, skeleton } from './core.js';
+
+let state = { loaded: false };
+let _container = null;
+
+export async function init(container) {
+  _container = container;
+  container.innerHTML = `<div id="my-content">${skeleton(6)}</div>`;
+  // fetch data, render
+}
+
+export function destroy() {
+  _container = null;
+  state = { loaded: false };
+}
+```
+
+### Event Bus
+
+```javascript
+// Subscribe at TOP LEVEL (ES modules load once)
+// Guard with _container check
+on('sync:complete', async () => {
+  if (!_container) return;
+  // refresh...
+});
+
+// Emit
+emit('toast:show', { message: 'Done', type: 'success' });
+emit('modal:open', { title: 'Edit', html: '...', onMount: (body) => { } });
+```
+
+### API Client
+
+```javascript
+const data = await api.get('/api/products/masters');
+const data = await api.get('/api/orders/sales', { days: 30 });
+const result = await api.post('/api/purchase-orders', { mpId: 'londoner' });
+await api.patch(`/api/purchase-orders/${id}`, { vendor: 'TAL' });
+```
+
+**Never** use raw `fetch()` in modules.
+
+## Anti-Patterns
+
+| Don't | Do Instead |
+|-------|------------|
+| `let _data = []` for persistent data | `store.po.put(key, value)` |
+| `parseInt(params.days)` unbounded | `validate.days(params)` |
+| `fetch('/api/...')` in modules | `api.get('/api/...')` |
+| Import between modules | Event bus: `emit('event', data)` |
+| Inline store names | `lib/locations.js normalize()` |
+| Inline title matchers | `lib/products.js matchProduct()` |
+| `throw new Error()` in handlers | `throw new RouteError(400, msg)` |
+| Build modal inline | `emit('modal:open', { html, onMount })` |
