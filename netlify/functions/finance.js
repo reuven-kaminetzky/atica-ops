@@ -37,7 +37,7 @@ async function projection(client, { params }) {
   ]);
 
   let poData = [];
-  try { poData = await store.po.getAll(); } catch (e) {}
+  poData = await store.po.getAll();
 
   const orders = ordersData.orders;
   const products = productsData.products;
@@ -251,7 +251,7 @@ async function margins(client, { params }) {
 
 async function accountsPayable() {
   let poData = [];
-  try { poData = await store.po.getAll(); } catch (e) {}
+  poData = await store.po.getAll();
 
   const now = new Date();
   const payments = [];

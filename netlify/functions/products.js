@@ -23,23 +23,8 @@ const cache = require('../../lib/cache');
 const store = require('../../lib/store');
 
 // ── Shared Helpers ─────────────────────────────────────────
-// Inventory fetch is expensive (sequential per location).
-// Cache it within this function's memory so reorder + stock share it.
 
-async function fetchAllInventory(client) {
-  const ck = cache.makeKey('_inv_all', {});
-  const cached = cache.get(ck);
-  if (cached) return cached;
-
-  const { locations } = await client.getLocations();
-  const result = [];
-  for (const loc of locations) {
-    const { inventory_levels } = await client.getInventoryLevels(loc.id);
-    result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
-  }
-  cache.set(ck, result, cache.CACHE_TTL.inventory);
-  return result;
-}
+const { fetchAllInventory, fetchInventoryFlat } = require('../../lib/inventory');
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -773,8 +758,8 @@ async function mpStatus(client, { params }) {
 
   // Get PLM + PO data
   let plmData = [], poData = [];
-  try { plmData = await store.plm.getAll(); } catch (e) {}
-  try { poData = await store.po.getAll(); } catch (e) {}
+  plmData = await store.plm.getAll();
+  poData = await store.po.getAll();
 
   const plmByMP = {};
   for (const p of plmData) plmByMP[p.mpId || p.key] = p;

@@ -17,6 +17,7 @@ const { MP_SEEDS, MP_BY_ID, matchAll, classifyDemand, adjustVelocity } = require
 const { sinceDate } = require('../../lib/analytics');
 const { MP_LIFECYCLE, PO_LIFECYCLE, CASH_FLOW_CONFIG, FACTORY_PACKAGE_SECTIONS } = require('../../lib/domain');
 const { computeMPStatus, projectCashFlow } = require('../../lib/workflow');
+const { fetchInventoryFlat } = require('../../lib/inventory');
 const cache = require('../../lib/cache');
 const store = require('../../lib/store');
 
@@ -32,17 +33,9 @@ async function unifiedStatus(client, { params }) {
   const [productsData, ordersData, inventoryData, posData, plmData] = await Promise.all([
     client.getProducts(),
     client.getOrders({ created_at_min: sinceDate(days) }),
-    (async () => {
-      const { locations } = await client.getLocations();
-      const levels = {};
-      for (const loc of locations) {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        for (const l of inventory_levels) levels[l.inventory_item_id] = (levels[l.inventory_item_id] || 0) + (l.available || 0);
-      }
-      return levels;
-    })(),
-    (async () => { try { return await store.po.getAll(); } catch(e) { return []; } })(),
-    (async () => { try { return await store.plm.getAll(); } catch(e) { return []; } })(),
+    fetchInventoryFlat(client),
+    store.po.getAll(),
+    store.plm.getAll(),
   ]);
 
   // Build lookups
@@ -188,7 +181,7 @@ async function cashFlowProjection(client, { params }) {
   const days = validate.days(params, 30);
 
   const [posData, ordersData] = await Promise.all([
-    (async () => { try { return await store.po.getAll(); } catch(e) { return []; } })(),
+    store.po.getAll(),
     client.getOrders({ created_at_min: sinceDate(days) }),
   ]);
 
@@ -224,8 +217,8 @@ async function systemHealth(client) {
   if (cached) return cached;
 
   const [posData, plmData] = await Promise.all([
-    (async () => { try { return await store.po.getAll(); } catch(e) { return []; } })(),
-    (async () => { try { return await store.plm.getAll(); } catch(e) { return []; } })(),
+    store.po.getAll(),
+    store.plm.getAll(),
   ]);
 
   const activePOs = posData.filter(po => !['Received', 'Distribution'].includes(po.stage));
