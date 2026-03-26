@@ -173,3 +173,72 @@
   }
   .sidebar.open ~ .sidebar-overlay { display: block; }
 }
+
+/* ── Mobile Responsive ─────────────────────────────────── */
+
+.topbar-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  color: var(--text);
+  padding: 0.25rem;
+  margin-right: 0.5rem;
+}
+
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 199;
+}
+.sidebar-backdrop.open { display: block; }
+
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "topbar"
+      "content";
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.3);
+  }
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .topbar-hamburger {
+    display: block;
+  }
+
+  .content {
+    padding: 1rem !important;
+  }
+
+  .stat-row {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  .product-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .data-table { font-size: 0.78rem; }
+  .data-table th, .data-table td { padding: 0.4rem 0.5rem; }
+
+  .modal-box { max-width: 95vw !important; margin: 0 0.5rem; }
+
+  .form-row { grid-template-columns: 1fr !important; }
+}

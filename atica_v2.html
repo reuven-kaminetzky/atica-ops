@@ -10,7 +10,9 @@
 <body>
   <div class="app-shell">
     <nav class="sidebar" id="sidebar"></nav>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
     <header class="topbar">
+      <button class="topbar-hamburger" id="topbar-hamburger">☰</button>
       <div class="topbar-title" id="topbar-title">Overview</div>
       <div class="topbar-actions">
         <div class="topbar-sync-indicator" id="sync-indicator">
@@ -66,9 +68,23 @@
     const modalTitle = document.getElementById('modal-title');
     const modalBody = document.getElementById('modal-body');
     const modalClose = document.getElementById('modal-close');
+    const hamburger = document.getElementById('topbar-hamburger');
+    const backdrop = document.getElementById('sidebar-backdrop');
 
     // Render sidebar
     renderSidebar(sidebar);
+
+    // ── Mobile sidebar toggle ─────────────────────────
+    function toggleSidebar() {
+      sidebar.classList.toggle('open');
+      backdrop.classList.toggle('open');
+    }
+    function closeSidebar() {
+      sidebar.classList.remove('open');
+      backdrop.classList.remove('open');
+    }
+    hamburger.addEventListener('click', toggleSidebar);
+    backdrop.addEventListener('click', closeSidebar);
 
     // Load initial module
     topbarTitle.textContent = 'Overview';
@@ -78,6 +94,7 @@
     on('nav:change', async ({ route }) => {
       topbarTitle.textContent = ROUTE_TITLES[route] || route;
       content.innerHTML = '';
+      closeSidebar();
       try {
         await loadModule(route, content);
       } catch (err) {
