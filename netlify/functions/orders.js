@@ -18,29 +18,28 @@ const cache = require('../../lib/cache');
 // ── Handlers ────────────────────────────────────────────────
 
 async function listOrders(client, { params }) {
-  const since = params.since;
+  // Default to 90 days if no since filter — never fetch entire history
+  const since = params.since || sinceDate(90);
   const ck = cache.makeKey('orders', { since });
   const cached = cache.get(ck);
   if (cached) return { ...cached, _cached: true };
 
-  const opts = since ? { created_at_min: since } : {};
-  const { orders } = await client.getOrders(opts);
+  const { orders } = await client.getOrders({ created_at_min: since });
   const result = { count: orders.length, orders: orders.map(mapOrder) };
   cache.set(ck, result, cache.CACHE_TTL.orders);
   return result;
 }
 
 async function syncOrders(client, { body, params }) {
-  const since = body.since || params.since;
-  const opts = since ? { created_at_min: since } : {};
-  const { orders } = await client.getOrders(opts);
+  const since = body.since || params.since || sinceDate(90);
+  const { orders } = await client.getOrders({ created_at_min: since });
   const result = { count: orders.length, orders: orders.map(mapOrder) };
   cache.set(cache.makeKey('orders', { since }), result, cache.CACHE_TTL.orders);
   return result;
 }
 
 async function velocity(client, { params }) {
-  const days = parseInt(params.days || '30', 10);
+  const days = Math.min(parseInt(params.days || '30', 10), 365);
   const ck = cache.makeKey('velocity', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -52,7 +51,7 @@ async function velocity(client, { params }) {
 }
 
 async function sales(client, { params }) {
-  const days = parseInt(params.days || '30', 10);
+  const days = Math.min(parseInt(params.days || '30', 10), 365);
   const ck = cache.makeKey('sales', { days });
   const cached = cache.get(ck);
   if (cached) return cached;

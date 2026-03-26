@@ -2,9 +2,7 @@
  * /api/pos/* — Point of Sale data
  * Owner: Stallon (API layer), consumed by Deshawn (POS module)
  * 
- * POS-specific views of order data — resolved by LOCATION, not source.
- * Uses location_id on orders → fetches Shopify locations → normalizes
- * to our store names (Lakewood, Flatbush, Crown Heights, Monsey, Online).
+ * Uses lib/locations.js for store resolution — single source of truth.
  * 
  * Routes:
  *   GET /api/pos/today       → today's sales across all stores
@@ -14,38 +12,10 @@
 
 const { createHandler } = require('../../lib/handler');
 const { sinceDate } = require('../../lib/analytics');
+const { resolveOrderStore, buildLocationMap } = require('../../lib/locations');
 const cache = require('../../lib/cache');
 
-// ── Location resolution ─────────────────────────────────────
-// Shopify locations have IDs. Orders have location_id.
-// We fetch the location map once and cache it.
-
-const STORE_NORMALIZE = {
-  'lakewood': 'Lakewood',
-  'flatbush': 'Flatbush',
-  'brooklyn': 'Flatbush',
-  'crown heights': 'Crown Heights',
-  'crown': 'Crown Heights',
-  'monsey': 'Monsey',
-  'spring val': 'Monsey',
-  'online': 'Online',
-  'web': 'Online',
-  'reserve': 'Reserve',
-  'warehouse': 'Reserve',
-  'storage': 'Reserve',
-  'wholesale': 'Wholesale',
-};
-
-function normalizeName(name) {
-  if (!name) return 'Online';
-  const lower = name.toLowerCase();
-  for (const [key, val] of Object.entries(STORE_NORMALIZE)) {
-    if (lower.includes(key)) return val;
-  }
-  return name;
-}
-
-// Fetch and cache location_id → normalized store name mapping
+// ── Location map cache (5 min within container) ─────────────
 let _locationMap = null;
 let _locationMapExpiry = 0;
 
@@ -53,11 +23,8 @@ async function getLocationMap(client) {
   if (_locationMap && Date.now() < _locationMapExpiry) return _locationMap;
   try {
     const { locations } = await client.getLocations();
-    _locationMap = {};
-    for (const loc of locations) {
-      _locationMap[loc.id] = normalizeName(loc.name);
-    }
-    _locationMapExpiry = Date.now() + 300000; // 5 min
+    _locationMap = buildLocationMap(locations);
+    _locationMapExpiry = Date.now() + 300000;
     return _locationMap;
   } catch (e) {
     console.warn('[pos] Failed to fetch locations:', e.message);
@@ -65,31 +32,7 @@ async function getLocationMap(client) {
   }
 }
 
-// Resolve an order to its store name
-function resolveStore(order, locationMap) {
-  // 1. Use location_id if present (POS orders)
-  if (order.location_id && locationMap[order.location_id]) {
-    return locationMap[order.location_id];
-  }
-  // 2. Check source_name for POS channel clues
-  if (order.source_name === 'pos' || order.source_name === 'shopify_pos') {
-    // POS order without location_id — shouldn't happen but fallback
-    return 'In-Store';
-  }
-  // 3. Check fulfillment location
-  if (order.fulfillments && order.fulfillments.length > 0) {
-    const locId = order.fulfillments[0].location_id;
-    if (locId && locationMap[locId]) return locationMap[locId];
-  }
-  // 4. Web / draft / API orders → Online
-  if (!order.source_name || order.source_name === 'web' || order.source_name === 'shopify') {
-    return 'Online';
-  }
-  // 5. Fallback — normalize whatever source_name says
-  return normalizeName(order.source_name);
-}
-
-// ── Aggregate orders into store buckets ─────────────────────
+// ── Shared aggregation ──────────────────────────────────────
 
 function aggregateByStore(orders, locationMap) {
   let totalRevenue = 0;
@@ -99,7 +42,7 @@ function aggregateByStore(orders, locationMap) {
   for (const order of orders) {
     const revenue = parseFloat(order.total_price) || 0;
     totalRevenue += revenue;
-    const store = resolveStore(order, locationMap);
+    const store = resolveOrderStore(order, locationMap);
     const bucket = byStore[store] || (byStore[store] = { store, revenue: 0, orders: 0, units: 0, avgOrder: 0 });
     bucket.revenue += revenue;
     bucket.orders++;
@@ -110,7 +53,6 @@ function aggregateByStore(orders, locationMap) {
     }
   }
 
-  // Finalize
   for (const s of Object.values(byStore)) {
     s.revenue = +s.revenue.toFixed(2);
     s.avgOrder = s.orders ? +(s.revenue / s.orders).toFixed(2) : 0;
@@ -134,9 +76,8 @@ async function todaySales(client) {
   const today = new Date().toISOString().slice(0, 10);
   const locationMap = await getLocationMap(client);
   const { orders } = await client.getOrders({ created_at_min: today + 'T00:00:00Z' });
-  const agg = aggregateByStore(orders, locationMap);
 
-  const result = { date: today, ...agg };
+  const result = { date: today, ...aggregateByStore(orders, locationMap) };
   cache.set(ck, result, cache.CACHE_TTL.pos);
   return result;
 }
@@ -157,7 +98,7 @@ async function byLocation(client, { params }) {
 }
 
 async function transactionFeed(client, { params }) {
-  const limit = parseInt(params.limit || '50', 10);
+  const limit = Math.min(parseInt(params.limit || '50', 10), 200);
   const locationMap = await getLocationMap(client);
   const { orders } = await client.getOrders({ created_at_min: sinceDate(7) });
 
@@ -167,7 +108,7 @@ async function transactionFeed(client, { params }) {
     .map(o => ({
       id: o.id,
       name: o.name,
-      store: resolveStore(o, locationMap),
+      store: resolveOrderStore(o, locationMap),
       total: o.total_price,
       items: o.line_items.length,
       units: o.line_items.reduce((s, li) => s + (li.quantity || 0), 0),
