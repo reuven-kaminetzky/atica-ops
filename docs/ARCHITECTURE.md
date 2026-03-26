@@ -13,26 +13,46 @@ Browser → Netlify CDN → netlify.toml redirect → Netlify Function
 ```
 
 Two frontends, one backend:
-- **Monolith** `/atica_app.html` — 1MB single-file, production
-- **Modular v2** `/v2` → `atica_v2.html` — ES modules, long-term replacement
+- **Monolith** `/atica_app.html` — 14K-line single-file, production (legacy)
+- **Modular v2** `/v2` → `atica_v2.html` — ES modules, the future
+
+## Three-Layer Domain Architecture
+
+```
+LAYER 1: lib/domain.js (451 lines) — THE SCHEMAS
+  What things ARE. Stage definitions, relationships, contracts.
+  MP_LIFECYCLE (14), PO_LIFECYCLE (12), PAYMENT_TYPES (5),
+  FACTORY_PACKAGE_SECTIONS (9), ENTITY_RELATIONS,
+  CASH_FLOW_CONFIG, MP_STATUS_RULES, DOMAIN_EVENTS (15)
+
+LAYER 2: lib/workflow.js (200 lines) — THE COMPUTE
+  How things WORK. Pure functions, no side effects.
+  computeMPStatus(), buildFactoryPackage(), projectCashFlow()
+
+LAYER 3: lib/effects.js (336 lines) — THE SIDE EFFECTS
+  What HAPPENS when state changes. Returns actions for caller to execute.
+  onPOStageAdvanced(), onMPStageAdvanced(),
+  generatePaymentSchedule(), executeAction()
+```
+
+Data flows one direction: **MP → PO → Shipment → Stock → Analytics → Cash Flow**
 
 ## File Ownership
 
 | Directory | Purpose | Who touches it |
 |-----------|---------|----------------|
-| `lib/` | Shared libraries — every function imports from here | Architecture owner |
-| `lib/shopify.js` | Shopify API client (request, retry, pagination) | Architecture owner |
-| `lib/shopify/*.ts` | Type reference docs (NOT compiled, NOT used at runtime) | Reference only |
-| `lib/shopify/*.js` | Compiled JS from TS (mappers, analytics) | Architecture owner |
-| `lib/locations.js` | Store name normalization — **single source of truth** | Architecture owner |
-| `lib/products.js` | MP seeds, title matchers, PLM stages — **product tree root** | Architecture owner |
+| `lib/domain.js` | State machines, relationships, event contracts | Architecture owner |
+| `lib/workflow.js` | Compute: MP status, factory packages, cash flow | Architecture owner |
+| `lib/effects.js` | Side effects engine (PO stage → actions) | Architecture owner |
+| `lib/products.js` | MP seeds, title matchers, seasonal, demand signals | Architecture owner |
+| `lib/shopify.js` | Shopify API client (auto-detect store + version) | Architecture owner |
 | `lib/handler.js` | DRY handler factory for all Netlify functions | Architecture owner |
 | `lib/cache.js` | In-memory TTL cache (per-function, not shared) | Architecture owner |
-| `lib/store.js` | Netlify Blobs persistence (POs, shipments, snapshots) | Architecture owner |
+| `lib/store.js` | Netlify Blobs: po, shipments, plm, stack, snapshots, settings | Architecture owner |
+| `lib/locations.js` | Store name normalization — single source of truth | Architecture owner |
 | `lib/auth.js` | CORS, JSON response, authentication | Architecture owner |
-| `netlify/functions/` | API endpoints — one file per domain | Per-domain owner |
-| `modules/` | v2 frontend ES modules | Per-module owner |
-| `atica_app.html` | Monolith — do not edit without `node --check` | Careful |
+| `netlify/functions/` | API endpoints — one file per domain (12 functions, 64 routes) | Per-domain owner |
+| `modules/` | v2 frontend ES modules (11 modules + sidebar) | Per-module owner |
 | `atica_v2.html` | v2 shell | Architecture owner |
 
 ## Patterns

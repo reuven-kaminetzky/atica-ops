@@ -61,18 +61,49 @@ async function loadSummary() {
   if (!el) return;
 
   try {
-    const status = await api.get('/api/status');
-    if (!status?.connected) {
-      el.innerHTML = `<div style="padding:0.75rem;background:var(--danger-bg);border:1px solid var(--danger);border-radius:var(--radius);font-size:0.85rem;color:var(--danger)">
+    const [status, health] = await Promise.all([
+      api.get('/api/status').catch(() => null),
+      api.get('/api/workflow/health').catch(() => null),
+    ]);
+
+    let html = '';
+
+    // Connection status
+    if (status?.connected) {
+      html += `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;font-size:0.78rem;margin-bottom:0.75rem">
+        <span style="padding:0.3rem 0.65rem;background:var(--success-bg);border:1px solid var(--success);border-radius:20px;color:var(--success)">● Connected to ${status.shop}</span>
+        <span style="padding:0.3rem 0.65rem;background:var(--surface-2);border:1px solid var(--border-light);border-radius:20px;color:var(--text-dim)">${status.plan} · ${status.currency} · API ${status.apiVersion}</span>
+      </div>`;
+    } else {
+      html += `<div style="padding:0.75rem;background:var(--danger-bg);border:1px solid var(--danger);border-radius:var(--radius);font-size:0.85rem;color:var(--danger);margin-bottom:0.75rem">
         Shopify not connected — check Settings
       </div>`;
-      return;
     }
 
-    el.innerHTML = `<div style="display:flex;gap:0.5rem;flex-wrap:wrap;font-size:0.78rem">
-      <span style="padding:0.3rem 0.65rem;background:var(--success-bg);border:1px solid var(--success);border-radius:20px;color:var(--success)">● Connected to ${status.shop}</span>
-      <span style="padding:0.3rem 0.65rem;background:var(--surface-2);border:1px solid var(--border-light);border-radius:20px;color:var(--text-dim)">${status.plan} · ${status.currency} · API ${status.apiVersion}</span>
-    </div>`;
+    // System health
+    if (health) {
+      html += `<div class="stat-row" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:0.6rem">
+        <div class="stat-card" style="padding:0.75rem 1rem">
+          <div class="stat-label">Products</div>
+          <div class="stat-value" style="font-size:1.15rem">${health.totalMPs}</div>
+        </div>
+        <div class="stat-card" style="padding:0.75rem 1rem">
+          <div class="stat-label">Active POs</div>
+          <div class="stat-value" style="font-size:1.15rem">${health.activePOs}</div>
+          ${health.overduePOs > 0 ? `<div style="font-size:0.72rem;color:var(--danger);margin-top:0.15rem">${health.overduePOs} overdue</div>` : ''}
+        </div>
+        <div class="stat-card" style="padding:0.75rem 1rem">
+          <div class="stat-label">Committed</div>
+          <div class="stat-value" style="font-size:1.15rem">${formatCurrency(health.totalCommittedCost)}</div>
+        </div>
+        <div class="stat-card" style="padding:0.75rem 1rem">
+          <div class="stat-label">PLM Tracked</div>
+          <div class="stat-value" style="font-size:1.15rem">${health.mpsWithPLMData}</div>
+        </div>
+      </div>`;
+    }
+
+    el.innerHTML = html;
   } catch (e) { /* silent */ }
 }
 

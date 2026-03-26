@@ -1,18 +1,50 @@
 # Contributing to Atica Ops
 
-## Git Workflow
+## Architecture — Three Layers
 
-```bash
-git pull origin main          # Always pull first
-# ... make changes ...
-node --check <file>           # Every JS file you touched
-git add -A && git commit -m "type: description"
-git push origin main
+```
+┌──────────────────────────────────────────────────────────┐
+│  LAYER 1: DOMAIN MODEL  (lib/domain.js — 451 lines)     │
+│  WHAT things are. Schemas, stages, relationships.        │
+│  MP_LIFECYCLE, PO_LIFECYCLE, PAYMENT_TYPES,              │
+│  FACTORY_PACKAGE_SECTIONS, ENTITY_RELATIONS,             │
+│  CASH_FLOW_CONFIG, MP_STATUS_RULES, DOMAIN_EVENTS        │
+├──────────────────────────────────────────────────────────┤
+│  LAYER 2: COMPUTE  (lib/workflow.js — 200 lines)         │
+│  HOW things work. Pure functions, no side effects.       │
+│  computeMPStatus(), buildFactoryPackage(),               │
+│  projectCashFlow()                                       │
+├──────────────────────────────────────────────────────────┤
+│  LAYER 3: EFFECTS  (lib/effects.js — 336 lines)          │
+│  WHAT HAPPENS when state changes. Returns actions.       │
+│  onPOStageAdvanced(), onMPStageAdvanced(),               │
+│  generatePaymentSchedule(), executeAction()              │
+│  Pure: effect(ctx) → {actions[], logs[]}                 │
+│  Caller decides whether to commit.                       │
+└──────────────────────────────────────────────────────────┘
 ```
 
-Commit types: `feat:`, `fix:`, `refactor:`, `arch:`, `docs:`, `chore:`
+**Rule: domain.js is read-only reference. workflow.js computes. effects.js reacts. Netlify functions orchestrate.**
 
-Everyone pushes to main directly. No branch protection (yet). Pull before working.
+## Data Flow
+
+```
+MP seed (lib/products.js)
+  ↓ matchAll() → Shopify products
+  ↓ computeMPStatus() → unified health
+  ↓
+PO created (store.po)
+  ↓ generatePaymentSchedule() → payments[]
+  ↓ onPOStageAdvanced() → side effects
+  ↓   → shipment:auto-create (at "In Transit")
+  ↓   → mp:advance (at "Ordered")
+  ↓   → distribution:suggest (at "Received")
+  ↓
+Cash Flow (computed, not stored)
+  ← PO payments (planned outflow)
+  ← Shopify orders (actual inflow)
+  → projectCashFlow() → 3-month projection
+```
 
 ## Backend Patterns
 
@@ -37,7 +69,7 @@ async function myHandler(client, { params, body, pathParams }) {
 
 const ROUTES = [
   { method: 'GET', path: '',    handler: myHandler },
-  { method: 'GET', path: ':id', handler: getById },    // static paths before :params
+  { method: 'GET', path: ':id', handler: getById },
 ];
 exports.handler = createHandler(ROUTES, 'my-prefix');
 ```
@@ -45,50 +77,42 @@ exports.handler = createHandler(ROUTES, 'my-prefix');
 ### Input Validation
 
 ```javascript
-validate.required(body, ['vendor', 'units', 'mpId']);           // throws 400
-validate.days(params);                                          // default 30, max 365
-validate.days(params, 90);                                      // default 90
+validate.required(body, ['vendor', 'units']);
+validate.days(params);              // default 30, max 365
+validate.days(params, 90);          // custom default
 validate.intParam(params, 'limit', { min: 1, max: 200, fallback: 50 });
 ```
-
-**Never** do: `const days = parseInt(params.days || '30', 10);`
 
 ### Error Handling
 
 ```javascript
-throw new RouteError(400, 'Units must be positive');   // expected — user sees message
-throw new RouteError(404, `PO not found: ${id}`);      // expected — 404
-// Unexpected errors: just let them throw, handler catches and returns 500
+throw new RouteError(400, 'Units must be positive');   // expected
+throw new RouteError(404, `PO not found: ${id}`);      // 404
+// Unexpected errors: let them throw, handler returns 500
 ```
 
 ### Persistence
 
-| Data | Where |
-|------|-------|
-| Products, orders, inventory | Shopify + in-memory cache |
-| Purchase orders | `store.po` (Netlify Blobs) |
-| Shipments | `store.shipments` |
-| PLM stages | `store.plm` |
-| **Never** | `let _data = []` — dies on cold start |
+| Data | Where | Notes |
+|------|-------|-------|
+| Products, orders, inventory | Shopify + cache | Source of truth |
+| Purchase orders | `store.po` | Netlify Blobs |
+| Shipments | `store.shipments` | Auto-created at PO "In Transit" |
+| PLM stages | `store.plm` | MP lifecycle tracking |
+| Product stack | `store.stack` | Tech pack data (materials, sizing, QC) |
+| Snapshots | `store.snapshots` | Inventory snapshots |
+| Settings | `store.settings` | App config |
 
-### Business Logic (lib/products.js)
+### Side Effects
 
 ```javascript
-// Seasonal velocity adjustment
-const adjusted = adjustVelocity(rawVelocity, month);  // 0.85x–1.6x by season
-
-// Demand signal classification
-const signal = classifyDemand(sellThrough, velocityPerWeek);  // hot/rising/steady/slow
-
-// Distribution weights for incoming PO stock
-const allocation = suggestDistribution(totalUnits);  // {Lakewood:30, Flatbush:20, ...}
-
-// Landed cost
-const landed = landedCost(fob, dutyPct);  // FOB × (1 + duty% + 8% freight)
-
-// MP matching
-const mpId = matchProduct('Londoner White Shirt');  // → 'londoner'
-const { matched, unmatched } = matchAll(shopifyProducts);
+// In purchase-orders.js stage advancement:
+const effects = onPOStageAdvanced(po, fromStage, toStage);
+// effects.actions = [{ type: 'shipment:create', data: {...} }, ...]
+// effects.logs = [{ event: 'po:shipped', ...}]
+for (const action of effects.actions) {
+  await executeAction(action, store);
+}
 ```
 
 ## Frontend Patterns
@@ -99,32 +123,21 @@ const { matched, unmatched } = matchAll(shopifyProducts);
 import { on, emit } from './event-bus.js';
 import { api, formatCurrency, skeleton } from './core.js';
 
-let state = { loaded: false };
 let _container = null;
 
 export async function init(container) {
   _container = container;
-  container.innerHTML = `<div id="my-content">${skeleton(6)}</div>`;
+  container.innerHTML = `<div id="content">${skeleton(6)}</div>`;
   // fetch data, render
 }
 
-export function destroy() {
-  _container = null;
-  state = { loaded: false };
-}
+export function destroy() { _container = null; }
 ```
 
 ### Event Bus
 
 ```javascript
-// Subscribe at TOP LEVEL (ES modules load once)
-// Guard with _container check
-on('sync:complete', async () => {
-  if (!_container) return;
-  // refresh...
-});
-
-// Emit
+on('sync:complete', async () => { if (!_container) return; /* refresh */ });
 emit('toast:show', { message: 'Done', type: 'success' });
 emit('modal:open', { title: 'Edit', html: '...', onMount: (body) => { } });
 ```
@@ -133,22 +146,31 @@ emit('modal:open', { title: 'Edit', html: '...', onMount: (body) => { } });
 
 ```javascript
 const data = await api.get('/api/products/masters');
-const data = await api.get('/api/orders/sales', { days: 30 });
 const result = await api.post('/api/purchase-orders', { mpId: 'londoner' });
 await api.patch(`/api/purchase-orders/${id}`, { vendor: 'TAL' });
 ```
-
-**Never** use raw `fetch()` in modules.
 
 ## Anti-Patterns
 
 | Don't | Do Instead |
 |-------|------------|
-| `let _data = []` for persistent data | `store.po.put(key, value)` |
+| `let _data = []` persistent data | `store.po.put(key, value)` |
 | `parseInt(params.days)` unbounded | `validate.days(params)` |
-| `fetch('/api/...')` in modules | `api.get('/api/...')` |
-| Import between modules | Event bus: `emit('event', data)` |
-| Inline store names | `lib/locations.js normalize()` |
-| Inline title matchers | `lib/products.js matchProduct()` |
+| `fetch()` in modules | `api.get()` from core.js |
+| Import between modules | Event bus |
+| Inline store names | `lib/locations.js` |
 | `throw new Error()` in handlers | `throw new RouteError(400, msg)` |
-| Build modal inline | `emit('modal:open', { html, onMount })` |
+| Redefine schemas | Import from `lib/domain.js` |
+| Side effects in compute | Return actions from `lib/effects.js` |
+
+## Git
+
+```bash
+git pull origin main
+# make changes
+node --check <file>     # every JS file
+git add -A && git commit -m "type: description"
+git push origin main
+```
+
+Types: `feat:`, `fix:`, `refactor:`, `arch:`, `docs:`, `chore:`
