@@ -11,6 +11,7 @@
 
 const { createHandler, RouteError } = require('../../lib/handler');
 const cache = require('../../lib/cache');
+const store = require('../../lib/store');
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -70,12 +71,28 @@ async function webhooksSetup(client, { body }) {
   return { message: 'Webhooks configured', webhooks: created };
 }
 
+// ── Database Status ──────────────────────────────────────
+
+async function dbStatus() {
+  return store.backend();
+}
+
+async function dbMigrate() {
+  try {
+    return await store.migrate();
+  } catch (err) {
+    throw new RouteError(500, `Migration failed: ${err.message}`);
+  }
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
   { method: 'GET',  path: '',            handler: connectionStatus, noClient: true },
   { method: 'GET',  path: 'cache',       handler: cacheStats,       noClient: true },
   { method: 'POST', path: 'cache/clear', handler: cacheClear,       noClient: true },
+  { method: 'GET',  path: 'db',          handler: dbStatus,         noClient: true },
+  { method: 'POST', path: 'db/migrate',  handler: dbMigrate,        noClient: true },
   { method: 'POST', path: 'webhooks',    handler: webhooksSetup },
 ];
 
