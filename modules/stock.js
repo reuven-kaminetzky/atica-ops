@@ -162,6 +162,10 @@ function renderMatrix(el) {
     for (const store of stores) totalByStore[store] += (row.stores[store] || 0);
   }
 
+  // Distribution weights — ideal vs actual
+  const WEIGHTS = { Lakewood: 0.30, Flatbush: 0.20, 'Crown Heights': 0.15, Monsey: 0.25, Online: 0.10 };
+  const grandTotal = Object.values(totalByStore).reduce((a, b) => a + b, 0);
+
   el.innerHTML = `
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
       <table class="data-table" style="min-width:${400 + stores.length * 80}px">
@@ -187,11 +191,38 @@ function renderMatrix(el) {
           <tr style="background:var(--surface-2);font-weight:700">
             <td colspan="2">Total</td>
             ${stores.map(s => `<td style="text-align:right;font-family:var(--font-mono)">${formatNumber(totalByStore[s] || 0)}</td>`).join('')}
-            <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(Object.values(totalByStore).reduce((a, b) => a + b, 0))}</td>
+            <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(grandTotal)}</td>
           </tr>
         </tbody>
       </table>
     </div>
+
+    <!-- Distribution Analysis -->
+    ${grandTotal > 0 ? `
+      <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-top:1.25rem">
+        <h3 style="margin-bottom:0.75rem">Distribution: Ideal vs Actual</h3>
+        ${stores.filter(s => WEIGHTS[s]).map(s => {
+          const actual = totalByStore[s] || 0;
+          const actualPct = grandTotal > 0 ? (actual / grandTotal * 100) : 0;
+          const idealPct = (WEIGHTS[s] || 0) * 100;
+          const diff = actualPct - idealPct;
+          const diffColor = Math.abs(diff) < 3 ? 'var(--success)' : Math.abs(diff) < 8 ? 'var(--warning)' : 'var(--danger)';
+          return `
+          <div style="display:flex;align-items:center;gap:0.75rem;padding:0.35rem 0;${s !== stores.filter(st => WEIGHTS[st])[0] ? 'border-top:1px solid var(--border-light)' : ''}">
+            <div style="width:100px;font-weight:600;font-size:0.85rem">${s}</div>
+            <div style="flex:1;display:flex;gap:4px;align-items:center">
+              <div style="flex:1;height:20px;background:var(--surface-2);border-radius:4px;overflow:hidden;position:relative">
+                <div style="position:absolute;left:${idealPct}%;top:0;bottom:0;width:2px;background:var(--text-dim);opacity:0.4;z-index:1" title="Ideal: ${idealPct}%"></div>
+                <div style="height:100%;width:${actualPct.toFixed(1)}%;background:${diffColor};opacity:0.6;border-radius:4px"></div>
+              </div>
+            </div>
+            <div style="width:60px;text-align:right;font-family:var(--font-mono);font-size:0.82rem">${actualPct.toFixed(1)}%</div>
+            <div style="width:60px;text-align:right;font-size:0.72rem;color:var(--text-dim)">ideal ${idealPct}%</div>
+            <div style="width:50px;text-align:right;font-size:0.72rem;font-weight:600;color:${diffColor}">${diff > 0 ? '+' : ''}${diff.toFixed(1)}%</div>
+          </div>`;
+        }).join('')}
+      </div>
+    ` : ''}
   `;
 }
 

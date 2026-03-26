@@ -746,6 +746,25 @@ h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--t
   .mp-sourcing-bar { grid-template-columns: 1fr 1fr; }
 }
 
+/* ── Demand Signal Badges ─────────────────────────────── */
+
+.signal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.12rem 0.45rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.signal-hot     { background: var(--danger-bg); color: var(--danger); }
+.signal-rising  { background: var(--warning-bg); color: var(--warning); }
+.signal-steady  { background: var(--surface-2); color: var(--text-dim); }
+.signal-slow    { background: var(--info-bg); color: var(--info); }
+.signal-stockout { background: var(--danger); color: white; }
+
 /* ── Empty State ───────────────────────────────────────── */
 
 .empty-state {

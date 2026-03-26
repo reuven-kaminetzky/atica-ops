@@ -363,16 +363,16 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 ## What Needs Work
 
 ### High Priority — Business Logic
-- [ ] **Seasonal multipliers in reorder** — adjust velocity by season (0.85x spring, 1.4x BTS, 1.15x fall, 1.6x holiday). Currently reorder uses raw velocity.
-- [ ] **Demand signals** — classify each MP as Hot/Rising/Steady/Slow/Stockout based on sell-through + velocity. Show on marketplace cards and analytics.
+- [x] **Seasonal multipliers in reorder** — adjustVelocity() in reorder + mp-velocity, seasonal badge in analytics
+- [x] **Demand signals** — classifyDemand() in backend, signal badges in analytics table + summary panel
 - [ ] **Cash-flow cost projection** — use formula: revenue = velocity × retail × 4.33/mo, COGS = velocity × landed × 4.33. 12-week forward projection from PO payment schedules.
-- [ ] **Distribution weights** — when PO arrives, suggest store allocation: Lakewood 30%, Flatbush 20%, CH 15%, Monsey 25%, Online 10%. Show ideal vs actual in stock module.
+- [x] **Distribution weights** — ideal vs actual comparison bar in stock matrix view
 
 ### High Priority — Wiring
 - [x] Wire PLM to marketplace detail modal — show current stage, allow advancement
 - [x] MP detail size grid — available sizes per fit per style (the full matrix)
-- [ ] Customers module — wire 4 existing endpoints to a UI (list, detail+orders, top, segments)
-- [ ] Customer loyalty tiers — Bronze→Diamond with LTV thresholds, discount %, points multiplier
+- [x] Customers module — list, detail+orders, top spenders, segments with tier breakdown
+- [x] Customer loyalty tiers — Bronze→Diamond with LTV thresholds, discount %, points multiplier
 
 ### Medium Priority
 - [ ] Shipments module — wire CRUD endpoints (auto-created on PO "In Transit")

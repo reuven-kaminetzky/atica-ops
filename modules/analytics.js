@@ -20,6 +20,12 @@ import { api, formatCurrency, formatNumber, skeleton } from './core.js';
 
 const CAT_COLORS = ['#714b67', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b'];
 
+const SIGNAL_ICONS = { hot: '🔥', rising: '📈', steady: '→', slow: '📉', stockout: '⚠' };
+function signalBadge(signal) {
+  if (!signal || signal === 'steady') return '';
+  return `<span class="signal-badge signal-${signal}">${signal}</span>`;
+}
+
 let state = { loaded: false, velocity: null, sales: null, days: 30, sortCol: 'revenue', sortDir: 'desc' };
 let _container = null;
 let _unsub = null;
@@ -352,7 +358,7 @@ function render() {
       <div class="stat-card">
         <div class="stat-label">Avg Order</div>
         <div class="stat-value">${formatCurrency(s?.avgOrderValue || 0)}</div>
-        <div class="stat-card-sub">${avgMargin !== null ? 'Avg margin ' + avgMargin + '%' : ''}</div>
+        <div class="stat-card-sub">${v?.seasonalMultiplier ? v.seasonalMultiplier + 'x seasonal' : avgMargin !== null ? 'Avg margin ' + avgMargin + '%' : ''}</div>
       </div>
     </div>
 
@@ -362,9 +368,18 @@ function render() {
       <div class="analytics-side-panel">
         ${buildCategoryRing(cats, totalRevenue)}
         <div class="stat-card" style="flex:1">
-          <div class="stat-label">Top Category</div>
-          <div class="stat-value" style="font-size:1.1rem">${cats[0]?.[0] || '—'}</div>
-          <div class="stat-card-sub">${cats[0] ? formatCurrency(cats[0][1].revenue) + ' · ' + formatNumber(cats[0][1].units) + ' units' : ''}</div>
+          <div class="stat-label">Demand Signals</div>
+          <div style="display:flex;flex-direction:column;gap:0.3rem;margin-top:0.4rem">
+            ${(() => {
+              const signals = v?.summary?.signals || {};
+              return [
+                signals.hot ? `<div><span class="signal-badge signal-hot">hot</span> <span style="font-size:0.82rem;font-weight:600">${signals.hot}</span></div>` : '',
+                signals.rising ? `<div><span class="signal-badge signal-rising">rising</span> <span style="font-size:0.82rem;font-weight:600">${signals.rising}</span></div>` : '',
+                signals.slow ? `<div><span class="signal-badge signal-slow">slow</span> <span style="font-size:0.82rem;font-weight:600">${signals.slow}</span></div>` : '',
+                `<div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.15rem">${signals.steady || 0} steady</div>`,
+              ].filter(Boolean).join('');
+            })()}
+          </div>
         </div>
       </div>
     </div>
@@ -407,6 +422,7 @@ function render() {
           <th data-sort="projectedMonthly" style="text-align:right">Mo Proj</th>
           <th data-sort="avgPrice" style="text-align:right">Avg $$</th>
           <th data-sort="margin" style="text-align:right">Margin</th>
+          <th>Signal</th>
         </tr></thead>
         <tbody>
           ${sorted.slice(0, 25).map((mp, i) => {
@@ -423,6 +439,7 @@ function render() {
               <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(mp.projectedMonthly)}</td>
               <td style="text-align:right">${formatCurrency(mp.avgPrice)}</td>
               <td style="text-align:right">${mp.margin !== null ? `<span class="margin-pill ${mClass}">${mp.margin}%</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
+              <td>${signalBadge(mp.signal)}</td>
             </tr>`;
           }).join('')}
         </tbody>

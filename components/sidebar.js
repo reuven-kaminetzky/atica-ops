@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { section: 'Finance', items: [
     { id: 'ledger',      label: 'Ledger',          icon: '◈' },
     { id: 'pos',         label: 'Sales Feed',      icon: '◎' },
+    { id: 'customers',   label: 'Customers',       icon: '◉' },
   ]},
   // System
   { section: 'System', items: [
