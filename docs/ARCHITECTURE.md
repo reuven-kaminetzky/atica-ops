@@ -25,6 +25,7 @@ Two frontends, one backend:
 | `lib/shopify/*.ts` | Type reference docs (NOT compiled, NOT used at runtime) | Reference only |
 | `lib/shopify/*.js` | Compiled JS from TS (mappers, analytics) | Architecture owner |
 | `lib/locations.js` | Store name normalization — **single source of truth** | Architecture owner |
+| `lib/products.js` | MP seeds, title matchers, PLM stages — **product tree root** | Architecture owner |
 | `lib/handler.js` | DRY handler factory for all Netlify functions | Architecture owner |
 | `lib/cache.js` | In-memory TTL cache (per-function, not shared) | Architecture owner |
 | `lib/store.js` | Netlify Blobs persistence (POs, shipments, snapshots) | Architecture owner |
@@ -148,6 +149,18 @@ const since = params.since || sinceDate(90); // never fetch all history
 const limit = Math.min(parseInt(params.limit || '50', 10), 200);
 ```
 
+## Priority Stack
+
+The system is a tree:
+
+1. **MPs (roots)** — Master Products with correct Shopify styles. The PLM backbone.
+2. **POs (trunk)** — Purchase Orders with stage gates, PD and finance check-ins
+3. **Cash flow (trunk)** — Tied to POs (costs) and Shopify orders (revenue)
+4. **Production planning (branches)** — What to order, when, based on MP velocity
+5. **Analytics (branches)** — From real order data, aggregated by MP
+
+POS is not a priority — just a data feed into cash flow.
+
 ## Data Flow
 
 ### Product hierarchy (Shopify → Atica)
@@ -158,6 +171,28 @@ Shopify Product → buildProductTree() → ProductTree
        └── fits[] (by Fit option — Lorenzo 6, Slim, etc.)
             └── variants[] (individual SKUs with size + inventory)
 ```
+
+### MP matching (Shopify → Master Products)
+
+```
+lib/products.js matchAll(shopifyProducts)
+  → for each Shopify product:
+    → run title through TITLE_MATCHERS (regex + price for HC split)
+    → resolve aliases (bengal-stripe → bengal)
+    → group by MP seed ID
+  → returns { matched: { seedId: [products] }, unmatched }
+```
+
+### PO lifecycle with check-ins
+
+```
+Concept → Design(PD✓) → Sample → Approved(PD✓) → Costed(FIN✓) →
+Ordered → Production → QC(PD✓) → Shipped → In Transit →
+Received(FIN✓) → Distribution
+```
+
+POs linked to MPs via `mpId`. Creating a PO with `mpId:'londoner'`
+auto-populates vendor, FOB, lead time, MOQ, HTS, duty from seed.
 
 ### Order → Store resolution
 
@@ -211,11 +246,14 @@ All config lives in Netlify environment variables. Never hardcode.
 | POST | /api/products/sync | products.js | yes | yes |
 | GET | /api/products/titles | products.js | yes | yes |
 | GET | /api/products/trees | products.js | yes | yes |
+| GET | /api/products/masters | products.js | yes | yes |
+| GET | /api/products/seeds | products.js | yes | no |
 | GET | /api/products/sku-map | products.js | yes | yes |
 | GET | /api/orders | orders.js | yes | yes |
 | POST | /api/orders/sync | orders.js | yes | yes |
 | GET | /api/orders/velocity | orders.js | yes | yes |
 | GET | /api/orders/sales | orders.js | yes | yes |
+| GET | /api/orders/mp-velocity | orders.js | yes | yes |
 | GET | /api/orders/drafts | orders.js | yes | yes |
 | GET | /api/inventory | inventory.js | yes | yes |
 | POST | /api/inventory/sync | inventory.js | yes | yes |
@@ -232,6 +270,8 @@ All config lives in Netlify environment variables. Never hardcode.
 | GET | /api/customers/top | customers.js | yes | yes |
 | GET | /api/customers/segments | customers.js | yes | yes |
 | GET | /api/purchase-orders | purchase-orders.js | yes | no |
+| GET | /api/purchase-orders/stages | purchase-orders.js | yes | no |
+| GET | /api/purchase-orders/:id | purchase-orders.js | yes | no |
 | POST | /api/purchase-orders | purchase-orders.js | yes | no |
 | PATCH | /api/purchase-orders/:id | purchase-orders.js | yes | no |
 | DELETE | /api/purchase-orders/:id | purchase-orders.js | yes | no |
