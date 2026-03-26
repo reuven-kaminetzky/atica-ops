@@ -122,7 +122,7 @@ The client handles: 8s request timeout, 25s pagination timeout, 3x retry with ba
 
 **API version: `2025-10`** — do NOT change without testing:
 ```bash
-curl https://aticaman.myshopify.com/admin/api/YYYY-MM/shop.json \
+curl https://atica-brand.myshopify.com/admin/api/YYYY-MM/shop.json \
   -H "X-Shopify-Access-Token: $TOKEN"
 ```
 
@@ -218,7 +218,7 @@ All config lives in Netlify environment variables. Never hardcode.
 
 | Variable | Required | Value |
 |----------|----------|-------|
-| `SHOPIFY_STORE_URL` | Yes | `aticaman.myshopify.com` |
+| `SHOPIFY_STORE_URL` | Yes | `atica-brand.myshopify.com` |
 | `SHOPIFY_ACCESS_TOKEN` | Yes | `shpat_...` |
 | `SKIP_AUTH` | Yes (for now) | `true` |
 | `SHOPIFY_CLIENT_ID` | Optional | For OAuth flow |

@@ -10,8 +10,8 @@ Atica Man is a menswear retail operations platform. Static HTML + Netlify Functi
 - **Live URL:** https://atica-ops.netlify.app/atica_app.html (monolith, 14K lines)
 - **V2 URL:** https://atica-ops.netlify.app/v2 (modular — the future)
 - **Repo:** github.com/reuven-kaminetzky/atica-ops
-- **Shopify Store:** auto-detected (tries aticaman.myshopify.com + atica-brand.myshopify.com)
-- **Shopify API Version:** auto-detected (tries 2025-04, 2025-01, 2024-10, 2025-07, 2025-10, 2026-01)
+- **Shopify Store:** auto-detected (tries atica-brand.myshopify.com + atica-brand.myshopify.com)
+- **Shopify API Version:** auto-detected (tries 2025-04, 2025-04, 2024-10, 2025-07, 2025-10, 2026-01)
 
 ## Priority Stack — What Matters
 
@@ -355,7 +355,7 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `SHOPIFY_STORE_URL` | Yes | `aticaman.myshopify.com` (fallback to `atica-brand`) |
+| `SHOPIFY_STORE_URL` | Yes | `atica-brand.myshopify.com` (fallback to `atica-brand`) |
 | `SHOPIFY_ACCESS_TOKEN` | Yes | `shpat_...` |
 | `SKIP_AUTH` | Yes | `true` |
 | `SHOPIFY_API_VERSION` | Optional | Auto-detected if not set |
