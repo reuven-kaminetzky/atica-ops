@@ -1,16 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Output standalone for Netlify
-  output: 'standalone',
-  
-  // Ignore legacy files during Next.js build
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      '@/lib': require('path').resolve(__dirname, 'lib'),
-    };
-    return config;
-  },
+  // Turbopack (Next.js 16 default)
+  turbopack: {},
 
   // Environment variables
   env: {
