@@ -207,11 +207,10 @@ function openMPDetail(mp) {
             <div id="mpd-total" style="font-family:var(--font-mono);font-size:0.9rem;font-weight:600;padding:0.5rem 0">${formatCurrency((mp.moq || 50) * (mp.fob || 0))}</div>
           </div>
         </div>
-        <button id="mpd-create-po" class="btn btn-primary" style="width:100%">Create PO for ${mp.code}</button>
-      </div>
-
-      <div class="form-actions">
-        <button id="mp-create-po" class="btn btn-primary">Create Purchase Order</button>
+        <div style="display:flex;gap:0.5rem">
+          <button id="mpd-create-po" class="btn btn-primary" style="flex:1">Quick PO (${mp.moq || 50} units)</button>
+          <button id="mpd-full-form" class="btn btn-secondary" style="flex:1">Full PO Form</button>
+        </div>
       </div>
     `,
     onMount: (body) => {
@@ -240,7 +239,7 @@ function openMPDetail(mp) {
         }
       });
 
-      body.querySelector('#mp-create-po')?.addEventListener('click', () => {
+      body.querySelector('#mpd-full-form')?.addEventListener('click', () => {
         emit('modal:close');
         emit('po:create-from-mp', { mpId: mp.id });
         emit('nav:change', { route: 'cash-flow' });
