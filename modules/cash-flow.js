@@ -152,10 +152,9 @@ function renderPOs(el) {
             <tbody>
               ${pos.map(po => {
                 const stageIdx = state.stages.findIndex(s => s.name === po.stage);
-                const progress = state.stages.length ? Math.round(((stageIdx + 1) / state.stages.length) * 100) : 0;
                 const hasGate = state.stages[stageIdx]?.gate;
                 return `
-                  <tr>
+                  <tr class="po-row" data-id="${po.id}" style="cursor:pointer">
                     <td style="font-family:var(--font-mono);font-size:0.8rem">${po.id}</td>
                     <td>${po.mpName || po.mpCode || '—'}</td>
                     <td>${po.vendor || '—'}</td>
@@ -174,6 +173,166 @@ function renderPOs(el) {
         </div>`
     }
   `;
+
+  // Bind row clicks
+  el.querySelectorAll('.po-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const po = pos.find(p => p.id === row.dataset.id);
+      if (po) openPODetail(po);
+    });
+  });
+}
+
+// ── PO Detail Modal ─────────────────────────────────────────
+
+function openPODetail(po) {
+  const stages = state.stages;
+  const currentIdx = stages.findIndex(s => s.name === po.stage);
+  const nextStage = stages[currentIdx + 1] || null;
+  const checkIns = po.checkIns || { pd: [], fin: [] };
+  const history = po.history || [];
+
+  emit('modal:open', {
+    title: `PO ${po.id}`,
+    wide: true,
+    html: `
+      <div style="margin-bottom:1rem">
+        <div style="font-size:1.1rem;font-weight:600;margin-bottom:0.25rem">${po.mpName || po.vendor || '—'}</div>
+        <div style="font-size:0.82rem;color:var(--text-dim)">${po.vendor || '—'} · ${po.cat || '—'} · ${po.mpCode || ''}</div>
+      </div>
+
+      <!-- Stage Track -->
+      <div style="display:flex;align-items:center;gap:0;margin-bottom:1.25rem;overflow-x:auto;padding:0.5rem 0">
+        ${stages.map((s, i) => {
+          const done = i <= currentIdx;
+          const active = i === currentIdx;
+          const gateLabel = s.gate === 'pd' ? 'PD' : s.gate === 'fin' ? 'FIN' : '';
+          return `
+            ${i > 0 ? `<div style="flex:1;height:2px;min-width:8px;background:${done ? 'var(--success)' : 'var(--border)'}"></div>` : ''}
+            <div style="display:flex;flex-direction:column;align-items:center;min-width:28px" title="${s.name}${s.desc ? ': ' + s.desc : ''}">
+              <div style="width:${active ? '26px' : '20px'};height:${active ? '26px' : '20px'};border-radius:50%;
+                background:${done ? 'var(--success)' : 'var(--surface-2)'};
+                border:2px solid ${done ? 'var(--success)' : active ? 'var(--primary)' : 'var(--border)'};
+                color:${done ? 'white' : 'var(--text-dim)'};font-size:${active ? '10px' : '8px'};font-weight:700;
+                display:flex;align-items:center;justify-content:center;flex-shrink:0;
+                ${active ? 'box-shadow:0 0 0 3px var(--primary-light)' : ''}">${i + 1}</div>
+              <div style="font-size:0.6rem;color:${active ? 'var(--text)' : 'var(--text-muted)'};
+                margin-top:3px;text-align:center;font-weight:${active ? '600' : '400'};
+                max-width:52px;line-height:1.2">${s.name}</div>
+              ${gateLabel ? `<div style="font-size:0.55rem;color:var(--primary);font-weight:700;margin-top:1px">${gateLabel}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <!-- Details Grid -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 1.5rem;font-size:0.82rem;margin-bottom:1rem;
+        background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.75rem">
+        <div><span style="color:var(--text-dim)">FOB:</span> ${formatCurrency(po.fob || 0)}</div>
+        <div><span style="color:var(--text-dim)">Units:</span> ${formatNumber(po.units || 0)}</div>
+        <div><span style="color:var(--text-dim)">FOB Total:</span> <strong>${formatCurrency(po.fobTotal || 0)}</strong></div>
+        <div><span style="color:var(--text-dim)">Landed Cost:</span> ${po.landedCost ? formatCurrency(po.landedCost) : '—'}</div>
+        <div><span style="color:var(--text-dim)">ETD:</span> ${po.etd ? formatDate(po.etd) : '—'}</div>
+        <div><span style="color:var(--text-dim)">ETA:</span> ${po.eta ? formatDate(po.eta) : '—'}</div>
+        <div><span style="color:var(--text-dim)">MOQ:</span> ${po.moq || '—'}</div>
+        <div><span style="color:var(--text-dim)">Lead:</span> ${po.lead ? po.lead + 'd' : '—'}</div>
+        ${po.container ? `<div><span style="color:var(--text-dim)">Container:</span> ${po.container}</div>` : ''}
+        ${po.vessel ? `<div><span style="color:var(--text-dim)">Vessel:</span> ${po.vessel}</div>` : ''}
+      </div>
+
+      ${po.notes ? `<div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:1rem;padding:0.5rem 0.75rem;background:var(--surface-2);border-radius:var(--radius);border-left:3px solid var(--primary)">
+        ${po.notes}
+      </div>` : ''}
+
+      <!-- Check-ins -->
+      ${(checkIns.pd.length || checkIns.fin.length) ? `
+        <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Check-ins</h3>
+        <div style="margin-bottom:1rem;font-size:0.82rem">
+          ${[...checkIns.pd, ...checkIns.fin]
+            .sort((a, b) => (a.at || '').localeCompare(b.at || ''))
+            .map(c => `
+              <div style="padding:0.4rem 0;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between">
+                <span><strong>${c.type === 'pd' ? 'PD' : 'FIN'}</strong> — ${c.stage} by ${c.by}</span>
+                <span style="color:var(--text-dim)">${c.at ? formatDate(c.at) : '—'}</span>
+              </div>
+            `).join('')}
+        </div>
+      ` : ''}
+
+      <!-- History -->
+      ${history.length ? `
+        <h3 style="font-size:0.85rem;margin-bottom:0.5rem">History</h3>
+        <div style="margin-bottom:1rem;font-size:0.78rem;max-height:120px;overflow-y:auto">
+          ${history.map(h => `
+            <div style="padding:0.3rem 0;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between">
+              <span>${h.action === 'created' ? 'Created' : `${h.from} → ${h.to}`}${h.checkedBy ? ` (${h.checkType}: ${h.checkedBy})` : ''}</span>
+              <span style="color:var(--text-muted)">${h.at ? formatDate(h.at) : '—'}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <!-- Advance Stage -->
+      ${nextStage ? `
+        <div style="border-top:1px solid var(--border-light);padding-top:1rem">
+          <div style="font-size:0.82rem;margin-bottom:0.5rem">
+            <strong>Next:</strong> ${nextStage.name}
+            ${nextStage.gate ? `<span style="color:var(--primary);font-weight:600"> — requires ${nextStage.gate === 'pd' ? 'PD' : 'Finance'} check-in</span>` : ''}
+          </div>
+          ${nextStage.gate ? `
+            <div class="form-group" style="margin-bottom:0.5rem">
+              <label class="form-label">Checked by</label>
+              <input id="po-adv-by" class="form-input" placeholder="Name of reviewer" />
+            </div>
+            <div class="form-group" style="margin-bottom:0.5rem">
+              <label class="form-label">Notes (optional)</label>
+              <input id="po-adv-notes" class="form-input" placeholder="Review notes" />
+            </div>
+          ` : ''}
+          <div class="form-actions" style="margin-top:0.5rem">
+            <button id="po-adv-btn" class="btn btn-primary">Advance to ${nextStage.name}</button>
+          </div>
+        </div>
+      ` : `<div style="text-align:center;color:var(--success);font-weight:600;padding:0.75rem 0">✓ Distribution complete</div>`}
+    `,
+    onMount: (body) => {
+      if (!nextStage) return;
+      body.querySelector('#po-adv-btn')?.addEventListener('click', async () => {
+        const btn = body.querySelector('#po-adv-btn');
+        const byInput = body.querySelector('#po-adv-by');
+        const notesInput = body.querySelector('#po-adv-notes');
+
+        if (nextStage.gate && (!byInput || !byInput.value.trim())) {
+          emit('toast:show', { message: `${nextStage.gate === 'pd' ? 'PD' : 'Finance'} reviewer name required`, type: 'error' });
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Advancing...';
+
+        try {
+          const advBody = { stage: nextStage.name };
+          if (byInput?.value.trim()) advBody.checkedBy = byInput.value.trim();
+          if (notesInput?.value.trim()) advBody.checkNotes = notesInput.value.trim();
+
+          await api.patch(`/api/purchase-orders/${po.id}/stage`, advBody);
+          emit('modal:close');
+          emit('toast:show', { message: `PO advanced to ${nextStage.name}`, type: 'success' });
+          emit('po:updated', { id: po.id, stage: nextStage.name });
+
+          // Refresh
+          const posData = await api.get('/api/purchase-orders');
+          state.purchaseOrders = posData.purchaseOrders || [];
+          render();
+          bindPOButton();
+        } catch (err) {
+          emit('toast:show', { message: err.message, type: 'error' });
+          btn.disabled = false;
+          btn.textContent = `Advance to ${nextStage.name}`;
+        }
+      });
+    },
+  });
 }
 
 function renderProduction(el) {
@@ -211,7 +370,8 @@ function renderProduction(el) {
         <thead><tr>
           <th>Product</th><th>Vendor</th>
           <th style="text-align:right">Stock</th>
-          <th style="text-align:right">Days Left</th>
+          <th style="text-align:right">Incoming</th>
+          <th style="text-align:right">Eff. Days</th>
           <th style="text-align:right">Units/Day</th>
           <th style="text-align:right">Order Qty</th>
           <th style="text-align:right">Cost</th>
@@ -222,11 +382,17 @@ function renderProduction(el) {
               <td style="font-weight:600">${p.name}</td>
               <td style="font-size:0.8rem;color:var(--text-dim)">${p.vendor || '—'}</td>
               <td style="text-align:right;font-family:var(--font-mono);${p.currentStock === 0 ? 'color:var(--danger);font-weight:600' : ''}">${formatNumber(p.currentStock)}</td>
-              <td style="text-align:right;font-family:var(--font-mono);color:var(--danger);font-weight:600">${p.daysOfStock}</td>
+              <td style="text-align:right;font-family:var(--font-mono);${p.incomingUnits > 0 ? 'color:var(--success)' : ''}">${p.incomingUnits > 0 ? '+' + formatNumber(p.incomingUnits) : '—'}</td>
+              <td style="text-align:right;font-family:var(--font-mono);color:var(--danger);font-weight:600">${p.effectiveDays || p.daysOfStock}</td>
               <td style="text-align:right;font-family:var(--font-mono)">${p.unitsPerDay}</td>
               <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatNumber(p.suggestedQty)}</td>
               <td style="text-align:right">${formatCurrency(p.suggestedCost)}</td>
             </tr>
+            ${p.activePOs?.length ? `
+              <tr><td colspan="8" style="padding:0.3rem 0.75rem;font-size:0.72rem;color:var(--text-dim);background:var(--surface-2)">
+                Active POs: ${p.activePOs.map(po => `${po.id} (${po.stage}, ${formatNumber(po.units)} units)`).join(' · ')}
+              </td></tr>
+            ` : ''}
           `).join('')}
         </tbody>
       </table>

@@ -19,6 +19,7 @@ const { mapProduct, mapSKU, buildProductTree } = require('../../lib/mappers');
 const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias } = require('../../lib/products');
 const { sinceDate } = require('../../lib/analytics');
 const cache = require('../../lib/cache');
+const store = require('../../lib/store');
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -242,15 +243,35 @@ async function reorderPlan(client, { params }) {
     mpInventory[mpId] = itemIds.reduce((s, id) => s + (allLevels[id] || 0), 0);
   }
 
-  // 5. Build reorder plan
+  // 5. Fetch active POs to cross-reference
+  let activePOs = [];
+  try {
+    const allPOs = await store.po.getAll();
+    activePOs = allPOs.filter(po =>
+      po.mpId && !['Received', 'Distribution'].includes(po.stage)
+    );
+  } catch (e) { /* blobs might be empty */ }
+
+  // Build mpId → active PO lookup
+  const poByMP = {};
+  for (const po of activePOs) {
+    if (!poByMP[po.mpId]) poByMP[po.mpId] = [];
+    poByMP[po.mpId].push({ id: po.id, stage: po.stage, units: po.units || 0 });
+  }
+
+  // 6. Build reorder plan
   const plan = MP_SEEDS.map(seed => {
     const vel = mpVelocity[seed.id] || { units: 0, revenue: 0 };
     const stock = mpInventory[seed.id] || 0;
     const unitsPerDay = vel.units / days;
     const daysOfStock = unitsPerDay > 0 ? Math.round(stock / unitsPerDay) : stock > 0 ? 999 : 0;
-    const needsReorder = daysOfStock < coverDays && daysOfStock < 999;
+    const activePOsForMP = poByMP[seed.id] || [];
+    const incomingUnits = activePOsForMP.reduce((s, po) => s + po.units, 0);
+    const effectiveStock = stock + incomingUnits;
+    const effectiveDays = unitsPerDay > 0 ? Math.round(effectiveStock / unitsPerDay) : effectiveStock > 0 ? 999 : 0;
+    const needsReorder = effectiveDays < coverDays && effectiveDays < 999;
     const suggestedQty = needsReorder
-      ? Math.max(seed.moq || 0, Math.ceil(unitsPerDay * coverDays) - stock)
+      ? Math.max(seed.moq || 0, Math.ceil(unitsPerDay * coverDays) - effectiveStock)
       : 0;
     const suggestedCost = +(suggestedQty * (seed.fob || 0)).toFixed(2);
 
@@ -262,10 +283,13 @@ async function reorderPlan(client, { params }) {
       vendor: seed.vendor,
       // Current state
       currentStock: stock,
+      incomingUnits,
+      activePOs: activePOsForMP,
       unitsPerDay: +unitsPerDay.toFixed(2),
       unitsSold: vel.units,
       revenue: +vel.revenue.toFixed(2),
       daysOfStock,
+      effectiveDays,
       // Reorder signal
       needsReorder,
       suggestedQty,
@@ -276,10 +300,10 @@ async function reorderPlan(client, { params }) {
     };
   });
 
-  // Sort: needs reorder first, then by days of stock ascending
+  // Sort: needs reorder first, then by effective days of stock ascending
   plan.sort((a, b) => {
     if (a.needsReorder !== b.needsReorder) return a.needsReorder ? -1 : 1;
-    return a.daysOfStock - b.daysOfStock;
+    return a.effectiveDays - b.effectiveDays;
   });
 
   const reorderItems = plan.filter(p => p.needsReorder);
