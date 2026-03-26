@@ -31,11 +31,20 @@ async function connectionStatus() {
       domain: shop.domain,
       plan: shop.plan_name,
       currency: shop.currency,
+      apiVersion: client.version,
+      storeUrl: client.shop,
     };
     cache.set(ck, result, cache.CACHE_TTL.status);
     return result;
   } catch (err) {
-    return { connected: false, message: err.message };
+    return {
+      connected: false,
+      message: err.message,
+      apiVersion: client.version,
+      storeUrl: client.shop,
+      baseUrl: client.base,
+      hint: err.message.includes('404') ? 'API version may be expired. Try setting SHOPIFY_API_VERSION env var to 2025-01, 2025-04, or 2025-07' : null,
+    };
   }
 }
 
