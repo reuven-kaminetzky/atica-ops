@@ -1,11 +1,11 @@
 /**
  * Marketplace Module — Master Products with real Shopify data
- * 
+ *
  * Shows MPs grouped by category, enriched with live styles,
  * inventory, pricing, and images from Shopify.
- * 
+ *
  * API: GET /api/products/masters
- * 
+ *
  * Publishes: product:updated
  * Subscribes: sync:complete
  */
@@ -96,36 +96,42 @@ function render() {
 
   el.innerHTML = `
     <div class="product-grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
-      ${filtered.map(mp => `
+      ${filtered.map(mp => {
+        const stockClass = mp.totalInventory === 0 ? 'sz-low' : mp.totalInventory < 20 ? 'sz-low' : '';
+        const marginPill = mp.margin !== null
+          ? `<span class="margin-pill ${mp.margin >= 55 ? 'high' : mp.margin >= 35 ? 'mid' : 'low'}">${mp.margin}%</span>`
+          : '';
+        return `
         <div class="product-card" data-id="${mp.id}" style="cursor:pointer">
           ${mp.images && mp.images[0]
-            ? `<img src="${mp.images[0]}&width=300" class="product-img" style="height:180px" />`
+            ? `<img src="${mp.images[0]}&width=300" class="product-img" style="height:180px" loading="lazy" />`
             : `<div class="product-img-placeholder" style="height:180px">${mp.code}</div>`}
           <div class="product-info" style="padding:0.85rem">
             <div class="product-title">${mp.name}</div>
             <div class="product-meta">${mp.vendor || '—'} · ${mp.code}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem">
               <div class="product-price">${formatCurrency(mp.liveRetail || mp.retail)}</div>
-              <div style="font-size:0.75rem;color:var(--text-dim)">${formatNumber(mp.totalInventory)} units</div>
+              <div style="font-size:0.75rem" class="${stockClass}">${formatNumber(mp.totalInventory)} units</div>
             </div>
             ${mp.styleCount > 0 ? `
-              <div style="margin-top:0.5rem;display:flex;gap:4px;flex-wrap:wrap">
+              <div style="margin-top:0.5rem;display:flex;gap:4px;flex-wrap:wrap;align-items:center">
                 ${mp.styles.slice(0, 6).map(s => `
-                  <span style="width:18px;height:18px;border-radius:50%;background:${s.color};border:1px solid var(--border);display:inline-block" title="${s.name} (${s.qty})"></span>
+                  <span class="size-grid-color-dot" style="width:16px;height:16px;background:${s.color}" title="${s.name} (${s.qty})"></span>
                 `).join('')}
-                ${mp.styles.length > 6 ? `<span style="font-size:0.7rem;color:var(--text-dim);padding:2px 4px">+${mp.styles.length - 6}</span>` : ''}
+                ${mp.styles.length > 6 ? `<span style="font-size:0.7rem;color:var(--text-dim)">+${mp.styles.length - 6}</span>` : ''}
               </div>
             ` : ''}
-            <div style="margin-top:0.4rem;font-size:0.72rem;color:var(--text-dim)">
-              FOB ${formatCurrency(mp.fob)} · ${mp.margin ? mp.margin + '% margin' : '—'} · ${mp.shopifyProductCount} Shopify products
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.4rem">
+              <span style="font-size:0.72rem;color:var(--text-dim)">FOB ${formatCurrency(mp.fob)}</span>
+              ${marginPill}
             </div>
           </div>
-        </div>
-      `).join('')}
+        </div>`;
+      }).join('')}
     </div>
   `;
 
-  // Bind card clicks for detail view
+  // Bind card clicks
   el.querySelectorAll('.product-card').forEach(card => {
     card.addEventListener('click', () => {
       const mp = filtered.find(m => m.id === card.dataset.id);
@@ -134,68 +140,111 @@ function render() {
   });
 }
 
+// ── Size Grid Builder ──────────────────────────────────────
+
+function buildSizeGrid(mp) {
+  if (!mp.styles?.length) return '<div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">No styles matched from Shopify</div>';
+
+  return `
+    <div class="size-grid-wrap">
+      <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Size Grid (${mp.styles.length} style${mp.styles.length !== 1 ? 's' : ''})</h3>
+      ${mp.styles.map(style => {
+        if (!style.fits?.length) {
+          return `
+            <div class="size-grid-style">
+              <div class="size-grid-style-header">
+                <span class="size-grid-color-dot" style="background:${style.color}"></span>
+                ${style.name}
+                <span style="font-weight:400;font-size:0.78rem;color:var(--text-dim);margin-left:auto">${formatNumber(style.qty)} units</span>
+              </div>
+            </div>`;
+        }
+
+        // Collect all unique sizes across fits, preserving order
+        const allSizes = [];
+        for (const fit of style.fits) {
+          for (const sz of (fit.sizes || [])) {
+            if (!allSizes.includes(sz)) allSizes.push(sz);
+          }
+        }
+
+        return `
+          <div class="size-grid-style">
+            <div class="size-grid-style-header">
+              <span class="size-grid-color-dot" style="background:${style.color}"></span>
+              ${style.name}
+              <span style="font-weight:400;font-size:0.78rem;color:var(--text-dim);margin-left:auto">${formatNumber(style.qty)} units</span>
+            </div>
+            <table class="size-grid-table">
+              <thead>
+                <tr>
+                  <th>Fit</th>
+                  ${allSizes.map(sz => `<th>${sz}</th>`).join('')}
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${style.fits.map(fit => {
+                  const fitSizes = fit.sizes || [];
+                  return `
+                    <tr>
+                      <td>${fit.name}</td>
+                      ${allSizes.map(sz => {
+                        const available = fitSizes.includes(sz);
+                        return `<td class="${available ? 'sz-ok' : 'sz-zero'}">${available ? '\u2713' : '\u2014'}</td>`;
+                      }).join('')}
+                      <td class="sz-total">${formatNumber(fit.qty)}</td>
+                    </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// ── MP Detail Modal ────────────────────────────────────────
+
 function openMPDetail(mp) {
   emit('modal:open', {
     title: mp.name,
     wide: true,
     html: `
-      <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:flex-start">
+      <div class="mp-detail-top">
         ${mp.images?.[0]
-          ? `<img src="${mp.images[0]}&width=200" style="width:120px;height:120px;object-fit:cover;border-radius:var(--radius-lg);flex-shrink:0" />`
-          : `<div style="width:120px;height:120px;background:var(--surface-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:var(--text-dim);flex-shrink:0">${mp.code}</div>`}
-        <div style="flex:1;min-width:0">
-          <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.25rem">${mp.cat} · ${mp.code}</div>
-          <div style="font-size:0.85rem;margin-bottom:0.5rem">${mp.vendor || 'No vendor'}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;font-size:0.82rem">
-            <div><span style="color:var(--text-dim)">Retail:</span> ${formatCurrency(mp.liveRetail || mp.retail)}</div>
-            <div><span style="color:var(--text-dim)">FOB:</span> ${formatCurrency(mp.fob)}</div>
-            <div><span style="color:var(--text-dim)">Margin:</span> ${mp.margin ? mp.margin + '%' : '—'}</div>
-            <div><span style="color:var(--text-dim)">Landed:</span> ${formatCurrency(mp.landedCost)}</div>
-            <div><span style="color:var(--text-dim)">Stock:</span> ${formatNumber(mp.totalInventory)}</div>
-            <div><span style="color:var(--text-dim)">Variants:</span> ${mp.variantCount}</div>
+          ? `<img src="${mp.images[0]}&width=260" class="mp-detail-img" />`
+          : `<div class="mp-detail-placeholder">${mp.code}</div>`}
+        <div class="mp-detail-info">
+          <div class="mp-detail-meta">${mp.cat} · ${mp.code}</div>
+          <div class="mp-detail-vendor">${mp.vendor || 'No vendor'}</div>
+          <div class="mp-detail-metrics">
+            <div><span class="mp-detail-metric-label">Retail:</span> ${formatCurrency(mp.liveRetail || mp.retail)}</div>
+            <div><span class="mp-detail-metric-label">FOB:</span> ${formatCurrency(mp.fob)}</div>
+            <div><span class="mp-detail-metric-label">Margin:</span> ${mp.margin ? `<span class="margin-pill ${mp.margin >= 55 ? 'high' : mp.margin >= 35 ? 'mid' : 'low'}">${mp.margin}%</span>` : '\u2014'}</div>
+            <div><span class="mp-detail-metric-label">Landed:</span> ${formatCurrency(mp.landedCost)}</div>
+            <div><span class="mp-detail-metric-label">Stock:</span> <strong class="${mp.totalInventory === 0 ? 'sz-low' : ''}">${formatNumber(mp.totalInventory)}</strong></div>
+            <div><span class="mp-detail-metric-label">Variants:</span> ${mp.variantCount}</div>
           </div>
         </div>
       </div>
 
-      <!-- Sourcing -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:0.5rem;font-size:0.78rem;margin-bottom:1rem;
-        background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.6rem 0.75rem">
-        <div><span style="color:var(--text-dim)">MOQ:</span> ${mp.moq || '—'}</div>
-        <div><span style="color:var(--text-dim)">Lead:</span> ${mp.lead ? mp.lead + 'd' : '—'}</div>
-        <div><span style="color:var(--text-dim)">HTS:</span> ${mp.hts || '—'}</div>
-        <div><span style="color:var(--text-dim)">Duty:</span> ${mp.duty ? mp.duty + '%' : '—'}</div>
+      <div class="mp-sourcing-bar">
+        <div class="mp-sourcing-item"><span>MOQ:</span> ${mp.moq || '\u2014'}</div>
+        <div class="mp-sourcing-item"><span>Lead:</span> ${mp.lead ? mp.lead + 'd' : '\u2014'}</div>
+        <div class="mp-sourcing-item"><span>HTS:</span> ${mp.hts || '\u2014'}</div>
+        <div class="mp-sourcing-item"><span>Duty:</span> ${mp.duty ? mp.duty + '%' : '\u2014'}</div>
       </div>
 
-      ${mp.styles?.length ? `
-        <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Styles (${mp.styles.length})</h3>
-        <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
-          ${mp.styles.map(s => `
-            <div style="background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.6rem 0.75rem;display:flex;align-items:center;gap:0.75rem">
-              <span style="width:20px;height:20px;border-radius:50%;background:${s.color};border:1px solid var(--border);flex-shrink:0"></span>
-              <div style="flex:1;min-width:0">
-                <div style="font-weight:600;font-size:0.85rem">${s.name}</div>
-                <div style="font-size:0.75rem;color:var(--text-dim)">
-                  ${formatNumber(s.qty)} units
-                  ${s.fits?.length ? ` · ${s.fits.map(f => `${f.name} (${f.qty})`).join(', ')}` : ''}
-                </div>
-                ${s.fits?.length ? `
-                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">
-                    Sizes: ${s.fits.flatMap(f => f.sizes || []).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
-                  </div>
-                ` : ''}
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      ` : '<div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">No styles matched from Shopify</div>'}
+      ${buildSizeGrid(mp)}
 
       <div style="font-size:0.78rem;color:var(--text-dim);padding-top:0.75rem;border-top:1px solid var(--border-light)">
         ${mp.shopifyProductCount} Shopify product${mp.shopifyProductCount !== 1 ? 's' : ''} matched ·
-        Sizes: ${mp.sizes || '—'}
+        Sizes: ${mp.sizes || '\u2014'}
         ${mp.fits?.length ? ` · Fits: ${mp.fits.join(', ')}` : ''}
       </div>
 
-      <!-- Quick PO creation -->
+      <!-- Quick PO -->
       <div style="border-top:1px solid var(--border-light);margin-top:0.75rem;padding-top:0.75rem">
         <div style="font-size:0.82rem;font-weight:600;margin-bottom:0.5rem">Quick PO</div>
         <div class="form-row">
@@ -222,6 +271,7 @@ function openMPDetail(mp) {
       unitsInput?.addEventListener('input', () => {
         const units = parseInt(unitsInput.value) || 0;
         totalDiv.textContent = formatCurrency(units * (mp.fob || 0));
+        createBtn.textContent = `Quick PO (${formatNumber(units)} units)`;
       });
 
       createBtn?.addEventListener('click', async () => {
@@ -236,7 +286,7 @@ function openMPDetail(mp) {
         } catch (err) {
           emit('toast:show', { message: err.message, type: 'error' });
           createBtn.disabled = false;
-          createBtn.textContent = `Create PO for ${mp.code}`;
+          createBtn.textContent = `Quick PO (${formatNumber(parseInt(unitsInput?.value) || mp.moq || 50)} units)`;
         }
       });
 
