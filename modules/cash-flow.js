@@ -23,6 +23,7 @@ let state = {
   reorderPlan: null,
   purchaseOrders: [],
   stages: [],
+  seeds: [],
   ledger: [],
   view: 'overview',
 };
@@ -45,16 +46,18 @@ export async function init(container) {
   `;
 
   try {
-    const [sales, pos, stages, reorder] = await Promise.allSettled([
+    const [sales, pos, stages, reorder, seeds] = await Promise.allSettled([
       api.get('/api/orders/sales', { days: 30 }),
       api.get('/api/purchase-orders'),
       api.get('/api/purchase-orders/stages'),
       api.get('/api/products/reorder', { days: 30, cover: 90 }),
+      api.get('/api/products/seeds'),
     ]);
     state.salesData = sales.status === 'fulfilled' ? sales.value : null;
     state.purchaseOrders = pos.status === 'fulfilled' ? (pos.value.purchaseOrders || []) : [];
     state.stages = stages.status === 'fulfilled' ? (stages.value.stages || []) : [];
     state.reorderPlan = reorder.status === 'fulfilled' ? reorder.value : null;
+    state.seeds = seeds.status === 'fulfilled' ? (seeds.value.seeds || []) : [];
     state.loaded = true;
     render();
   } catch (err) {
@@ -137,6 +140,7 @@ function renderPOs(el) {
   el.innerHTML = `
     <div class="po-header">
       <h3>Purchase Orders (${pos.length})</h3>
+      <button id="cf-new-po" class="btn btn-primary">+ New PO</button>
     </div>
     ${pos.length === 0
       ? '<div class="empty-state">No purchase orders yet</div>'
@@ -301,7 +305,159 @@ function bindEvents() {
       tab.classList.add('active');
       state.view = tab.dataset.view;
       render();
+      // Re-bind PO button after render
+      bindPOButton();
     });
+  });
+  bindPOButton();
+}
+
+function bindPOButton() {
+  const btn = document.getElementById('cf-new-po');
+  if (btn) btn.addEventListener('click', openPOForm);
+}
+
+// ── PO Creation Form ────────────────────────────────────────
+
+function openPOForm() {
+  const seeds = state.seeds;
+  const categories = [...new Set(seeds.map(s => s.cat))];
+
+  emit('modal:open', {
+    title: 'New Purchase Order',
+    wide: true,
+    html: `
+      <div class="form-group">
+        <label class="form-label">Master Product</label>
+        <select id="po-mp" class="form-select">
+          <option value="">— Select MP —</option>
+          ${categories.map(cat => `
+            <optgroup label="${cat}">
+              ${seeds.filter(s => s.cat === cat).map(s =>
+                `<option value="${s.id}">${s.name} (${s.code}) — ${s.vendor || 'No vendor'}</option>`
+              ).join('')}
+            </optgroup>
+          `).join('')}
+        </select>
+        <div class="form-hint">Selecting an MP auto-fills vendor, FOB, lead time, and sizing</div>
+      </div>
+
+      <div id="po-seed-info" style="display:none;background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.75rem;margin-bottom:1rem;font-size:0.82rem">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Vendor</label>
+          <input id="po-vendor" class="form-input" placeholder="Vendor name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Units</label>
+          <input id="po-units" type="number" class="form-input" placeholder="0" min="0" />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">FOB ($)</label>
+          <input id="po-fob" type="number" step="0.01" class="form-input" placeholder="0.00" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">ETD</label>
+          <input id="po-etd" type="date" class="form-input" />
+        </div>
+      </div>
+
+      <div id="po-total" style="font-size:0.85rem;color:var(--text-dim);margin-bottom:0.5rem"></div>
+
+      <div class="form-group">
+        <label class="form-label">Notes</label>
+        <input id="po-notes" class="form-input" placeholder="Optional notes" />
+      </div>
+
+      <div class="form-actions">
+        <button id="po-cancel" class="btn btn-secondary">Cancel</button>
+        <button id="po-submit" class="btn btn-primary">Create PO</button>
+      </div>
+    `,
+    onMount: (body) => {
+      const mpSelect = body.querySelector('#po-mp');
+      const vendorInput = body.querySelector('#po-vendor');
+      const unitsInput = body.querySelector('#po-units');
+      const fobInput = body.querySelector('#po-fob');
+      const etdInput = body.querySelector('#po-etd');
+      const notesInput = body.querySelector('#po-notes');
+      const seedInfo = body.querySelector('#po-seed-info');
+      const totalDiv = body.querySelector('#po-total');
+
+      function updateTotal() {
+        const fob = parseFloat(fobInput.value) || 0;
+        const units = parseInt(unitsInput.value) || 0;
+        const total = fob * units;
+        totalDiv.textContent = total > 0 ? `FOB Total: ${formatCurrency(total)}` : '';
+      }
+
+      fobInput.addEventListener('input', updateTotal);
+      unitsInput.addEventListener('input', updateTotal);
+
+      // Auto-fill from MP seed
+      mpSelect.addEventListener('change', () => {
+        const seed = seeds.find(s => s.id === mpSelect.value);
+        if (seed) {
+          vendorInput.value = seed.vendor || '';
+          fobInput.value = seed.fob || '';
+          seedInfo.style.display = 'block';
+          seedInfo.innerHTML = `
+            <strong>${seed.name}</strong> (${seed.code})<br>
+            MOQ: ${seed.moq || '—'} · Lead: ${seed.lead || '—'}d ·
+            HTS: ${seed.hts || '—'} · Duty: ${seed.duty || 0}% ·
+            Sizes: ${seed.sizes || '—'}
+            ${seed.fits?.length ? `<br>Fits: ${seed.fits.join(', ')}` : ''}
+          `;
+          updateTotal();
+        } else {
+          seedInfo.style.display = 'none';
+        }
+      });
+
+      body.querySelector('#po-cancel').addEventListener('click', () => emit('modal:close'));
+
+      body.querySelector('#po-submit').addEventListener('click', async () => {
+        const mpId = mpSelect.value || null;
+        const vendor = vendorInput.value.trim();
+        const units = parseInt(unitsInput.value) || 0;
+        const fob = parseFloat(fobInput.value) || 0;
+
+        if (!mpId && !vendor) {
+          emit('toast:show', { message: 'Select an MP or enter a vendor', type: 'error' });
+          return;
+        }
+
+        const submitBtn = body.querySelector('#po-submit');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Creating...';
+
+        try {
+          const poData = { mpId, vendor, units, fob };
+          if (etdInput.value) poData.etd = etdInput.value;
+          if (notesInput.value.trim()) poData.notes = notesInput.value.trim();
+
+          const result = await api.post('/api/purchase-orders', poData);
+          emit('modal:close');
+          emit('toast:show', { message: `PO ${result.purchaseOrder.id} created`, type: 'success' });
+          emit('po:created', result.purchaseOrder);
+
+          // Refresh PO list
+          const posData = await api.get('/api/purchase-orders');
+          state.purchaseOrders = posData.purchaseOrders || [];
+          render();
+          bindPOButton();
+        } catch (err) {
+          emit('toast:show', { message: err.message, type: 'error' });
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create PO';
+        }
+      });
+    },
   });
 }
 
@@ -320,5 +476,5 @@ on('sync:complete', async () => {
 
 export function destroy() {
   _container = null;
-  state = { loaded: false, salesData: null, reorderPlan: null, purchaseOrders: [], stages: [], ledger: [], view: 'overview' };
+  state = { loaded: false, salesData: null, reorderPlan: null, purchaseOrders: [], stages: [], seeds: [], ledger: [], view: 'overview' };
 }

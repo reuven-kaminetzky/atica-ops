@@ -26,6 +26,17 @@
 
   <div class="toast-container" id="toast-container"></div>
 
+  <!-- Modal system — any module can trigger via emit('modal:open', {...}) -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal-box" id="modal-box">
+      <div class="modal-head">
+        <div class="modal-title" id="modal-title"></div>
+        <button class="modal-close" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
   <script type="module">
     import { renderSidebar } from '/components/sidebar.js';
     import { on, emit } from '/modules/event-bus.js';
@@ -50,6 +61,11 @@
     const syncDot = syncIndicator.querySelector('.sync-dot');
     const syncText = document.getElementById('sync-text');
     const toastContainer = document.getElementById('toast-container');
+    const modalOverlay = document.getElementById('modal-overlay');
+    const modalBox = document.getElementById('modal-box');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBody = document.getElementById('modal-body');
+    const modalClose = document.getElementById('modal-close');
 
     // Render sidebar
     renderSidebar(sidebar);
@@ -100,6 +116,36 @@
         toast.style.transition = 'all 0.3s';
         setTimeout(() => toast.remove(), 300);
       }, 3000);
+    });
+
+    // ── Modal system ──────────────────────────────────
+    // Any module can open: emit('modal:open', { title, html, onMount })
+    // onMount(modalBody) is called after html is inserted — use it to bind events.
+    let _modalOnClose = null;
+
+    function openModal({ title, html, onMount, onClose, wide }) {
+      modalTitle.textContent = title || '';
+      modalBody.innerHTML = html || '';
+      modalBox.style.maxWidth = wide ? '720px' : '520px';
+      modalOverlay.classList.add('open');
+      _modalOnClose = onClose || null;
+      if (onMount) {
+        try { onMount(modalBody); } catch (e) { console.error('[modal] onMount error:', e); }
+      }
+    }
+
+    function closeModal() {
+      modalOverlay.classList.remove('open');
+      if (_modalOnClose) { try { _modalOnClose(); } catch(e) {} }
+      _modalOnClose = null;
+      modalBody.innerHTML = '';
+    }
+
+    on('modal:open', openModal);
+    on('modal:close', closeModal);
+    modalClose.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) closeModal();
     });
 
     // ── Ready ─────────────────────────────────────────

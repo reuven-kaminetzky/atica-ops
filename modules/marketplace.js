@@ -123,6 +123,69 @@ function render() {
       `).join('')}
     </div>
   `;
+
+  // Bind card clicks for detail view
+  el.querySelectorAll('.product-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const mp = filtered.find(m => m.id === card.dataset.id);
+      if (mp) openMPDetail(mp);
+    });
+  });
+}
+
+function openMPDetail(mp) {
+  emit('modal:open', {
+    title: mp.name,
+    wide: true,
+    html: `
+      <div style="display:flex;gap:1rem;margin-bottom:1rem;align-items:flex-start">
+        ${mp.images?.[0]
+          ? `<img src="${mp.images[0]}&width=200" style="width:120px;height:120px;object-fit:cover;border-radius:var(--radius-lg);flex-shrink:0" />`
+          : `<div style="width:120px;height:120px;background:var(--surface-2);border-radius:var(--radius-lg);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:var(--text-dim);flex-shrink:0">${mp.code}</div>`}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:0.25rem">${mp.cat} · ${mp.code}</div>
+          <div style="font-size:0.85rem;margin-bottom:0.5rem">${mp.vendor || 'No vendor'}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.5rem;font-size:0.82rem">
+            <div><span style="color:var(--text-dim)">Retail:</span> ${formatCurrency(mp.liveRetail || mp.retail)}</div>
+            <div><span style="color:var(--text-dim)">FOB:</span> ${formatCurrency(mp.fob)}</div>
+            <div><span style="color:var(--text-dim)">Margin:</span> ${mp.margin ? mp.margin + '%' : '—'}</div>
+            <div><span style="color:var(--text-dim)">Landed:</span> ${formatCurrency(mp.landedCost)}</div>
+            <div><span style="color:var(--text-dim)">Stock:</span> ${formatNumber(mp.totalInventory)}</div>
+            <div><span style="color:var(--text-dim)">Variants:</span> ${mp.variantCount}</div>
+          </div>
+        </div>
+      </div>
+
+      ${mp.styles?.length ? `
+        <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Styles (${mp.styles.length})</h3>
+        <div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:1rem">
+          ${mp.styles.map(s => `
+            <div style="background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.6rem 0.75rem;display:flex;align-items:center;gap:0.75rem">
+              <span style="width:20px;height:20px;border-radius:50%;background:${s.color};border:1px solid var(--border);flex-shrink:0"></span>
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:0.85rem">${s.name}</div>
+                <div style="font-size:0.75rem;color:var(--text-dim)">
+                  ${formatNumber(s.qty)} units
+                  ${s.fits?.length ? ` · ${s.fits.map(f => `${f.name} (${f.qty})`).join(', ')}` : ''}
+                </div>
+                ${s.fits?.length ? `
+                  <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem">
+                    Sizes: ${s.fits.flatMap(f => f.sizes || []).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : '<div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:1rem">No styles matched from Shopify</div>'}
+
+      <div style="font-size:0.78rem;color:var(--text-dim);border-top:1px solid var(--border-light);padding-top:0.75rem">
+        ${mp.shopifyProductCount} Shopify product${mp.shopifyProductCount !== 1 ? 's' : ''} matched ·
+        Sizes: ${mp.sizes || '—'} ·
+        ${mp.fits?.length ? `Fits: ${mp.fits.join(', ')}` : ''}
+      </div>
+    `,
+  });
 }
 
 function bindEvents() {

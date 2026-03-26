@@ -45,7 +45,7 @@ export const EVENTS = {
 
   // UI
   'toast:show':          'Any → shell. Data: { message, type: "info"|"success"|"error" }',
-  'modal:open':          'Any → shell. Data: { title, content }',
+  'modal:open':          'Any → shell. Data: { title, html, onMount?, onClose?, wide? }',
   'modal:close':         'Any → shell. Data: null',
 };
 
