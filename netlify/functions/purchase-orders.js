@@ -14,7 +14,7 @@
  *   DELETE /api/purchase-orders/:id          → delete PO
  */
 
-const { createHandler, RouteError, validate } = require('../../lib/handler');
+const { createHandler, RouteError } = require('../../lib/handler');
 const store = require('../../lib/store');
 const { MP_BY_ID } = require('../../lib/products');
 const { onPOStageAdvanced, generatePaymentSchedule: generatePaymentsFromPO, refreshPaymentStatuses, executeAction } = require('../../lib/effects');
