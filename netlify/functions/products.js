@@ -14,7 +14,7 @@
  *   POST /api/products/sku-map/confirm-all → confirm all
  */
 
-const { createHandler, RouteError } = require('../../lib/handler');
+const { createHandler, RouteError, validate } = require('../../lib/handler');
 const { mapProduct, mapSKU, buildProductTree } = require('../../lib/mappers');
 const { MP_SEEDS, MP_BY_ID, CATEGORIES, SIZE_GROUPS, PLM_STAGES, matchAll, resolveAlias } = require('../../lib/products');
 const { sinceDate } = require('../../lib/analytics');
@@ -178,8 +178,8 @@ async function seedCatalog() {
 // ── Production Planning — what to reorder ───────────────────
 
 async function reorderPlan(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
-  const coverDays = parseInt(params.cover || '90', 10); // target days of stock to maintain
+  const days = validate.days(params);
+  const coverDays = validate.intParam(params, 'cover', { min: 30, max: 365, fallback: 90 }); // target days of stock to maintain
   const ck = cache.makeKey('reorder', { days, coverDays });
   const cached = cache.get(ck);
   if (cached) return cached;

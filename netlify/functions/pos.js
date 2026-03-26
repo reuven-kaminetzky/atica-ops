@@ -10,7 +10,7 @@
  *   GET /api/pos/feed        → recent transactions (?limit=50)
  */
 
-const { createHandler } = require('../../lib/handler');
+const { createHandler, validate } = require('../../lib/handler');
 const { sinceDate } = require('../../lib/analytics');
 const { resolveOrderStore, buildLocationMap } = require('../../lib/locations');
 const cache = require('../../lib/cache');
@@ -83,7 +83,7 @@ async function todaySales(client) {
 }
 
 async function byLocation(client, { params }) {
-  const days = parseInt(params.days || '7', 10);
+  const days = validate.days(params, 7);
   const ck = cache.makeKey('pos-location', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -98,7 +98,7 @@ async function byLocation(client, { params }) {
 }
 
 async function transactionFeed(client, { params }) {
-  const limit = Math.min(parseInt(params.limit || '50', 10), 200);
+  const limit = validate.intParam(params, 'limit', { min: 1, max: 200, fallback: 50 });
   const locationMap = await getLocationMap(client);
   const { orders } = await client.getOrders({ created_at_min: sinceDate(7) });
 

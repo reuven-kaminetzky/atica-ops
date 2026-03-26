@@ -8,7 +8,7 @@
  *   POST /api/inventory/adjust → adjust stock level
  */
 
-const { createHandler, RouteError } = require('../../lib/handler');
+const { createHandler, RouteError, validate } = require('../../lib/handler');
 const cache = require('../../lib/cache');
 
 // ── Handlers ────────────────────────────────────────────────
@@ -44,10 +44,8 @@ async function syncInventory(client) {
 }
 
 async function adjustInventory(client, { body }) {
+  validate.required(body, ['inventoryItemId', 'locationId', 'adjustment']);
   const { inventoryItemId, locationId, adjustment } = body;
-  if (!inventoryItemId || !locationId || adjustment === undefined) {
-    throw new RouteError(400, 'inventoryItemId, locationId, and adjustment required');
-  }
   const result = await client.adjustInventory(inventoryItemId, locationId, adjustment);
   cache.set(cache.makeKey('inventory', {}), null, 0);
   return { adjusted: true, inventoryLevel: result.inventory_level };
@@ -59,10 +57,8 @@ async function adjustInventory(client, { body }) {
  * body: { inventoryItemId, fromLocationId, toLocationId, quantity }
  */
 async function transferInventory(client, { body }) {
+  validate.required(body, ['inventoryItemId', 'fromLocationId', 'toLocationId', 'quantity']);
   const { inventoryItemId, fromLocationId, toLocationId, quantity } = body;
-  if (!inventoryItemId || !fromLocationId || !toLocationId || !quantity) {
-    throw new RouteError(400, 'inventoryItemId, fromLocationId, toLocationId, and quantity required');
-  }
   if (quantity <= 0) throw new RouteError(400, 'quantity must be positive');
   if (fromLocationId === toLocationId) throw new RouteError(400, 'source and destination must differ');
 

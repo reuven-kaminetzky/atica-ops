@@ -11,7 +11,7 @@
  *   GET  /api/orders/drafts       → draft orders
  */
 
-const { createHandler } = require('../../lib/handler');
+const { createHandler, validate } = require('../../lib/handler');
 const { mapOrder } = require('../../lib/mappers');
 const { sinceDate, buildVelocity, buildSalesSummary } = require('../../lib/analytics');
 const { matchAll, MP_BY_ID } = require('../../lib/products');
@@ -41,7 +41,7 @@ async function syncOrders(client, { body, params }) {
 }
 
 async function velocity(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('velocity', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -53,7 +53,7 @@ async function velocity(client, { params }) {
 }
 
 async function sales(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('sales', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
@@ -99,7 +99,7 @@ async function draftOrders(client, { params }) {
 // This is what drives production planning and reorder decisions.
 
 async function mpVelocity(client, { params }) {
-  const days = Math.min(parseInt(params.days || '30', 10), 365);
+  const days = validate.days(params);
   const ck = cache.makeKey('mp-velocity', { days });
   const cached = cache.get(ck);
   if (cached) return cached;
