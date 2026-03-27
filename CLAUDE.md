@@ -1,183 +1,231 @@
 # CLAUDE.md — Atica Ops ERP
 
-> This file is for Claude Code (Shendrao-san). Read it before touching anything.
-> Updated: March 26, 2026 — Session 3
+> For Claude Code (Shendrao-san). Read before touching anything.
+> Updated: March 26, 2026 — Session 3, post-architecture
 
 ## What This Is
 
-Atica Man is a menswear retail operations platform. Static HTML + Netlify Functions, no build step. Connected to Shopify live data. Manages Master Products, Purchase Orders, inventory across 4 retail stores + online, cash flow, and production planning.
+Menswear retail ERP. Static HTML + Netlify Functions, no build step. Connected to Shopify live data. Manages Master Products, Purchase Orders, inventory (4 stores + online), cash flow, production planning.
 
-- **Live URL:** https://atica-ops.netlify.app/atica_app.html (monolith, 14K lines)
-- **V2 URL:** https://atica-ops.netlify.app/v2 (modular — the future)
-- **Repo:** github.com/reuven-kaminetzky/atica-ops
-- **Shopify Store:** auto-detected (tries atica-brand.myshopify.com + atica-brand.myshopify.com)
-- **Shopify API Version:** auto-detected (tries 2025-04, 2025-04, 2024-10, 2025-07, 2025-10, 2026-01)
+| Key | Value |
+|-----|-------|
+| **V2 URL** | https://atica-ops.netlify.app/v2 |
+| **Monolith** | https://atica-ops.netlify.app/atica_app.html (14K lines, legacy) |
+| **Repo** | github.com/reuven-kaminetzky/atica-ops |
+| **Shopify** | atica-brand.myshopify.com · Shopify Plus · API 2025-04 · **CONNECTED** |
+| **Netlify** | Site ID 367deff9-b1d5-4b2d-80a1-699bcaad7836 |
 
-## Priority Stack — What Matters
-
-1. **MPs (Master Products)** — with correct Shopify styles, full PLM lifecycle. THE ROOT.
-2. **Purchase Orders** — 12 stages with PD and finance check-in gates. THE TRUNK.
-3. **Cash flow** — tied to POs (costs) and Shopify orders (revenue).
-4. **Production planning** — what to order, when, based on velocity + inventory + lead time.
-5. **Analytics** — from real order data, aggregated by MP.
-
-**POS is NOT a priority.** Renamed to "Sales Feed" — just a data feed into cash flow.
-**No KPIs. No vanity metrics.** Odoo style — functional tiles, real data.
-
-## Business Intelligence (from original prototype)
-
-These formulas and constants come from the 14K-line monolith. They're the real business logic.
-
-### Key Numbers
-- **$4.3M** annual revenue, **$1.1M** inventory at cost
-- **35 products**, 91 styles, **~63%** average margin
-- **14 vendors**, **5 wholesale accounts**
-- **OpEx:** $25K/month (hardcoded, should be configurable)
-- **Target cover:** 16-24 weeks of stock
-
-### Seasonal Multipliers (affect ALL forecasting)
-```
-Spring/Summer:    0.85x
-Back-to-School:   1.40x  (Aug-Sep)
-Fall/Winter:      1.15x
-Holiday:          1.60x  (Nov-Dec)
-```
-Our reorder endpoint does NOT use these yet. `adjustedVelocity = baseVelocity × seasonMultiplier`.
-
-### Landed Cost
-```
-landed = FOB × 1.34  (duty + freight combined)
-margin = (retail - landed) / retail × 100
-```
-The 1.34 multiplier is a blunt approximation. We have per-product duty% in seeds — use that instead when available: `landed = FOB × (1 + duty/100) + freight`.
-
-### Production Planning Priority Score
-```
-adjustedVelocity = baseVelocity × seasonMultiplier
-coverWeeks = totalStock / adjustedVelocity
-suggestedQty = (targetCoverWeeks - coverWeeks) × adjustedVelocity
-priority = f(coverWeeks, leadTimeUrgency, velocity, marginContribution)
-```
-Our `/api/products/reorder` does the basic version. It needs seasonal adjustment and priority scoring.
-
-### Demand Signals
-```
-Hot:      sell-through ≥ 85% AND velocity ≥ 5/wk
-Rising:   sell-through ≥ 70% AND velocity ≥ 3/wk
-Steady:   everything else
-Slow:     sell-through < 40% AND velocity < 2/wk
-Stockout: zero stock with active demand
-```
-
-### Distribution Weights (store allocation targets)
-```
-Lakewood: 30%, Flatbush: 20%, Crown Heights: 15%, Monsey: 25%, Online: 10%
-```
-
-### Customer Loyalty Tiers
-```
-Bronze:   $0+     → 0% discount,  1.0x points
-Silver:   $500+   → 5% discount,  1.5x points
-Gold:     $1500+  → 10% discount, 2.0x points
-Platinum: $3000+  → 15% discount, 2.5x points
-Diamond:  $5000+  → 20% discount, 3.0x points
-```
-
-### Vendor Tiers
-```
-Strategic:     core vendors, long-term relationships
-Preferred:     reliable, competitive pricing
-Standard:      adequate, used for fills
-Transactional: one-off or seasonal
-```
-Vendors have: onTime%, qualScore. Not tracked in our system yet.
-
-### Product Stack (original 6-phase lifecycle)
-```
-Brief → Sourcing → Development → Costing → Content → Launch
-```
-This is different from our 18-stage PLM. The original was simpler and more practical. Consider aligning.
-
-### Data Models NOT Built Yet
-- **Wholesale accounts** — 5 accounts with credit limits, terms, discount rates
-- **Components/BOM** — fabric, lining, buttons, zippers per product (keyed by type)
-- **Campaigns** — marketing campaigns with budget, dates, status
-- **Customer sizes** — shirt, pants, suit, shoe sizes per customer
-- **Planned POs** — auto-generated from production planning engine
-
-## Codebase Overview
+## Three-Layer Architecture
 
 ```
-7,600 lines of modular code across 37 files
+LAYER 1: lib/domain.js (451 lines) — SCHEMAS
+  What things ARE. Stages, relationships, event contracts.
 
-lib/           1,237 lines — 9 shared backend modules (THE FOUNDATION)
-functions/     2,034 lines — 12 Netlify functions (API layer)
-modules/       2,551 lines — 11 frontend modules + sidebar
-shell+css      1,018 lines — v2 shell, modal, mobile, forms
-docs             758 lines — this file, ARCHITECTURE.md, CONTRIBUTING.md
+LAYER 2: lib/workflow.js (200 lines) — COMPUTE
+  How things WORK. Pure functions, no side effects.
+
+LAYER 3: lib/effects.js (336 lines) — SIDE EFFECTS
+  What HAPPENS when state changes. Returns actions for caller to execute.
+```
+
+**Rule: domain.js is read-only reference. workflow.js computes. effects.js reacts. Functions orchestrate.**
+
+## Data Flow
+
+```
+MP seed (lib/products.js) → matchAll() → Shopify products
+  ↓
+PO created (store.po) → generatePaymentSchedule() → payments[]
+  ↓
+PO stage advanced → onPOStageAdvanced() → side effects
+  → shipment:auto-create (at "In Transit")
+  → mp:advance (at "Ordered")
+  → distribution:suggest (at "Received")
+  ↓
+Cash Flow (computed) ← PO payments (outflow) + Shopify orders (inflow)
+  ↓
+Analytics ← velocity + demand signals + seasonal multipliers
+```
+
+## Codebase Summary
+
+```
+lib/           2,288 lines — 12 shared backend modules
+functions/     2,868 lines — 12 Netlify functions, 65 routes
+modules/       2,639 lines — 11 frontend modules + sidebar
+css/             787 lines — design system + layout
+shell            189 lines — atica_v2.html
+docs/          1,116 lines — CLAUDE.md, CONTRIBUTING.md, ARCHITECTURE.md
+───────────────────────────────
+Total modular   9,887 lines (+ 14K monolith)
 ```
 
 ## File Map
 
+### lib/ — Shared Backend
+
+| File | Lines | Purpose |
+|------|-------|---------|
+| domain.js | 451 | MP lifecycle (14), PO lifecycle (12), payment types, factory package (9 sections), entity relations, cash flow config, status rules, 15 domain events |
+| effects.js | 336 | onPOStageAdvanced(), onMPStageAdvanced(), generatePaymentSchedule(), refreshPaymentStatuses(), executeAction() |
+| products.js | 319 | 40 MP seeds, 40 title matchers, 10 aliases, 18 PLM stages, seasonal multipliers, demand signals, distribution weights, landed cost |
+| shopify.js | 230 | Auto-detect client: 3 stores × 6 API versions. Paginated, retries, rate-limit aware |
+| workflow.js | 200 | computeMPStatus(), buildFactoryPackage(), projectCashFlow() |
+| handler.js | 140 | createHandler(), RouteError, validate (days, required, intParam) |
+| store.js | 91 | 6 blob stores: po, shipments, plm, stack, snapshots, settings. Parallel batch reads |
+| locations.js | 74 | Store name normalization |
+| cache.js | 59 | In-memory TTL cache with deterministic keys |
+| auth.js | 48 | CORS, JSON response, authenticate (SKIP_AUTH=true) |
+
+### netlify/functions/ — API Layer
+
+| Function | Routes | Lines | Purpose |
+|----------|--------|-------|---------|
+| products | 17 | 856 | masters, seeds, reorder, stock, PLM, stack CRUD, factory-package, trees, titles, sku-map, status |
+| purchase-orders | 9 | 371 | CRUD + stage gates + auto-payments + side effects + payment recording |
+| finance | 3 | 312 | 12-week projection, margin analysis, accounts payable |
+| workflow | 6 | 265 | unified MP status, stack definitions, factory package summary, cashflow, health |
+| orders | 6 | 231 | list, sync, velocity, sales, mp-velocity (with demand signals), drafts |
+| customers | 4 | 193 | list, detail+orders, top spenders, segments |
+| shipments | 5 | 143 | CRUD + arrive (auto-created on PO "In Transit") |
+| pos | 3 | 133 | today, by-location, feed |
+| webhooks-shopify | 1 | 129 | HMAC verified |
+| inventory | 4 | 87 | list, sync, adjust, transfer |
+| status | 4 | 82 | connection check, cache stats, cache clear, webhook registration |
+| ledger | 3 | 66 | entries, snapshot, snapshots |
+
+### modules/ — Frontend
+
+| Module | Lines | Endpoints Used | Status |
+|--------|-------|---------------|--------|
+| cash-flow | 791 | orders/sales, products/reorder+seeds, purchase-orders, ledger | **WIRED** |
+| marketplace | 311 | products/masters+sync, purchase-orders | **WIRED** |
+| stock | 282 | products/masters+stock, inventory | **WIRED** |
+| analytics | 206 | orders/mp-velocity+sales | **WIRED** |
+| vendors | 188 | products/seeds, purchase-orders | **WIRED** |
+| core | 183 | (api client, formatters, module loader) | **INFRA** |
+| settings | 164 | status, cache, sync, webhooks | **WIRED** |
+| ledger | 118 | ledger | **WIRED** |
+| pos | 117 | pos/today+feed | **WIRED** |
+| home | 103 | status, workflow/health | **WIRED** |
+| event-bus | 86 | (pub/sub) | **INFRA** |
+
+## Key Endpoints
+
+### Products (the root)
 ```
-atica_app.html              # 14K-line monolith — node --check before any edit
-atica_v2.html               # Modular shell: sidebar, modal, toast, mobile hamburger
-components/sidebar.js       # Odoo-style nav with section groups
-css/base.css                # Design system + modal + form CSS
-css/odoo-layout.css         # App shell grid + mobile responsive at 768px
-
-lib/                        # Shared backend — EVERY function imports from here
-  products.js               # 40 MP seeds, 40 title matchers, 10 aliases, 18 PLM stages
-  locations.js              # Store name normalization (single source of truth)
-  shopify.js                # Shopify client — auto-detects store URL + API version
-  handler.js                # DRY handler factory + validate helpers + RouteError
-  cache.js                  # In-memory TTL cache (deterministic keys)
-  store.js                  # Netlify Blobs: po, shipments, snapshots, settings, plm
-  auth.js                   # CORS, JSON response, authentication (SKIP_AUTH=true)
-  mappers.js                # Proxy → shopify/mappers.js
-  analytics.js              # Proxy → shopify/analytics.js
-  shopify/mappers.js        # Product/order/SKU transforms (compiled from TS)
-  shopify/analytics.js      # Velocity, sales rollups (compiled from TS)
-
-netlify/functions/          # 12 Netlify Functions
-  products.js               # masters, seeds, reorder, stock, plm, trees, sync, titles, sku-map
-  orders.js                 # list, sync, velocity, sales, mp-velocity, drafts
-  purchase-orders.js        # CRUD + stage advancement + auto-shipment on In Transit
-  inventory.js              # list, sync, adjust, transfer
-  shipments.js              # CRUD + arrive
-  pos.js                    # today, by-location, feed
-  ledger.js                 # entries, snapshot, snapshots
-  status.js                 # connection (shows API version), cache, webhooks
-  customers.js              # list, detail, top, segments
-  webhooks-shopify.js       # HMAC verification
-  stocky.js                 # DEAD CODE — zero references
-  oauth-callback.js         # DEAD CODE — zero references
-
-modules/                    # V2 frontend ES modules (init/destroy lifecycle)
-  core.js                   # API client (15s timeout), module loader, formatters
-  event-bus.js              # Pub/sub with EVENTS registry
-  home.js                   # Large navigation tiles (no KPIs)
-  marketplace.js            # MP cards, category tabs, detail modal, Quick PO + Full Form
-  cash-flow.js              # Overview, POs (create/edit/advance), Production (reorder), Ledger
-  stock.js                  # By Product (MP totals), By Store (matrix), Locations
-  vendors.js                # Vendor cards with MP product lines, PO rollup
-  analytics.js              # Revenue chart, category bars, MP velocity table, 7/30/90d
-  pos.js                    # Today's sales, feed (data feed — not priority)
-  ledger.js                 # Financial entries with day range
-  settings.js               # Shopify status + API version, sync, cache, webhooks
-
-docs/ARCHITECTURE.md        # Full system architecture
-CONTRIBUTING.md             # Git workflow + patterns (needs update)
+GET  /api/products/masters            → MPs + live Shopify styles, inventory, images
+GET  /api/products/seeds              → Raw MP catalog (no Shopify needed)
+GET  /api/products/reorder            → Production planning: seasonal velocity + inventory + POs + demand signals + distribution
+GET  /api/products/stock              → MP × Store inventory matrix
+GET  /api/products/status             → Derived status for all MPs (developing/onOrder/inStore/stockout/etc.)
+GET  /api/products/plm                → PLM stages for all MPs
+PATCH /api/products/plm/:id           → Advance PLM stage with history
+GET  /api/products/stack/:id          → Product stack data (materials, construction, sizing, QC, compliance, content)
+PATCH /api/products/stack/:id         → Update stack data fields
+GET  /api/products/factory-package/:id → Full vendor tech pack (seed + stack + PO merged, completeness %)
+GET  /api/products/trees              → Style→Fit→Size hierarchy
 ```
 
-## Shell (atica_v2.html)
+### Purchase Orders
+```
+POST  /api/purchase-orders            → Create (auto-fills from MP seed, auto-generates payment schedule)
+GET   /api/purchase-orders            → List all (sorted by creation date)
+GET   /api/purchase-orders/:id        → Single PO detail
+PATCH /api/purchase-orders/:id        → Edit fields
+PATCH /api/purchase-orders/:id/stage  → Advance stage (PD/Finance gates, fires side effects)
+POST  /api/purchase-orders/:id/payment → Record a payment
+POST  /api/purchase-orders/:id/refresh → Refresh payment statuses (planned→upcoming→due→overdue)
+DELETE /api/purchase-orders/:id       → Delete
+GET   /api/purchase-orders/stages     → Stage definitions
+```
 
-- **Sidebar:** Catalog (Master Products, Stock) → Operations (Cash Flow, Vendors, Analytics) → Finance (Ledger, Sales Feed) → System (Settings)
-- **Mobile:** hamburger toggle, backdrop overlay, auto-close on nav
-- **Modal:** `emit('modal:open', { title, html, onMount, onClose, wide })`
-- **Toast:** `emit('toast:show', { message, type })`
-- **Error boundary:** global unhandled rejection → toast
-- **Module loader:** destroys current module before loading new one
+### Finance
+```
+GET  /api/finance/projection          → 12-week cash flow (PO payments + Shopify revenue + opex)
+GET  /api/finance/margins             → Per-MP margin analysis (FOB vs retail vs landed)
+GET  /api/finance/ap                  → Accounts payable (all PO payments with status)
+```
+
+### Workflow (cross-cutting)
+```
+GET  /api/workflow/status             → Every MP: phase + POs + stock + velocity + flags + health
+GET  /api/workflow/status/:id         → Single MP unified status
+GET  /api/workflow/stack              → MP lifecycle (14 build) + PO lifecycle (12 stages) definitions
+GET  /api/workflow/package/:id        → Factory package summary with completeness
+GET  /api/workflow/cashflow           → 3-month P&L projection
+GET  /api/workflow/health             → System health: active POs, overdue, committed cost
+```
+
+### Orders / Analytics
+```
+GET  /api/orders/mp-velocity          → Per-MP: units, revenue, velocity/week, seasonal adjusted, demand signal
+GET  /api/orders/sales                → Revenue summary + daily breakdown
+```
+
+### Other
+```
+GET  /api/customers, /top, /segments, /:id     → UNWIRED — needs UI module
+GET  /api/shipments, /:id, POST, PATCH, /arrive → UNWIRED — needs UI module
+POST /api/inventory/adjust, /transfer           → UNWIRED — needs form in stock module
+GET  /api/pos/today, /by-location, /feed        → Wired to pos module
+GET  /api/status                                → Connection + API version
+```
+
+## Event Bus
+
+| Event | Emitter | Listener |
+|-------|---------|----------|
+| sync:complete | settings | ALL modules (refresh data) |
+| nav:change | sidebar, home | shell (switch module) |
+| modal:open/close | any | shell (show/hide modal) |
+| toast:show | any | shell (show toast) |
+| po:created | cash-flow | vendors |
+| po:updated | cash-flow | vendors |
+| po:create-from-mp | marketplace | cash-flow (opens PO form with mpId) |
+| po:received | cash-flow | stock |
+| stock:updated | stock | pos |
+
+## Persistence (6 Blob Stores)
+
+| Store | Key pattern | What's in it |
+|-------|------------|--------------|
+| store.po | PO-2603-XXXX | Purchase orders with payments[], history[], checkIns |
+| store.shipments | SHIP-XXXX | Auto-created at PO "In Transit" |
+| store.plm | {mpId} | PLM stage, history, updatedBy |
+| store.stack | {mpId} | Tech pack data: materials, construction, sizing, QC, compliance, content |
+| store.snapshots | {date} | Inventory snapshots |
+| store.settings | {key} | App configuration |
+
+## Business Logic
+
+### Seasonal Multipliers (adjustVelocity)
+```
+Spring: 0.85x  |  BTS (Aug-Sep): 1.4x  |  Fall: 1.15x  |  Holiday (Nov-Dec): 1.6x
+```
+Reorder plan uses adjusted velocity. Analytics shows seasonal multiplier.
+
+### Demand Signals (classifyDemand)
+```
+Hot: sell-through ≥85% + velocity ≥5/wk | Rising: ≥70% + ≥3/wk
+Slow: <40% + <2/wk | Stockout: zero stock + active demand | Steady: everything else
+```
+
+### Distribution Weights
+```
+Lakewood: 30%  |  Flatbush: 20%  |  Crown Heights: 15%  |  Monsey: 25%  |  Online: 10%
+```
+
+### PO Payment Terms
+```
+Standard: 50% deposit (7 days), 50% on shipment
+Milestone: 30% deposit, 40% production, 30% shipment  
+Net30: 100% at 30 days after shipment
+```
+Auto-generated on PO creation. Includes freight+duty estimates.
+
+### Key Numbers
+$4.3M revenue, $1.1M inventory, 35 MPs, 91 styles, 63% margin, 14 vendors, $25K/mo opex, 16-24 week target cover.
 
 ## Critical Rules
 
@@ -188,283 +236,128 @@ git pull origin main     # Always pull first
 ```
 
 ### Never
-- Change Shopify API version manually — it auto-detects now
-- Use `let _data = []` for persistent data — use `lib/store.js`
-- Use `parseInt(params.days)` unbounded — use `validate.days(params)`
-- Use `fetch()` in modules — use `api.get/post/patch/del` from core.js
-- Import between frontend modules — use event bus
-- Inline store name matching — use `lib/locations.js`
-- Inline title matchers — use `lib/products.js`
-- Throw `new Error()` in handlers — use `RouteError(status, message)`
-- Build modal HTML inline — use `emit('modal:open', {...})`
+- Use `let _data = []` for persistent data → use `store.*.put()`
+- Use `parseInt(params.days)` → use `validate.days(params)`
+- Use `fetch()` in modules → use `api.get/post/patch/del` from core.js
+- Import between frontend modules → use event bus
+- Redefine domain schemas → import from `lib/domain.js`
+- Write side effects in compute functions → return actions from `lib/effects.js`
+- Inline store names → use `lib/locations.js`
+- `throw new Error()` in handlers → use `RouteError(status, msg)`
 
 ### Always
-- Use `createHandler(ROUTES, prefix)` for every Netlify function
-- Use `validate.days(params)` for day parameters
-- Use `validate.required(body, ['field1', 'field2'])` for required body fields
-- Use `validate.intParam(params, key, {min,max,fallback})` for bounded ints
-- Use `lib/products.js` for MP seeds and matching
-- Use `lib/locations.js` for store normalization
-- Use `fetchAllInventory(client)` in products.js (not inline inventory loops)
-- Add `noClient: true` to routes that don't need Shopify client
+- Use `createHandler(ROUTES, prefix)` for every function
+- Use `validate.*` for all user inputs
 - Guard event handlers with `if (!_container) return`
+- Add `noClient: true` to routes that don't need Shopify
+- Use `fetchAllInventory(client)` in products.js (not inline loops)
 
-## Product Hierarchy
+## Your Work Queue (Shendrao-san)
 
-```
-Master Product (MP) → Style (by color/fabric) → Fit → Size → Length
-```
+### HIGH — Wire Workflow to Frontend
 
-- **Suits:** Lorenzo 6, Lorenzo 4, Alexander 4, Alexander 2
-- **Shirts:** Modern (Extra Slim), Contemporary (Slim), Classic
-- **Pants:** Slim, Regular, Relaxed
+1. **Product Stack UI** — New module or tab in marketplace
+   - Show each MP's build phase (from `/api/workflow/status`)
+   - Form to edit stack data (`PATCH /api/products/stack/:id`)
+   - Completeness indicator per MP
+   - "Download Factory Package" button → `/api/products/factory-package/:id`
 
-Title matchers in `lib/products.js` map Shopify titles to MP seed IDs.
-HC360 vs HC480 split at $400 max variant price.
+2. **Cash Flow Projection** — New tab in cash-flow module
+   - Wire `/api/finance/projection` for 12-week forward view
+   - Show PO payments (planned vs actual outflow)
+   - Show revenue (projected vs actual inflow)
+   - Wire `/api/finance/ap` for payment due dates
 
-## PO Stage Pipeline (12 stages)
+3. **Unified Status Dashboard** — New module or home enhancement
+   - Wire `/api/workflow/status` for command-center view
+   - Each MP: health badge (healthy/attention/warning/critical)
+   - Flags: stockout, reorder-needed, qc-issue, payment-overdue
+   - Click → drill into MP detail
 
-```
-Concept → Design(PD✓) → Sample → Approved(PD✓) → Costed(FIN✓) →
-Ordered → Production → QC(PD✓) → Shipped → In Transit →
-Received(FIN✓) → Distribution
-```
+### MEDIUM — Wire Existing Endpoints
 
-PD/FIN stages require `checkedBy` in body. Auto-shipment fires at "In Transit".
+4. **Customers module** — `modules/customers.js` (new file)
+   - Wire `/api/customers` (list), `/api/customers/top`, `/api/customers/segments`, `/api/customers/:id`
+   - Show customer list with order history, LTV
+   - Segment breakdown
 
-## PLM Lifecycle (18 stages)
+5. **Shipments module** — `modules/shipments.js` (new file)
+   - Wire `/api/shipments` (list), CRUD
+   - Auto-created when PO hits "In Transit"
+   - Show ETD/ETA, container, vessel
 
-```
-Concept → Design Brief → Sampling → Sample Review → Costing →
-Cost Approved → Pre-Production → PO Created → Production → QC →
-Shipped → In Transit → Customs → Warehouse → Distribution →
-In-Store → Reorder Review → End of Life
-```
+6. **Inventory transfer form** — In stock module
+   - Wire `/api/inventory/transfer`
+   - From store → to store, product, quantity
 
-Persisted in Netlify Blobs (`store.plm`). Endpoints: `GET/PATCH /api/products/plm`.
+### COORDINATION RULES
 
-## Key Endpoints
+- **Don't touch**: `lib/domain.js`, `lib/workflow.js`, `lib/effects.js`, `lib/products.js`, `lib/handler.js` — Architecture session owns these
+- **Safe to touch**: All `modules/*.js`, `css/*.css`, `atica_v2.html`, `components/sidebar.js`
+- **Shared files** (pull before editing): `netlify/functions/products.js`, `netlify/functions/purchase-orders.js`
+- **Your files**: Any new module you create, any CSS additions
+- **Always pull** before working. Always `node --check` before pushing.
 
-### Products (the root)
-```
-GET  /api/products/masters        → MPs + live Shopify styles, inventory, images
-GET  /api/products/seeds          → Raw MP catalog + PLM stages (no Shopify)
-GET  /api/products/reorder        → Production planning: velocity + inventory + POs
-GET  /api/products/stock          → MP × Store inventory matrix
-GET  /api/products/plm            → PLM stages for all MPs
-PATCH /api/products/plm/:id       → Advance PLM stage with history
-GET  /api/products/trees          → Style→Fit→Size hierarchy
-```
+## How to Add a New Module
 
-### Orders / Analytics
-```
-GET  /api/orders/mp-velocity      → Velocity by Master Product
-GET  /api/orders/sales            → Revenue summary + daily breakdown
-GET  /api/orders/velocity         → Velocity by individual SKU
-```
+```javascript
+// modules/my-module.js
+import { on, emit } from './event-bus.js';
+import { api, formatCurrency, skeleton } from './core.js';
 
-### Purchase Orders
-```
-POST  /api/purchase-orders        → Create (mpId auto-fills from seed)
-GET   /api/purchase-orders        → List all
-GET   /api/purchase-orders/:id    → Single PO
-PATCH /api/purchase-orders/:id    → Edit fields
-PATCH /api/purchase-orders/:id/stage → Advance (PD/FIN gates)
-DELETE /api/purchase-orders/:id   → Delete
-GET   /api/purchase-orders/stages → Stage definitions
-```
+let _container = null;
 
-### Other
-```
-GET  /api/inventory               → All locations + levels
-POST /api/inventory/adjust        → Adjust stock (UNWIRED to UI)
-POST /api/inventory/transfer      → Transfer stock (UNWIRED to UI)
-GET  /api/customers/*             → List, detail, top, segments (UNWIRED to UI)
-GET  /api/shipments/*             → CRUD (UNWIRED to UI)
-GET  /api/pos/today               → Today's sales by store
-GET  /api/pos/feed                → Recent transactions
-GET  /api/ledger                  → Financial entries
-GET  /api/status                  → Connection check + API version
+export async function init(container) {
+  _container = container;
+  container.innerHTML = `<div id="my-content">${skeleton(6)}</div>`;
+  const data = await api.get('/api/my-endpoint');
+  // render...
+}
+
+export function destroy() { _container = null; }
+
+// Top-level event listeners (guarded)
+on('sync:complete', async () => { if (!_container) return; /* refresh */ });
 ```
 
-## Endpoint → Module Wiring
-
-| Module | Endpoints Used |
-|--------|---------------|
-| marketplace | products/masters, products/sync, purchase-orders |
-| cash-flow | orders/sales, products/reorder, products/seeds, purchase-orders, purchase-orders/stages, ledger |
-| stock | products/masters, inventory, products/stock |
-| analytics | orders/mp-velocity, orders/sales |
-| vendors | products/seeds, purchase-orders |
-| pos | pos/today, pos/feed |
-| ledger | ledger |
-| settings | status, status/cache, status/webhooks, products/sync, orders/sync, inventory/sync |
-| home | (none — tiles only) |
-
-**UNWIRED (backend exists, no module uses them):**
-- `/api/products/plm` + `plm/:id` — PLM tracking
-- `/api/customers/*` — 4 endpoints, zero UI
-- `/api/shipments/*` — CRUD, zero UI
-- `/api/inventory/adjust` + `/transfer` — zero UI
-- `/api/products/sku-map` — zero UI
-- `/api/pos/by-location` — exists but pos module doesn't use it
-
-## Event Bus
-
-| Event | Emitter → Listener |
-|-------|-------------------|
-| `sync:complete` | settings → ALL modules (8 listeners) |
-| `nav:change` | sidebar, home → shell |
-| `modal:open/close` | any module → shell |
-| `toast:show` | any module → shell |
-| `po:created` | cash-flow → vendors |
-| `po:updated` | cash-flow → vendors |
-| `po:create-from-mp` | marketplace → cash-flow (opens PO form with mpId) |
-| `po:received` | cash-flow → stock |
-| `stock:updated` | stock → pos (stub) |
-
-## Persistence
-
-| Data | Storage | Pattern |
-|------|---------|---------|
-| Products, orders, inventory | Shopify (source of truth) + in-memory cache | `client.getProducts()` → `cache.set()` |
-| Purchase orders | Netlify Blobs (`store.po`) | `store.po.get/put/getAll` |
-| Shipments | Netlify Blobs (`store.shipments`) | same |
-| PLM stages | Netlify Blobs (`store.plm`) | same |
-| Inventory snapshots | Netlify Blobs (`store.snapshots`) | same |
-| App settings | Netlify Blobs (`store.settings`) | same |
-
-`store.getAll()` reads in parallel batches of 10 (not sequential).
-
-## Cache
-
-Each function gets its own esbuild-bundled cache copy. TTLs:
-
-| Key | TTL | Notes |
-|-----|-----|-------|
-| products | 5 min | Products rarely change |
-| orders | 1 min | Orders flow in |
-| inventory | 2 min | Changes often |
-| velocity | 3 min | Aggregated, stable |
-| pos | 1 min | Real-time-ish |
-| status | 30 sec | Connection check |
-
-`cache.makeKey()` sorts params for deterministic keys.
-
-## Env Vars (Netlify)
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `SHOPIFY_STORE_URL` | Yes | `atica-brand.myshopify.com` (fallback to `atica-brand`) |
-| `SHOPIFY_ACCESS_TOKEN` | Yes | `shpat_...` |
-| `SKIP_AUTH` | Yes | `true` |
-| `SHOPIFY_API_VERSION` | Optional | Auto-detected if not set |
-
-## What Needs Work
-
-### High Priority — Business Logic
-- [x] **Seasonal multipliers in reorder** — adjustVelocity() in reorder + mp-velocity, seasonal badge in analytics
-- [x] **Demand signals** — classifyDemand() in backend, signal badges in analytics table + summary panel
-- [x] **Cash-flow cost projection** — 12-week forward projection table with cumulative net, velocity × retail revenue, velocity × landed COGS, PO cost spread
-- [x] **Distribution weights** — ideal vs actual comparison bar in stock matrix view
-
-### High Priority — Wiring
-- [x] Wire PLM to marketplace detail modal — show current stage, allow advancement
-- [x] MP detail size grid — available sizes per fit per style (the full matrix)
-- [x] Customers module — list, detail+orders, top spenders, segments with tier breakdown
-- [x] Customer loyalty tiers — Bronze→Diamond with LTV thresholds, discount %, points multiplier
-
-### Medium Priority
-- [x] Shipments module — list, detail modal, update, arrive with event timeline
-- [x] Inventory transfer form — stock module Transfer tab with product/location selects, qty validation
-- [ ] Vendor scoring — add onTime%, qualScore, tier (Strategic/Preferred/Standard/Transactional) to vendor data
-- [ ] PO payment schedule — each PO has deposit/balance/final payments with due dates and status
-- [x] PO bulk actions — select multiple POs, export CSV, bulk delete with confirmation
-
-### Future — Not Built Yet
-- [ ] Wholesale accounts — 5 accounts with credit limits, terms, discount rates
-- [ ] Components/BOM — fabric, lining, buttons per product
-- [ ] Campaigns — marketing campaigns with budget, dates
-- [ ] QuickBooks integration — AP/AR sync
-- [ ] Lightspeed POS integration — retail store data
-- [ ] Command palette (Cmd+K) — global search
-- [ ] Role-based nav — sidebar items by role
-
-### Lower Priority
-- [ ] Monolith → v2 migration plan
-- [ ] Remove dead code (stocky.js, oauth-callback.js)
-- [ ] Branch protection, CI pipeline
-
-### Done (do not rebuild)
-- [x] Analytics module — velocity, category bars, daily chart, 7/30/90d
-- [x] Vendors module — vendor cards, MP product lines, PO rollup
-- [x] MP detail with Quick PO + Full Form
-- [x] PO detail with stage track, check-ins, history, advancement
-- [x] PO edit form with Edit/Save toggle
-- [x] PO auto-shipment on "In Transit"
-- [x] Reorder plan with lead-time urgency + active PO cross-reference
-- [x] Stock matrix (MP × Store grid)
-- [x] Modal system with onMount callback
-- [x] Mobile sidebar (hamburger + backdrop)
-- [x] Store + API version auto-detection (2 stores × 6 versions)
-- [x] Input validation standardized (validate.days, required, intParam)
-- [x] Module loader bug fix (destroys correct module)
-- [x] Global error boundary
-- [x] API client timeout (15s)
-- [x] Cache key determinism
-- [x] Parallel blob reads (batches of 10)
-- [x] Cached inventory helper (shared by reorder + stock)
-- [x] PLM endpoint — persist via Netlify Blobs, GET/PATCH /api/products/plm/:id, gate enforcement, history
-- [x] Settings diagnostics (API version, store URL, hints)
-- [x] MP detail size grid — Style → Fit → Size matrix with availability checkmarks, per-fit totals
-- [x] Cash-flow cost breakdown — revenue vs PO costs, net position, stage cost rollup, margin, visual bar
-- [x] PO creation form with MP dropdown and seed auto-fill
-- [x] API version configurable via SHOPIFY_API_VERSION env var
+Then add to `components/sidebar.js` and wire the route in `atica_v2.html`.
 
 ## How to Add a New MP
 
-1. Add seed to `MP_SEEDS` in `lib/products.js`
-2. Add title matcher to `TITLE_MATCHERS`
-3. If key differs from seed ID, add alias to `ALIASES`
-4. Test: `node -e "const p = require('./lib/products'); console.log(p.matchProduct('Your Title'))"`
-
-## How to Add a New Netlify Function
-
-```javascript
-const { createHandler, RouteError, validate } = require('../../lib/handler');
-const cache = require('../../lib/cache');
-
-async function myHandler(client, { params, body, pathParams }) {
-  const days = validate.days(params);
-  // ...
-  return { data: 'response' };
-}
-
-const ROUTES = [
-  { method: 'GET', path: '', handler: myHandler },
-];
-exports.handler = createHandler(ROUTES, 'my-endpoint');
+```bash
+# 1. Add seed to MP_SEEDS in lib/products.js
+# 2. Add title matcher to TITLE_MATCHERS
+# 3. If key differs from seed ID, add alias to ALIASES
+# 4. Test:
+node -e "const p = require('./lib/products'); console.log(p.matchProduct('Your Title'))"
 ```
 
-Then add to `netlify.toml` before the SPA fallback.
+## Env Vars (Netlify)
+
+| Variable | Value |
+|----------|-------|
+| SHOPIFY_STORE_URL | atica-brand.myshopify.com |
+| SHOPIFY_ACCESS_TOKEN | (set in Netlify — do not commit) |
+| SHOPIFY_API_VERSION | 2025-04 |
+| SKIP_AUTH | true |
 
 ## Testing
 
 ```bash
-node --check lib/products.js
-node --check netlify/functions/orders.js
+# Validate all files
+for f in lib/*.js netlify/functions/*.js; do node --check "$f"; done
 
+# Test domain model
 node -e "
+const d = require('./lib/domain');
+const w = require('./lib/workflow');
+const e = require('./lib/effects');
 const p = require('./lib/products');
-const l = require('./lib/locations');
-const h = require('./lib/handler');
+console.log('Domain:', Object.keys(d).length, 'exports');
+console.log('Workflow:', Object.keys(w).length, 'exports');
+console.log('Effects:', Object.keys(e).length, 'exports');
 console.log('MPs:', p.MP_SEEDS.length);
-console.log('Match:', p.matchProduct('Londoner White Shirt'));
-console.log('Location:', l.normalize('crown heights'));
-console.log('Validate:', Object.keys(h.validate));
+console.log('Match:', p.matchProduct('Londoner White'));
+console.log('Season Mar:', p.getSeasonalMultiplier(3));
 "
 ```
-
-## Coordination
-
-Multiple Claude sessions share this repo. Push to main directly (no branch protection yet). Always pull before working. Architecture session (Nikita) governs lib/ and system design. Shendrao-san handles feature implementation. Check `docs/ARCHITECTURE.md` for patterns.

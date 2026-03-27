@@ -23,23 +23,8 @@ const cache = require('../../lib/cache');
 const store = require('../../lib/store');
 
 // ── Shared Helpers ─────────────────────────────────────────
-// Inventory fetch is expensive (sequential per location).
-// Cache it within this function's memory so reorder + stock share it.
 
-async function fetchAllInventory(client) {
-  const ck = cache.makeKey('_inv_all', {});
-  const cached = cache.get(ck);
-  if (cached) return cached;
-
-  const { locations } = await client.getLocations();
-  const result = [];
-  for (const loc of locations) {
-    const { inventory_levels } = await client.getInventoryLevels(loc.id);
-    result.push({ id: loc.id, name: loc.name, levels: inventory_levels });
-  }
-  cache.set(ck, result, cache.CACHE_TTL.inventory);
-  return result;
-}
+const { fetchAllInventory, fetchInventoryFlat } = require('../../lib/inventory');
 
 // ── Handlers ────────────────────────────────────────────────
 
@@ -539,22 +524,358 @@ async function updatePlmStage(_, { pathParams, body }) {
   return { updated: true, mpId, name: seed.name, plmStage: stageDef.name, plmStageId: stageDef.id, gate: stageDef.gate };
 }
 
+// ── Factory Package ─────────────────────────────────────────
+// Generates everything a vendor needs to produce a product.
+// Combines MP seed data + PLM artifacts + PO details.
+
+// ── Product Stack Data ──────────────────────────────────────
+// Persists per-MP specifications that populate factory packages.
+// Fabric, construction, sizing charts, QC requirements, etc.
+// This is the "tech pack data" layer.
+
+async function getStackData(client, { pathParams }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  const data = await store.stack.get(mpId) || {};
+  const plm = await store.plm.get(mpId) || {};
+
+  return {
+    mpId,
+    name: seed.name,
+    code: seed.code,
+    cat: seed.cat,
+    phase: plm.plmStage || 'In-Store',
+    // Stack data sections — empty defaults for anything not yet filled
+    materials: {
+      fabricType: data.fabricType || '',
+      fabricWeight: data.fabricWeight || '',
+      fabricComp: data.fabricComp || '',
+      fabricMill: data.fabricMill || '',
+      colorways: data.colorways || [],
+      washCare: data.washCare || '',
+    },
+    construction: {
+      seams: data.seams || '',
+      stitching: data.stitching || '',
+      buttons: data.buttons || '',
+      zippers: data.zippers || '',
+      lining: data.lining || '',
+      interlining: data.interlining || '',
+      labels: data.labels || '',
+      packaging: data.packaging || '',
+    },
+    sizing: {
+      sizeChart: data.sizeChart || null,
+      grading: data.grading || null,
+      fitNotes: data.fitNotes || '',
+      tolerances: data.tolerances || '',
+      measurementPoints: data.measurementPoints || [],
+    },
+    quality: {
+      aqlLevel: data.aqlLevel || '2.5',
+      qcChecklist: data.qcChecklist || [],
+      testReports: data.testReports || [],
+      approvedSamples: data.approvedSamples || [],
+    },
+    logistics: {
+      packingInstructions: data.packingInstructions || '',
+      labelRequirements: data.labelRequirements || '',
+      shippingMarks: data.shippingMarks || '',
+      cartonSpecs: data.cartonSpecs || '',
+    },
+    compliance: {
+      countryOfOrigin: data.countryOfOrigin || seed.country || '',
+      careLabels: data.careLabels || '',
+      hangTags: data.hangTags || '',
+    },
+    content: {
+      description: data.description || '',
+      tagline: data.tagline || '',
+      features: data.features || seed.features || [],
+      heroImage: data.heroImage || seed.heroImg || null,
+      additionalImages: data.additionalImages || [],
+    },
+    updatedAt: data._updatedAt || null,
+  };
+}
+
+async function updateStackData(client, { pathParams, body }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  const existing = await store.stack.get(mpId) || {};
+
+  // Optimistic locking — if client sends _updatedAt, verify it matches
+  if (body._updatedAt && existing._updatedAt && body._updatedAt !== existing._updatedAt) {
+    throw new RouteError(409, 'Conflict: stack data was modified since you loaded it. Reload and try again.');
+  }
+
+  const updated = { ...existing };
+  const allowed = [
+    'fabricType', 'fabricWeight', 'fabricComp', 'fabricMill', 'colorways', 'washCare',
+    'seams', 'stitching', 'buttons', 'zippers', 'lining', 'interlining', 'labels', 'packaging',
+    'sizeChart', 'grading', 'fitNotes', 'tolerances', 'measurementPoints',
+    'aqlLevel', 'qcChecklist', 'testReports', 'approvedSamples',
+    'packingInstructions', 'labelRequirements', 'shippingMarks', 'cartonSpecs',
+    'countryOfOrigin', 'careLabels', 'hangTags',
+    'description', 'tagline', 'features', 'heroImage', 'additionalImages',
+  ];
+
+  // Track what changed for audit trail
+  const changes = [];
+  for (const key of allowed) {
+    if (body[key] !== undefined && JSON.stringify(body[key]) !== JSON.stringify(existing[key])) {
+      changes.push({ field: key, from: existing[key] || null, to: body[key] });
+      updated[key] = body[key];
+    }
+  }
+
+  if (changes.length === 0) {
+    return { updated: false, mpId, message: 'No changes detected' };
+  }
+
+  // Audit trail
+  updated.mpId = mpId;
+  updated.history = [...(existing.history || []), {
+    at: new Date().toISOString(),
+    by: body.updatedBy || null,
+    changes,
+  }];
+
+  await store.stack.put(mpId, updated);
+
+  // Compute completeness
+  let filled = 0;
+  for (const key of allowed) {
+    const val = updated[key];
+    if (val && val !== '' && !(Array.isArray(val) && val.length === 0)) filled++;
+  }
+
+  return {
+    updated: true,
+    mpId,
+    changesCount: changes.length,
+    completeness: Math.round((filled / allowed.length) * 100),
+    updatedAt: updated._updatedAt,
+  };
+}
+
+// ── Factory Package (enhanced with stack data) ──────────────
+
+const { FACTORY_PACKAGE_SECTIONS, MP_STATUS_RULES } = require('../../lib/domain');
+
+async function factoryPackage(client, { pathParams }) {
+  const mpId = decodeURIComponent(pathParams.id);
+  const seed = MP_BY_ID[mpId];
+  if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
+
+  // Get PLM + stack data + POs in parallel
+  const [plm, stackData, allPOs] = await Promise.all([
+    store.plm.get(mpId).catch(() => ({})),
+    store.stack.get(mpId).catch(() => ({})),
+    store.po.getAll().catch(() => []),
+  ]);
+
+  const pos = allPOs.filter(po => po.mpId === mpId);
+  const latestPO = pos.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))[0] || null;
+  const sd = stackData || {};
+
+  const pkg = {
+    generatedAt: new Date().toISOString(),
+    mpId: seed.id,
+    productIdentity: {
+      name: seed.name,
+      code: seed.code,
+      category: seed.cat,
+      vendor: seed.vendor,
+      description: sd.description || '',
+      tagline: sd.tagline || '',
+      features: sd.features || seed.features || [],
+      heroImg: sd.heroImage || seed.heroImg || null,
+    },
+    techSpecs: {
+      fits: seed.fits || [],
+      sizes: seed.sizes || null,
+      construction: sd.construction || '',
+    },
+    materials: {
+      fabricType: sd.fabricType || '',
+      fabricWeight: sd.fabricWeight || '',
+      fabricComp: sd.fabricComp || '',
+      fabricMill: sd.fabricMill || '',
+      colorways: sd.colorways || [],
+      washCare: sd.washCare || '',
+      lining: sd.lining || '',
+      buttons: sd.buttons || '',
+      labels: sd.labels || '',
+      packaging: sd.packaging || '',
+    },
+    costing: {
+      fob: seed.fob,
+      retail: seed.retail,
+      duty: seed.duty || 0,
+      hts: seed.hts || null,
+      landedCost: +(seed.fob * (1 + (seed.duty || 0) / 100 + 0.08)).toFixed(2),
+      margin: seed.retail > 0 ? +((1 - seed.fob * 1.34 / seed.retail) * 100).toFixed(1) : null,
+      moq: seed.moq || null,
+      lead: seed.lead || null,
+    },
+    sizing: {
+      sizeChart: sd.sizeChart || null,
+      grading: sd.grading || null,
+      fitNotes: sd.fitNotes || '',
+      tolerances: sd.tolerances || '',
+    },
+    quality: {
+      aqlLevel: sd.aqlLevel || '2.5',
+      qcChecklist: sd.qcChecklist || [],
+    },
+    shipping: latestPO ? {
+      etd: latestPO.etd || null,
+      container: latestPO.container || null,
+      packingInstructions: sd.packingInstructions || '',
+    } : { etd: null, container: null, packingInstructions: sd.packingInstructions || '' },
+    compliance: {
+      countryOfOrigin: sd.countryOfOrigin || seed.country || '',
+      careLabels: sd.careLabels || '',
+      hangTags: sd.hangTags || '',
+    },
+    plmStatus: {
+      currentStage: (plm || {}).plmStage || 'Concept',
+      stageId: (plm || {}).plmStageId || 1,
+    },
+    activePOs: pos.map(po => ({
+      id: po.id, stage: po.stage, units: po.units || 0,
+      fobTotal: po.fobTotal || 0, etd: po.etd || null,
+    })),
+    sections: FACTORY_PACKAGE_SECTIONS.map(s => s.label),
+  };
+
+  // Compute completeness — how much of the tech pack is filled
+  const checkFields = [
+    sd.fabricType, sd.fabricWeight, sd.fabricComp, sd.fabricMill,
+    sd.sizeChart, sd.grading, sd.fitNotes,
+    sd.description, sd.countryOfOrigin,
+    seed.fob, seed.hts, seed.fits, seed.sizes,
+    latestPO?.etd, latestPO?.styles,
+  ];
+  const filled = checkFields.filter(v => v && v !== '' && !(Array.isArray(v) && v.length === 0)).length;
+  pkg.completeness = Math.round((filled / checkFields.length) * 100);
+
+  return { package: pkg };
+}
+
+// ── MP Status (derived) ─────────────────────────────────────
+
+async function mpStatus(client, { params }) {
+  const days = validate.days(params);
+
+  // Fetch all data sources
+  const [productsData, ordersData] = await Promise.all([
+    client.getProducts(),
+    client.getOrders({ created_at_min: sinceDate(days) }),
+  ]);
+
+  const { matched } = matchAll(productsData.products);
+
+  // Build velocity by MP
+  const productIdToMP = {};
+  for (const [seedId, shopifyProducts] of Object.entries(matched)) {
+    for (const sp of shopifyProducts) productIdToMP[sp.id] = seedId;
+  }
+  const mpVelocity = {};
+  for (const order of ordersData.orders) {
+    for (const li of order.line_items) {
+      const mpId = productIdToMP[li.product_id];
+      if (!mpId) continue;
+      if (!mpVelocity[mpId]) mpVelocity[mpId] = 0;
+      mpVelocity[mpId] += li.quantity;
+    }
+  }
+
+  // Get PLM + PO data
+  let plmData = [], poData = [];
+  plmData = await store.plm.getAll();
+  poData = await store.po.getAll();
+
+  const plmByMP = {};
+  for (const p of plmData) plmByMP[p.mpId || p.key] = p;
+  const posByMP = {};
+  for (const po of poData) {
+    if (!po.mpId) continue;
+    if (!posByMP[po.mpId]) posByMP[po.mpId] = [];
+    posByMP[po.mpId].push(po);
+  }
+
+  const statuses = MP_SEEDS.map(seed => {
+    const plm = plmByMP[seed.id] || {};
+    const pos = posByMP[seed.id] || [];
+    const activePOs = pos.filter(po => !['Received', 'Distribution'].includes(po.stage));
+    const unitsSold = mpVelocity[seed.id] || 0;
+
+    // Compute inventory (simplified — uses matched product variant totals)
+    let totalInventory = 0;
+    const matchedProducts = matched[seed.id] || [];
+    for (const sp of matchedProducts) {
+      for (const v of sp.variants) totalInventory += (v.inventory_quantity || 0);
+    }
+
+    const unitsPerDay = unitsSold / days;
+    const daysOfStock = unitsPerDay > 0 ? Math.round(totalInventory / unitsPerDay) : totalInventory > 0 ? 999 : 0;
+
+    const mpData = {
+      plmStage: plm.plmStageId || (totalInventory > 0 ? 12 : 1),
+      activePOs: activePOs.length,
+      totalInventory,
+      daysOfStock,
+      unitsSold,
+    };
+
+    return {
+      mpId: seed.id,
+      name: seed.name,
+      code: seed.code,
+      cat: seed.cat,
+      vendor: seed.vendor,
+      status: MP_STATUS_RULES.compute(mpData),
+      plmStage: plm.plmStage || (totalInventory > 0 ? 'In-Store' : 'Concept'),
+      activePOs: activePOs.length,
+      totalInventory,
+      daysOfStock: Math.min(daysOfStock, 999),
+      unitsSold,
+    };
+  });
+
+  // Count by status
+  const counts = {};
+  for (const s of statuses) counts[s.status] = (counts[s.status] || 0) + 1;
+
+  return { days, counts, products: statuses };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
-  { method: 'GET',   path: '',                handler: listProducts },
-  { method: 'POST',  path: 'sync',            handler: syncProducts },
-  { method: 'GET',   path: 'titles',          handler: listTitles },
-  { method: 'GET',   path: 'trees',           handler: productTrees },
-  { method: 'GET',   path: 'masters',         handler: masterProducts },
-  { method: 'GET',   path: 'seeds',           handler: seedCatalog,    noClient: true },
-  { method: 'GET',   path: 'reorder',         handler: reorderPlan },
-  { method: 'GET',   path: 'stock',           handler: stockByLocation },
-  { method: 'GET',   path: 'plm',             handler: getPlmStages,   noClient: true },
-  { method: 'PATCH', path: 'plm/:id',         handler: updatePlmStage, noClient: true },
-  { method: 'GET',   path: 'sku-map',         handler: skuMap },
-  { method: 'PATCH', path: 'sku-map/:sku',    handler: updateSKU,      noClient: true },
-  { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU, noClient: true },
+  { method: 'GET',   path: '',                   handler: listProducts },
+  { method: 'POST',  path: 'sync',               handler: syncProducts },
+  { method: 'GET',   path: 'titles',             handler: listTitles },
+  { method: 'GET',   path: 'trees',              handler: productTrees },
+  { method: 'GET',   path: 'masters',            handler: masterProducts },
+  { method: 'GET',   path: 'seeds',              handler: seedCatalog,       noClient: true },
+  { method: 'GET',   path: 'reorder',            handler: reorderPlan },
+  { method: 'GET',   path: 'stock',              handler: stockByLocation },
+  { method: 'GET',   path: 'status',             handler: mpStatus },
+  { method: 'GET',   path: 'plm',                handler: getPlmStages,      noClient: true },
+  { method: 'PATCH', path: 'plm/:id',            handler: updatePlmStage,    noClient: true },
+  { method: 'GET',   path: 'stack/:id',          handler: getStackData,      noClient: true },
+  { method: 'PATCH', path: 'stack/:id',          handler: updateStackData,   noClient: true },
+  { method: 'GET',   path: 'factory-package/:id', handler: factoryPackage,   noClient: true },
+  { method: 'GET',   path: 'sku-map',            handler: skuMap },
+  { method: 'PATCH', path: 'sku-map/:sku',       handler: updateSKU,         noClient: true },
+  { method: 'POST',  path: 'sku-map/confirm-all', handler: confirmAllSKU,    noClient: true },
 ];
 
 exports.handler = createHandler(ROUTES, 'products');

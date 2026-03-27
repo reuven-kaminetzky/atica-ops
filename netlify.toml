@@ -1,12 +1,18 @@
 [build]
-  publish = "."
-  functions = "netlify/functions"
+  command = "npm run build:next"
+  publish = ".next"
 
 [functions]
   node_bundler = "esbuild"
+  directory = "netlify/functions"
   included_files = ["lib/**"]
 
-# ── Modular API routes (new) ──────────────────────────────────────────
+# ── Legacy API routes (Netlify Functions — used by v1/v2) ─────────
+[[redirects]]
+  from   = "/api/shopify/*"
+  to     = "/.netlify/functions/shopify/:splat"
+  status = 200
+
 [[redirects]]
   from   = "/api/products/*"
   to     = "/.netlify/functions/products/:splat"
@@ -43,6 +49,11 @@
   status = 200
 
 [[redirects]]
+  from   = "/api/finance/*"
+  to     = "/.netlify/functions/finance/:splat"
+  status = 200
+
+[[redirects]]
   from   = "/api/purchase-orders/*"
   to     = "/.netlify/functions/purchase-orders/:splat"
   status = 200
@@ -57,13 +68,12 @@
   to     = "/.netlify/functions/shipments/:splat"
   status = 200
 
-# ── Webhooks ──────────────────────────────────────────────────
 [[redirects]]
   from   = "/api/webhooks/shopify"
   to     = "/.netlify/functions/webhooks-shopify"
   status = 200
 
-# ── V2 Modular Shell ─────────────────────────────────────────
+# ── Legacy HTML shells ────────────────────────────────────────
 [[redirects]]
   from   = "/v2"
   to     = "/atica_v2.html"
@@ -74,11 +84,10 @@
   to     = "/atica_v2.html"
   status = 200
 
-# ── SPA fallback (must be last) ───────────────────────────────────────
 [[redirects]]
-  from   = "/*"
+  from   = "/v1"
   to     = "/atica_app.html"
   status = 200
 
 [context.production.environment]
-  NODE_VERSION = "18"
+  NODE_VERSION = "20"

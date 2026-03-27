@@ -15,8 +15,9 @@
 const { createHandler, RouteError, validate } = require('../../lib/handler');
 const { MP_SEEDS, MP_BY_ID, matchAll, classifyDemand, adjustVelocity } = require('../../lib/products');
 const { sinceDate } = require('../../lib/analytics');
-const { PRODUCT_STACK, ONGOING_PHASES, computeMPStatus, buildFactoryPackage,
-        projectCashFlow, CASH_FLOW_CATEGORIES, DEFAULT_PAYMENT_TERMS } = require('../../lib/workflow');
+const { MP_LIFECYCLE, PO_LIFECYCLE, CASH_FLOW_CONFIG, FACTORY_PACKAGE_SECTIONS } = require('../../lib/domain');
+const { computeMPStatus, projectCashFlow } = require('../../lib/workflow');
+const { fetchInventoryFlat } = require('../../lib/inventory');
 const cache = require('../../lib/cache');
 const store = require('../../lib/store');
 
@@ -32,17 +33,9 @@ async function unifiedStatus(client, { params }) {
   const [productsData, ordersData, inventoryData, posData, plmData] = await Promise.all([
     client.getProducts(),
     client.getOrders({ created_at_min: sinceDate(days) }),
-    (async () => {
-      const { locations } = await client.getLocations();
-      const levels = {};
-      for (const loc of locations) {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        for (const l of inventory_levels) levels[l.inventory_item_id] = (levels[l.inventory_item_id] || 0) + (l.available || 0);
-      }
-      return levels;
-    })(),
-    (async () => { try { return await store.po.getAll(); } catch(e) { return []; } })(),
-    (async () => { try { return await store.plm.getAll(); } catch(e) { return []; } })(),
+    fetchInventoryFlat(client),
+    store.po.getAll(),
+    store.plm.getAll(),
   ]);
 
   // Build lookups
@@ -133,26 +126,52 @@ async function mpStatus(client, { params, pathParams }) {
 // ── Product Stack Definitions ───────────────────────────────
 
 async function stackDefinitions() {
+  const buildPhases = MP_LIFECYCLE.filter(s => s.id <= 7);
+  const productionPhases = MP_LIFECYCLE.filter(s => s.id >= 8 && s.id <= 11);
+  const ongoingPhases = MP_LIFECYCLE.filter(s => s.id >= 12);
   return {
-    phases: PRODUCT_STACK,
-    ongoing: ONGOING_PHASES,
-    totalPhases: PRODUCT_STACK.length + ONGOING_PHASES.length,
+    phases: MP_LIFECYCLE,
+    build: buildPhases,
+    production: productionPhases,
+    ongoing: ongoingPhases,
+    totalPhases: MP_LIFECYCLE.length,
+    poStages: PO_LIFECYCLE,
   };
 }
 
 // ── Factory Package ─────────────────────────────────────────
+// Delegates to /api/products/factory-package/:id for the full tech pack.
+// This endpoint returns the quick summary version.
 
 async function factoryPackage(client, { pathParams }) {
   const mpId = decodeURIComponent(pathParams.id);
   const seed = MP_BY_ID[mpId];
   if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
 
-  // Get stack data (persisted phase data with specs)
-  let stackData = null;
-  try { stackData = await store.plm.get(mpId); } catch(e) {}
+  const [stackData, plm, allPOs] = await Promise.all([
+    store.stack.get(mpId).catch(() => ({})),
+    store.plm.get(mpId).catch(() => ({})),
+    store.po.getAll().catch(() => []),
+  ]);
 
-  const pkg = buildFactoryPackage(seed, stackData);
-  return { mpId, name: seed.name, code: seed.code, package: pkg };
+  const pos = allPOs.filter(po => po.mpId === mpId);
+  const sd = stackData || {};
+
+  // Completeness — how much of the tech pack is filled
+  const checkFields = [
+    sd.fabricType, sd.fabricWeight, sd.fabricComp, sd.sizeChart,
+    sd.description, sd.countryOfOrigin, seed.fob, seed.hts, seed.fits,
+  ];
+  const filled = checkFields.filter(v => v && v !== '' && !(Array.isArray(v) && v.length === 0)).length;
+
+  return {
+    mpId, name: seed.name, code: seed.code,
+    phase: (plm || {}).plmStage || 'In-Store',
+    completeness: Math.round((filled / checkFields.length) * 100),
+    activePOs: pos.length,
+    sections: FACTORY_PACKAGE_SECTIONS.map(s => s.label),
+    hint: `Full package at /api/products/factory-package/${mpId}`,
+  };
 }
 
 // ── Cash Flow Projection ────────────────────────────────────
@@ -162,16 +181,14 @@ async function cashFlowProjection(client, { params }) {
   const days = validate.days(params, 30);
 
   const [posData, ordersData] = await Promise.all([
-    (async () => { try { return await store.po.getAll(); } catch(e) { return []; } })(),
+    store.po.getAll(),
     client.getOrders({ created_at_min: sinceDate(days) }),
   ]);
 
-  // Calculate revenue run rate
   const totalRevenue = ordersData.orders.reduce((s, o) =>
     s + parseFloat(o.total_price || o.subtotal_price || 0), 0);
   const revenuePerMonth = +(totalRevenue / days * 30.44).toFixed(2);
 
-  // Current month actual
   const monthStart = new Date();
   monthStart.setDate(1); monthStart.setHours(0,0,0,0);
   const currentMonthRevenue = ordersData.orders
@@ -187,8 +204,7 @@ async function cashFlowProjection(client, { params }) {
     months,
     basedOnDays: days,
     revenueRunRate: revenuePerMonth,
-    categories: CASH_FLOW_CATEGORIES,
-    paymentTerms: DEFAULT_PAYMENT_TERMS,
+    opexMonthly: CASH_FLOW_CONFIG.opexMonthly,
     projections,
   };
 }
@@ -201,8 +217,8 @@ async function systemHealth(client) {
   if (cached) return cached;
 
   const [posData, plmData] = await Promise.all([
-    (async () => { try { return await store.po.getAll(); } catch(e) { return []; } })(),
-    (async () => { try { return await store.plm.getAll(); } catch(e) { return []; } })(),
+    store.po.getAll(),
+    store.plm.getAll(),
   ]);
 
   const activePOs = posData.filter(po => !['Received', 'Distribution'].includes(po.stage));

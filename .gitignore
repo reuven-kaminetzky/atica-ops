@@ -4,3 +4,4 @@ node_modules/
 .netlify/
 *.log
 .DS_Store
+.next/

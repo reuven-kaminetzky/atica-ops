@@ -14,28 +14,22 @@
  *   DELETE /api/purchase-orders/:id          → delete PO
  */
 
-const { createHandler, RouteError, validate } = require('../../lib/handler');
+const { createHandler, RouteError } = require('../../lib/handler');
 const store = require('../../lib/store');
 const { MP_BY_ID } = require('../../lib/products');
+const { onPOStageAdvanced, generatePaymentSchedule: generatePaymentsFromPO, refreshPaymentStatuses, executeAction } = require('../../lib/effects');
 
-// ── PO Stages (aligned with PLM check-in gates) ────────────
-// PD = Product Development sign-off
-// FIN = Finance sign-off
+// ── PO Stages — from canonical domain model ─────────────────
+const { PO_LIFECYCLE } = require('../../lib/domain');
 
-const STAGES = [
-  { name: 'Concept',      gate: null,   desc: 'Initial product idea' },
-  { name: 'Design',       gate: 'pd',   desc: 'PD reviews design brief' },
-  { name: 'Sample',       gate: null,   desc: 'Sample ordered from vendor' },
-  { name: 'Approved',     gate: 'pd',   desc: 'PD approves sample quality' },
-  { name: 'Costed',       gate: 'fin',  desc: 'Finance approves cost/margin' },
-  { name: 'Ordered',      gate: null,   desc: 'PO placed with vendor' },
-  { name: 'Production',   gate: null,   desc: 'Factory producing' },
-  { name: 'QC',           gate: 'pd',   desc: 'PD inspects production quality' },
-  { name: 'Shipped',      gate: null,   desc: 'Left factory' },
-  { name: 'In Transit',   gate: null,   desc: 'On vessel/container' },
-  { name: 'Received',     gate: 'fin',  desc: 'Finance confirms receipt + payment' },
-  { name: 'Distribution', gate: null,   desc: 'Distributed to stores' },
-];
+// Map domain model shape to the shape this function expects
+const STAGES = PO_LIFECYCLE.map(s => ({
+  name: s.name,
+  gate: s.gate,
+  desc: s.desc,
+  dataGate: s.dataGate || null,
+  sideEffects: s.sideEffects || [],
+}));
 
 const STAGE_NAMES = STAGES.map(s => s.name);
 
@@ -146,8 +140,14 @@ async function createPO(client, { body }) {
     eta:        body.eta || null,
     container:  body.container || null,
     vessel:     body.vessel || null,
-    // Financial
-    payments:   body.payments || [],
+    // Financial — auto-generate payment schedule if none provided
+    payments:   body.payments && body.payments.length > 0
+      ? body.payments
+      : generatePaymentSchedule(
+          +(( body.fob ?? seed?.fob ?? 0) * (body.units ?? body.totalUnits ?? 0)).toFixed(2),
+          body.etd || null,
+          body.paymentTerms || 'standard'
+        ),
     // Meta
     notes:      body.notes || '',
     tags:       body.tags || [],
@@ -164,6 +164,11 @@ async function updatePO(client, { pathParams, body }) {
   const id = decodeURIComponent(pathParams.id);
   const existing = await store.po.get(id);
   if (!existing) throw new RouteError(404, `PO not found: ${id}`);
+
+  // Optimistic locking — prevent concurrent overwrites
+  if (body._updatedAt && existing.updatedAt && body._updatedAt !== existing.updatedAt) {
+    throw new RouteError(409, 'Conflict: PO was modified since you loaded it. Reload and try again.');
+  }
 
   validatePO(body, true);
 
@@ -277,37 +282,26 @@ async function advanceStage(client, { pathParams, body }) {
 
   await store.po.put(id, updated);
 
-  // Auto-create shipment when PO hits "In Transit"
-  let shipment = null;
-  if (targetStage === 'In Transit') {
+  // Execute side effects from domain model
+  const effects = onPOStageAdvanced(updated, existing.stage, targetStage);
+  const effectResults = [];
+  for (const action of effects.actions) {
     try {
-      const shipData = {
-        id: 'SHIP-' + Date.now().toString(36).toUpperCase(),
-        poId: id,
-        poNum: id,
-        mpId: existing.mpId || null,
-        mpName: existing.mpName || null,
-        vendor: existing.vendor || null,
-        container: existing.container || null,
-        vessel: existing.vessel || null,
-        etd: existing.etd || null,
-        eta: existing.eta || null,
-        units: existing.units || 0,
-        fobTotal: existing.fobTotal || 0,
-        status: 'in-transit',
-        createdAt: now,
-        updatedAt: now,
-        arrivedAt: null,
-        events: [{ type: 'created', date: now, note: `Auto-created from PO ${id} stage advance` }],
-      };
-      await store.shipments.put(shipData.id, shipData);
-      shipment = shipData;
+      const result = await executeAction(action, store);
+      effectResults.push(result);
     } catch (e) {
-      console.error(`[purchase-orders] Failed to auto-create shipment for ${id}:`, e.message);
+      console.error(`[purchase-orders] Side effect failed:`, action.type, e.message);
+      effectResults.push({ executed: false, type: action.type, error: e.message });
     }
   }
 
-  return { advanced: true, purchaseOrder: updated, gate: targetDef, shipment };
+  return {
+    advanced: true,
+    purchaseOrder: updated,
+    gate: targetDef,
+    effects: effectResults,
+    logs: effects.logs,
+  };
 }
 
 async function deletePO(client, { pathParams }) {
@@ -319,16 +313,64 @@ async function deletePO(client, { pathParams }) {
   return { deleted: true, id };
 }
 
+// ── Payment Management ──────────────────────────────────────
+
+async function markPayment(client, { pathParams, body }) {
+  const poId = decodeURIComponent(pathParams.id);
+  const po = await store.po.get(poId);
+  if (!po) throw new RouteError(404, `PO not found: ${poId}`);
+
+  const paymentId = body.paymentId;
+  if (!paymentId) throw new RouteError(400, 'paymentId required');
+
+  const payments = po.payments || [];
+  const pmt = payments.find(p => p.id === paymentId || p.type === paymentId);
+  if (!pmt) throw new RouteError(404, `Payment not found: ${paymentId}`);
+
+  const now = new Date().toISOString();
+  pmt.status = 'paid';
+  pmt.paidDate = body.paidDate || now.slice(0, 10);
+  pmt.paidAmount = body.amount || pmt.amount;
+
+  const updated = {
+    ...po,
+    payments: refreshPaymentStatuses(payments),
+    updatedAt: now,
+    history: [...(po.history || []), {
+      action: 'payment',
+      paymentId: pmt.id || pmt.type,
+      amount: pmt.paidAmount,
+      at: now,
+    }],
+  };
+
+  await store.po.put(poId, updated);
+  return { paid: true, purchaseOrder: updated, payment: pmt };
+}
+
+async function refreshPOPayments(client, { pathParams }) {
+  const poId = decodeURIComponent(pathParams.id);
+  const po = await store.po.get(poId);
+  if (!po) throw new RouteError(404, `PO not found: ${poId}`);
+
+  const payments = refreshPaymentStatuses(po.payments || []);
+  const updated = { ...po, payments, updatedAt: new Date().toISOString() };
+  await store.po.put(poId, updated);
+  return { refreshed: true, purchaseOrder: updated };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
-  { method: 'GET',    path: '',            handler: listPOs,      noClient: true },
-  { method: 'GET',    path: 'stages',      handler: getStages,    noClient: true },
-  { method: 'GET',    path: ':id',         handler: getPO,        noClient: true },
-  { method: 'POST',   path: '',            handler: createPO,     noClient: true },
-  { method: 'PATCH',  path: ':id',         handler: updatePO,     noClient: true },
-  { method: 'PATCH',  path: ':id/stage',   handler: advanceStage, noClient: true },
-  { method: 'DELETE', path: ':id',         handler: deletePO,     noClient: true },
+  { method: 'GET',    path: '',                handler: listPOs,          noClient: true },
+  { method: 'GET',    path: 'stages',          handler: getStages,        noClient: true },
+  { method: 'GET',    path: ':id',             handler: getPO,            noClient: true },
+  { method: 'POST',   path: '',                handler: createPO,         noClient: true },
+  { method: 'PATCH',  path: ':id',             handler: updatePO,         noClient: true },
+  { method: 'PATCH',  path: ':id/stage',       handler: advanceStage,     noClient: true },
+  { method: 'POST',   path: ':id/payment',     handler: markPayment,      noClient: true },
+  { method: 'POST',   path: ':id/refresh',     handler: refreshPOPayments, noClient: true },
+  { method: 'DELETE', path: ':id',             handler: deletePO,         noClient: true },
 ];
 
 exports.handler = createHandler(ROUTES, 'purchase-orders');

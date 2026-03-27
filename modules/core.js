@@ -15,45 +15,70 @@ import { emit } from './event-bus.js';
 
 const API_BASE = '/api';
 const API_TIMEOUT_MS = 15000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 1000;
 
-async function apiRequest(method, path, body = null) {
+function isRetryable(status) {
+  return status === 0 || status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+async function apiRequest(method, path, body = null, { silent = false, retries = MAX_RETRIES } = {}) {
   const url = path.startsWith('/') ? path : `${API_BASE}/${path}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-  const opts = {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    signal: controller.signal,
-  };
-  if (body) opts.body = JSON.stringify(body);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
 
-  try {
-    const res = await fetch(url, opts);
-    clearTimeout(timer);
+    const opts = {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    };
+    if (body) opts.body = JSON.stringify(body);
 
-    if (res.status === 304) return { _cached: true, _notModified: true };
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      const msg = err.error || `${res.status} ${res.statusText}`;
-      // Better Shopify error messages
-      if (msg.includes('404') && msg.includes('Not Found')) {
-        throw new Error('Shopify API unavailable — check API version and store URL in Settings');
+    try {
+      const res = await fetch(url, opts);
+      clearTimeout(timer);
+
+      if (res.status === 304) return { _cached: true, _notModified: true };
+
+      // Retry on transient server errors
+      if (isRetryable(res.status) && attempt < retries) {
+        const wait = res.status === 429
+          ? parseInt(res.headers.get('Retry-After') || '2', 10) * 1000
+          : RETRY_DELAY_MS * (attempt + 1);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
       }
-      if (msg.includes('not configured') || msg.includes('SHOPIFY_STORE_URL')) {
-        throw new Error('Shopify not connected — check environment variables');
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        const msg = err.error || `${res.status} ${res.statusText}`;
+        if (msg.includes('404') && msg.includes('Not Found')) {
+          throw new Error('Shopify API unavailable — check Settings');
+        }
+        if (msg.includes('not configured') || msg.includes('SHOPIFY_STORE_URL')) {
+          throw new Error('Shopify not connected — check environment variables');
+        }
+        throw new Error(msg);
       }
-      throw new Error(msg);
+      return await res.json();
+    } catch (err) {
+      clearTimeout(timer);
+
+      // Retry on network errors
+      if (err.name !== 'AbortError' && attempt < retries && !err.message.includes('Shopify')) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+
+      if (err.name === 'AbortError') {
+        err.message = 'Request timed out — try again';
+      }
+      console.error(`[api] ${method} ${url}:`, err.message);
+      if (!silent) emit('toast:show', { message: err.message, type: 'error' });
+      throw err;
     }
-    return await res.json();
-  } catch (err) {
-    clearTimeout(timer);
-    if (err.name === 'AbortError') {
-      err.message = 'Request timed out — try again';
-    }
-    console.error(`[api] ${method} ${url}:`, err.message);
-    emit('toast:show', { message: err.message, type: 'error' });
-    throw err;
   }
 }
 
@@ -65,6 +90,13 @@ export const api = {
   post:  (path, body) => apiRequest('POST', path, body),
   patch: (path, body) => apiRequest('PATCH', path, body),
   del:   (path) => apiRequest('DELETE', path),
+  // Silent versions — don't toast on failure (for background/non-critical loads)
+  silent: {
+    get: (path, params) => {
+      const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+      return apiRequest('GET', path + qs, null, { silent: true });
+    },
+  },
 };
 
 // ── Module Loader ───────────────────────────────────────────
@@ -143,6 +175,17 @@ export function formatNumber(num) {
   return new Intl.NumberFormat('en-US').format(num);
 }
 
+export function formatPercent(value, decimals = 0) {
+  if (value === null || value === undefined) return '—';
+  return `${Number(value).toFixed(decimals)}%`;
+}
+
+export function formatCompact(num) {
+  if (num >= 1000000) return `$${(num / 1000000).toFixed(1)}M`;
+  if (num >= 1000) return `$${(num / 1000).toFixed(0)}K`;
+  return formatCurrency(num);
+}
+
 export function timeAgo(dateStr) {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
   if (seconds < 60) return 'just now';
@@ -176,6 +219,24 @@ export function html(strings, ...values) {
     const val = values[i] !== undefined ? values[i] : '';
     return result + str + (Array.isArray(val) ? val.join('') : val);
   }, '');
+}
+
+/**
+ * Render a standard error state in a container.
+ * Call when an API fetch fails in a module's init().
+ */
+export function errorState(container, message, { retry = null } = {}) {
+  const id = 'err-' + Math.random().toString(36).slice(2, 6);
+  container.innerHTML = `
+    <div class="empty-state">
+      <div style="font-size:1.3rem;margin-bottom:0.5rem">⚠</div>
+      <div style="margin-bottom:0.25rem">${message}</div>
+      ${retry ? `<button id="${id}" class="btn btn-sm" style="margin-top:0.75rem">Retry</button>` : ''}
+    </div>
+  `;
+  if (retry) {
+    container.querySelector(`#${id}`)?.addEventListener('click', retry);
+  }
 }
 
 // ── Loading skeleton ────────────────────────────────────────

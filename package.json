@@ -1,10 +1,13 @@
 {
   "name": "atica-ops",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Atica Man Operations Platform — Static HTML + Netlify Functions",
+  "description": "Atica Man Operations Platform — Next.js + Supabase + Shopify",
   "scripts": {
+    "test": "node test.js",
     "dev": "netlify dev",
+    "dev:next": "next dev",
+    "build:next": "next build",
     "test:shopify": "node scripts/test-shopify.js",
     "test:endpoints": "node scripts/test-endpoints.js"
   },
@@ -12,6 +15,14 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@netlify/blobs": "^10.7.4"
+    "@netlify/blobs": "^10.7.4",
+    "@netlify/neon": "^0.1.2",
+    "@supabase/supabase-js": "^2.100.1",
+    "@tailwindcss/postcss": "^4.2.2",
+    "next": "^16.2.1",
+    "postcss": "^8.5.8",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.2.2"
   }
 }
