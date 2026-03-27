@@ -15,7 +15,7 @@
  */
 
 import { on, emit } from './event-bus.js';
-import { api, formatCurrency, formatNumber, formatDate, skeleton } from './core.js';
+import { api, formatCurrency, formatNumber, formatDate, skeleton, esc } from './core.js';
 
 let state = {
   loaded: false,
@@ -603,6 +603,43 @@ function openPODetail(po) {
         </div>
       </div>
 
+      <!-- Payment Schedule -->
+      ${(() => {
+        const payments = po.payments || [];
+        if (payments.length === 0) return '';
+        const paid = payments.filter(p => p.status === 'paid');
+        const totalDue = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        const totalPaid = paid.reduce((s, p) => s + (Number(p.paidAmount || p.amount) || 0), 0);
+        const pctPaid = totalDue > 0 ? (totalPaid / totalDue * 100) : 0;
+
+        const statusColor = { paid: 'var(--success)', due: 'var(--danger)', overdue: 'var(--danger)', upcoming: 'var(--warning)', planned: 'var(--text-dim)' };
+        const statusBadge = { paid: 'late', due: 'mid', overdue: 'mid', upcoming: 'early', planned: 'early' };
+
+        return `
+          <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Payments</h3>
+          <div style="margin-bottom:0.5rem">
+            <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--text-dim);margin-bottom:0.25rem">
+              <span>${formatCurrency(totalPaid)} of ${formatCurrency(totalDue)} paid</span>
+              <span>${pctPaid.toFixed(0)}%</span>
+            </div>
+            <div style="height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pctPaid.toFixed(1)}%;background:var(--success);border-radius:3px;transition:width .3s"></div>
+            </div>
+          </div>
+          <div style="margin-bottom:1rem">
+            ${payments.map(p => `
+              <div style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid var(--border-light);font-size:0.82rem">
+                <span class="po-stage-badge ${statusBadge[p.status] || 'early'}">${esc(p.status || 'planned')}</span>
+                <span style="font-weight:600;text-transform:capitalize;min-width:70px">${esc(p.type || p.id || '—')}</span>
+                <span style="font-family:var(--font-mono);font-weight:600">${formatCurrency(p.amount || 0)}</span>
+                <span style="font-size:0.72rem;color:var(--text-dim);flex:1">${p.dueDate ? 'due ' + formatDate(p.dueDate) : ''}</span>
+                ${p.status !== 'paid' ? `<button class="btn btn-sm pmt-pay-btn" data-payment-id="${esc(p.id || p.type)}">Mark Paid</button>` : `<span style="font-size:0.72rem;color:var(--success)">Paid ${p.paidDate ? formatDate(p.paidDate) : ''}</span>`}
+              </div>
+            `).join('')}
+          </div>
+        `;
+      })()}
+
       <!-- Check-ins -->
       ${(checkIns.pd.length || checkIns.fin.length) ? `
         <h3 style="font-size:0.85rem;margin-bottom:0.5rem">Check-ins</h3>
@@ -718,6 +755,32 @@ function openPODetail(po) {
           saveBtn.disabled = false;
           saveBtn.textContent = 'Save Changes';
         }
+      });
+
+      // ── Payment mark-paid buttons ──
+      body.querySelectorAll('.pmt-pay-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const paymentId = btn.dataset.paymentId;
+          btn.disabled = true;
+          btn.textContent = '...';
+          try {
+            await api.post(`/api/purchase-orders/${encodeURIComponent(po.id)}/payment`, { paymentId });
+            emit('modal:close');
+            emit('toast:show', { message: `Payment "${paymentId}" marked paid`, type: 'success' });
+            // Refresh PO list and reopen detail
+            const posData = await api.get('/api/purchase-orders');
+            if (!_container) return;
+            state.purchaseOrders = posData.purchaseOrders || [];
+            render();
+            bindPOButton();
+            const refreshedPO = state.purchaseOrders.find(p => p.id === po.id);
+            if (refreshedPO) openPODetail(refreshedPO);
+          } catch (err) {
+            emit('toast:show', { message: esc(err.message), type: 'error' });
+            btn.disabled = false;
+            btn.textContent = 'Mark Paid';
+          }
+        });
       });
 
       // ── Stage advancement ──
