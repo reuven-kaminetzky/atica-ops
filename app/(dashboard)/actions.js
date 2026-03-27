@@ -54,6 +54,59 @@ export async function getProduct(id) {
   }
 }
 
+export async function getVendors() {
+  try {
+    const sql = neon();
+    return await sql`
+      SELECT v.*,
+        COALESCE(po_agg.total_pos, 0)::int as po_count,
+        COALESCE(po_agg.active_pos, 0)::int as active_pos,
+        COALESCE(po_agg.total_units, 0)::int as total_units,
+        COALESCE(po_agg.total_fob, 0)::numeric as total_committed,
+        COALESCE(mp_agg.product_count, 0)::int as product_count
+      FROM vendors v
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) as total_pos,
+          COUNT(*) FILTER (WHERE stage NOT IN ('received','distribution')) as active_pos,
+          SUM(units) as total_units,
+          SUM(fob_total) as total_fob
+        FROM purchase_orders WHERE vendor_id = v.id
+      ) po_agg ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) as product_count
+        FROM master_products WHERE vendor_id = v.id
+      ) mp_agg ON TRUE
+      ORDER BY v.name
+    `;
+  } catch (e) {
+    console.error('[actions] getVendors:', e.message);
+    return [];
+  }
+}
+
+export async function getCashFlowData() {
+  try {
+    const sql = neon();
+    const [payments, activePOs, settings] = await Promise.all([
+      sql`SELECT p.*, po.mp_name, po.vendor_name 
+        FROM po_payments p 
+        JOIN purchase_orders po ON po.id = p.po_id 
+        ORDER BY p.due_date ASC`,
+      sql`SELECT * FROM purchase_orders WHERE stage NOT IN ('received','distribution') ORDER BY eta ASC`,
+      sql`SELECT key, value FROM app_settings WHERE key IN ('opex_monthly','target_cover_weeks')`,
+    ]);
+    const opex = settings.find(s => s.key === 'opex_monthly');
+    return {
+      payments,
+      activePOs,
+      opexMonthly: opex ? parseInt(opex.value) : 25000,
+    };
+  } catch (e) {
+    console.error('[actions] getCashFlowData:', e.message);
+    return { payments: [], activePOs: [], opexMonthly: 25000 };
+  }
+}
+
 export async function getPurchaseOrders() {
   try {
     const sql = neon();
