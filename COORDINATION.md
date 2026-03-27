@@ -107,6 +107,8 @@ These sessions were built for the legacy monolith. If reactivated:
 
 ## What's Been Done (v3)
 
+> Last updated: 2026-03-27
+
 ### Infrastructure
 - [x] Next.js app deployed at atica-ops-v3.netlify.app
 - [x] Neon Postgres — 16 tables, 3 views, 6 triggers, 4 logistics tables
@@ -114,7 +116,7 @@ These sessions were built for the legacy monolith. If reactivated:
 - [x] 75 automated tests (node test.js)
 - [x] Domain-driven architecture (7 domains)
 
-### Pages (21 routes)
+### Pages (24 routes)
 - [x] Dashboard — live health stats, nav tiles
 - [x] Products — category-grouped cards, margin/stock badges
 - [x] Product detail — metrics, stack, POs, PLM history
@@ -126,6 +128,8 @@ These sessions were built for the legacy monolith. If reactivated:
 - [x] Stock — inventory table with signals
 - [x] Analytics — category breakdown, PO pipeline
 - [x] Settings — migration, seed, Shopify sync
+- [x] Warehouse — receiving queue, transfers, van routes, compliance
+- [x] Store View — per-store stats, incoming, low stock, upcoming POs
 - [x] **Warehouse** — receiving queue, transfers, van routes, unconfirmed escalation
 
 ### API
@@ -135,6 +139,8 @@ These sessions were built for the legacy monolith. If reactivated:
 - [x] POST /api/sync (Shopify → Postgres)
 - [x] POST /api/migrate, POST /api/seed
 - [x] GET /api/health
+- [x] GET /api/products
+- [x] GET /api/store/[name]
 
 ### Security (commit 3aa8aa0)
 - [x] SQL injection fixed (logistics — killed db.unsafe)
@@ -145,7 +151,7 @@ These sessions were built for the legacy monolith. If reactivated:
 
 ### Events
 - [x] Event bus (lib/events.js — 35 event types)
-- [x] Event handlers wired (lib/event-handlers.js)
+- [x] Event handlers wired with REAL implementations (lib/event-handlers.js)
 - [x] Audit middleware persists every event
 - [x] instrumentation.js initializes on server startup
 

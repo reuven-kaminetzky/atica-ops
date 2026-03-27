@@ -67,3 +67,42 @@ export async function getWarehouseData() {
     return { dashboard: {}, receivingQueue: [], pendingTransfers: [], unconfirmed: [], activeRoutes: [], incomingShipments: [] };
   }
 }
+
+export async function getStoreData(store) {
+  try {
+    const logistics = require('../../lib/logistics');
+    const product = require('../../lib/product');
+    const sc = require('../../lib/supply-chain');
+
+    const [incomingTransfers, unconfirmed, allProducts, activePOs] = await Promise.all([
+      logistics.transfer.getForStore(store).catch(() => []),
+      logistics.transfer.getUnconfirmed().catch(() => []),
+      product.getAll().catch(() => []),
+      sc.po.getActive().catch(() => []),
+    ]);
+
+    // Stock alerts for this store (using product-level data for now)
+    const stockAlerts = allProducts
+      .filter(p => (parseInt(p.total_inventory) || 0) === 0 || (parseInt(p.days_of_stock) || 999) <= 30)
+      .slice(0, 10);
+
+    // POs arriving soon (shallow view)
+    const incomingPOs = activePOs
+      .filter(po => po.stage === 'shipped' || po.stage === 'in_transit' || po.stage === 'received')
+      .slice(0, 5);
+
+    // Transfers needing this store's confirmation
+    const needsConfirmation = unconfirmed.filter(t => t.to_location === store);
+
+    return {
+      incomingTransfers,
+      needsConfirmation,
+      stockAlerts,
+      incomingPOs,
+      store,
+    };
+  } catch (e) {
+    console.error('[actions] getStoreData:', e.message);
+    return { incomingTransfers: [], needsConfirmation: [], stockAlerts: [], incomingPOs: [], store };
+  }
+}

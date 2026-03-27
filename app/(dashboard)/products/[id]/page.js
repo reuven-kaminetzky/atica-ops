@@ -21,6 +21,12 @@ export default async function ProductDetailPage({ params }) {
     <div>
       <Link href="/products" className="text-sm text-brand no-underline hover:underline">← Back to products</Link>
 
+      {mp.hero_image && (
+        <div className="mt-3 mb-4 rounded-[--radius-md] overflow-hidden bg-surface-sunken h-48 sm:h-64">
+          <img src={mp.hero_image} alt={mp.name} className="w-full h-full object-cover" />
+        </div>
+      )}
+
       <div className="flex items-start justify-between mt-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{mp.name}</h1>

@@ -56,6 +56,11 @@ function ProductCard({ mp }) {
     <Link href={`/products/${mp.id}`}
       className="group bg-surface rounded-[--radius-md] border border-border p-4 no-underline text-text shadow-[--shadow-subtle] hover:shadow-[--shadow-card] hover:border-border-strong transition-all"
     >
+      {mp.hero_image && (
+        <div className="mb-3 -mx-4 -mt-4 rounded-t-[--radius-md] overflow-hidden bg-surface-sunken h-36">
+          <img src={mp.hero_image} alt={mp.name} className="w-full h-full object-cover" loading="lazy" />
+        </div>
+      )}
       <div className="flex items-start justify-between">
         <div>
           <div className="font-semibold text-[15px] group-hover:text-brand transition-colors">{mp.name}</div>
