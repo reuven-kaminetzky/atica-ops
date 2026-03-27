@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
 
+export const maxDuration = 60;
+
 /**
- * POST /api/sync?step=products|inventory|orders
- * 
- * Split into 3 fast steps to avoid function timeout.
- * Call with no step param for products-only (fastest, most useful).
+ * POST /api/sync — Shopify → Postgres sync
+ * GET /api/sync — quick connection test
  */
+export async function GET() {
+  try {
+    const { createClient } = require('../../../lib/shopify');
+    const client = await createClient();
+    if (!client) return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
+    const shop = await client.getShop();
+    return NextResponse.json({ connected: true, shop: shop?.shop?.name || 'unknown' });
+  } catch (e) {
+    return NextResponse.json({ error: e.message, stack: e.stack?.split('\n').slice(0, 5) }, { status: 500 });
+  }
+}
+
 export async function POST(request) {
   const started = Date.now();
-  const { searchParams } = new URL(request.url);
-  const step = searchParams.get('step') || 'products';
+  const log = [];
 
   try {
     const { createClient } = require('../../../lib/shopify');
@@ -18,113 +29,105 @@ export async function POST(request) {
     const { neon } = require('@netlify/neon');
     const sql = neon();
 
-    const client = await createClient();
-    if (!client) {
-      return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
-    }
+    log.push('imports_ok');
 
-    // ── STEP: PRODUCTS ──────────────────────────────────────
+    // Check what step to run (default: all, but can do step=products to test)
+    const { searchParams } = new URL(request.url);
+    const step = searchParams.get('step') || 'all';
+
+    const client = await createClient();
+    if (!client) return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
+    log.push('shopify_connected');
+
+    // Step 1: Products
+    const resp = await client.getProducts();
+    const products = resp.products || resp || [];
+    log.push(`products:${products.length}`);
+
+    // Match
+    const mpMatches = {};
+    const unmatched = [];
+    for (const p of products) {
+      const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
+      const mpId = matchProduct(p.title, maxPrice);
+      if (mpId) {
+        if (!mpMatches[mpId]) mpMatches[mpId] = { shopifyIds: [], images: [] };
+        mpMatches[mpId].shopifyIds.push(p.id);
+        if (p.image?.src) mpMatches[mpId].images.push(p.image.src);
+      } else {
+        unmatched.push(p.title);
+      }
+    }
+    log.push(`matched:${Object.keys(mpMatches).length}`);
+
+    // Update MPs
+    let mpUpdated = 0;
+    for (const [mpId, data] of Object.entries(mpMatches)) {
+      try {
+        await sql`UPDATE master_products SET shopify_product_ids = ${data.shopifyIds}, hero_image = ${data.images[0] || null} WHERE id = ${mpId}`;
+        mpUpdated++;
+      } catch (e) { log.push(`mp_err:${mpId}:${e.message.slice(0, 40)}`); }
+    }
+    log.push(`mp_updated:${mpUpdated}`);
 
     if (step === 'products') {
-      const resp = await client.getProducts();
-      const products = resp.products || [];
-
-      const mpMatches = {};
-      const unmatched = [];
-
-      for (const p of products) {
-        const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
-        const mpId = matchProduct(p.title, maxPrice);
-        if (mpId) {
-          if (!mpMatches[mpId]) mpMatches[mpId] = { shopifyIds: [], images: [] };
-          mpMatches[mpId].shopifyIds.push(p.id);
-          if (p.image?.src) mpMatches[mpId].images.push(p.image.src);
-        } else {
-          unmatched.push(p.title);
-        }
-      }
-
-      // Update DB
-      for (const [mpId, data] of Object.entries(mpMatches)) {
-        try {
-          await sql`
-            UPDATE master_products SET 
-              shopify_product_ids = ${data.shopifyIds},
-              hero_image = ${data.images[0] || null}
-            WHERE id = ${mpId}
-          `;
-        } catch (e) { /* skip */ }
-      }
-
       return NextResponse.json({
-        step: 'products',
-        elapsed: `${Date.now() - started}ms`,
-        total: products.length,
-        matched: Object.keys(mpMatches).length,
-        matchedProducts: Object.values(mpMatches).reduce((s, m) => s + m.shopifyIds.length, 0),
-        unmatched,
-        nextStep: 'inventory',
+        synced: true, step: 'products', elapsed: `${Date.now() - started}ms`,
+        products: products.length, matched: Object.keys(mpMatches).length,
+        unmatched, log,
       });
     }
 
-    // ── STEP: INVENTORY ─────────────────────────────────────
-
-    if (step === 'inventory') {
-      const resp = await client.getProducts();
-      const products = resp.products || [];
+    // Step 2: Inventory
+    let invUpdated = 0;
+    const stockByMP = {};
+    try {
       const locResp = await client.getLocations();
-      const locations = locResp.locations || [];
+      const locs = locResp.locations || locResp || [];
+      log.push(`locations:${locs.length}`);
 
-      const stockByMP = {};
-
-      for (const loc of locations) {
+      for (const loc of locs) {
         try {
           const invResp = await client.getInventoryLevels(loc.id);
-          const levels = invResp.inventory_levels || [];
+          const levels = invResp.inventory_levels || invResp || [];
           for (const level of levels) {
             for (const p of products) {
               for (const v of (p.variants || [])) {
                 if (v.inventory_item_id === level.inventory_item_id) {
                   const maxPrice = Math.max(...(p.variants || []).map(vv => parseFloat(vv.price) || 0), 0);
                   const mpId = matchProduct(p.title, maxPrice);
-                  if (mpId) {
-                    stockByMP[mpId] = (stockByMP[mpId] || 0) + (level.available || 0);
-                  }
+                  if (mpId) stockByMP[mpId] = (stockByMP[mpId] || 0) + (level.available || 0);
                 }
               }
             }
           }
-        } catch (e) { /* skip location */ }
+        } catch (e) { log.push(`inv_loc_err:${loc.name}:${e.message.slice(0, 40)}`); }
       }
 
-      let updated = 0;
       for (const [mpId, stock] of Object.entries(stockByMP)) {
         try {
           await sql`UPDATE master_products SET total_inventory = ${stock} WHERE id = ${mpId}`;
-          updated++;
+          invUpdated++;
         } catch (e) { /* skip */ }
       }
+      log.push(`inventory:${invUpdated}`);
+    } catch (e) { log.push(`inv_err:${e.message.slice(0, 60)}`); }
 
+    if (step === 'inventory') {
       return NextResponse.json({
-        step: 'inventory',
-        elapsed: `${Date.now() - started}ms`,
-        locations: locations.length,
-        productsWithStock: Object.keys(stockByMP).length,
-        updated,
-        nextStep: 'orders',
+        synced: true, step: 'inventory', elapsed: `${Date.now() - started}ms`,
+        inventory: invUpdated, log,
       });
     }
 
-    // ── STEP: ORDERS (velocity + demand) ────────────────────
-
-    if (step === 'orders') {
-      const resp = await client.getProducts();
-      const products = resp.products || [];
-
+    // Step 3: Orders + velocity
+    let velUpdated = 0;
+    try {
       const since = new Date();
       since.setDate(since.getDate() - REORDER_VELOCITY_DAYS);
       const ordResp = await client.getOrders({ created_at_min: since.toISOString() });
-      const orders = ordResp.orders || [];
+      const orders = ordResp.orders || ordResp || [];
+      log.push(`orders:${orders.length}`);
 
       const salesByMP = {};
       for (const order of orders) {
@@ -143,44 +146,34 @@ export async function POST(request) {
       }
 
       const WEEKS = REORDER_VELOCITY_DAYS / 7;
-      const currentMonth = new Date().getMonth() + 1;
-      let updated = 0;
-
+      const month = new Date().getMonth() + 1;
       for (const [mpId, sales] of Object.entries(salesByMP)) {
-        const rawVelocity = +(sales.units / WEEKS).toFixed(2);
-        const velocity = +adjustVelocity(rawVelocity, currentMonth).toFixed(2);
-        const signal = classifyDemand(sales.units > 0 ? 50 : 0, velocity);
-
+        const stock = stockByMP[mpId] || 0;
+        const rawVel = +(sales.units / WEEKS).toFixed(2);
+        const vel = +adjustVelocity(rawVel, month).toFixed(2);
+        const st = stock > 0 ? +((sales.units / (stock + sales.units)) * 100).toFixed(1) : 0;
+        const dos = vel > 0 ? Math.round(stock / (vel / 7)) : 999;
+        const sig = classifyDemand(st, vel);
         try {
-          await sql`
-            UPDATE master_products SET 
-              velocity_per_week = ${velocity}, signal = ${signal}
-            WHERE id = ${mpId}
-          `;
-          updated++;
+          await sql`UPDATE master_products SET velocity_per_week=${vel}, sell_through=${st}, days_of_stock=${dos}, signal=${sig} WHERE id=${mpId}`;
+          velUpdated++;
         } catch (e) { /* skip */ }
       }
+      log.push(`velocity:${velUpdated}`);
+    } catch (e) { log.push(`ord_err:${e.message.slice(0, 60)}`); }
 
-      return NextResponse.json({
-        step: 'orders',
-        elapsed: `${Date.now() - started}ms`,
-        orders: orders.length,
-        productsWithSales: Object.keys(salesByMP).length,
-        updated,
-        seasonal: {
-          month: currentMonth,
-          multiplier: SEASONAL_MULTIPLIERS[currentMonth] || 1.0,
-        },
-        done: true,
-      });
-    }
-
-    return NextResponse.json({ error: `Unknown step: ${step}. Use products, inventory, or orders.` }, { status: 400 });
+    return NextResponse.json({
+      synced: true, elapsed: `${Date.now() - started}ms`,
+      products: products.length, matched: Object.keys(mpMatches).length,
+      unmatched: unmatched.slice(0, 20),
+      inventory: invUpdated, velocity: velUpdated,
+      seasonal: { month: new Date().getMonth() + 1, multiplier: SEASONAL_MULTIPLIERS[new Date().getMonth() + 1] || 1.0 },
+      log,
+    });
   } catch (e) {
     return NextResponse.json({
-      error: e.message,
-      step,
-      elapsed: `${Date.now() - started}ms`,
+      error: e.message, stack: e.stack?.split('\n').slice(0, 5),
+      log, elapsed: `${Date.now() - started}ms`,
     }, { status: 500 });
   }
 }
