@@ -181,3 +181,9 @@ export async function getPurchaseOrder(id) {
     return await sc.po.getById(id);
   } catch (e) { return null; }
 }
+
+export async function getOperationalSummary() {
+  'use server';
+  try { return await dal().dashboard.getOperationalSummary(); }
+  catch (e) { return { error: e.message }; }
+}
