@@ -1,4 +1,5 @@
 import { getProduct } from '../../actions';
+import StackEditor from '../../../../components/stack-editor';
 import Link from 'next/link';
 
 export default async function ProductDetailPage({ params }) {
@@ -59,35 +60,8 @@ export default async function ProductDetailPage({ params }) {
         </Section>
       )}
 
-      {/* Stack */}
-      <Section title="Product Stack">
-        {mp.stack ? (
-          <>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
-              <Field label="Fabric" value={mp.stack.fabric_type} />
-              <Field label="Weight" value={mp.stack.fabric_weight} />
-              <Field label="Composition" value={mp.stack.fabric_comp} />
-              <Field label="Mill" value={mp.stack.fabric_mill} />
-              <Field label="Lining" value={mp.stack.lining} />
-              <Field label="Buttons" value={mp.stack.buttons} />
-              <Field label="Origin" value={mp.stack.country_of_origin} />
-              <Field label="AQL" value={mp.stack.aql_level} />
-            </div>
-            {mp.stack.completeness > 0 && (
-              <div className="mt-4">
-                <div className="text-[11px] text-text-secondary mb-1">Completeness: {mp.stack.completeness}%</div>
-                <div className="h-1.5 bg-surface-sunken rounded-full overflow-hidden">
-                  <div className={`h-full rounded-full transition-all ${
-                    mp.stack.completeness >= 80 ? 'bg-success' : mp.stack.completeness >= 50 ? 'bg-warning' : 'bg-danger'
-                  }`} style={{ width: `${mp.stack.completeness}%` }} />
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="text-sm text-text-tertiary">No stack data yet</p>
-        )}
-      </Section>
+      {/* Stack — editable */}
+      <StackEditor mpId={mp.id} stack={mp.stack} />
 
       {/* POs */}
       <Section title={`Purchase Orders (${mp.purchaseOrders?.length || 0})`}>
