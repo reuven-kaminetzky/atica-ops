@@ -106,33 +106,56 @@ export async function POST(request) {
     if (step === 'styles') {
       const resp = await client.getProducts();
       const products = resp.products || resp || [];
-      let created = 0;
-      let skipped = 0;
 
+      // Build batch data
+      const rows = [];
+      let skipped = 0;
       for (const p of products) {
         if (/do not use/i.test(p.title)) continue;
         const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
         const mpId = matchProduct(p.title, maxPrice);
         if (!mpId) { skipped++; continue; }
-
         const totalInv = (p.variants || []).reduce((s, v) => s + (v.inventory_quantity || 0), 0);
-        const tags = typeof p.tags === 'string' ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+        rows.push([
+          String(p.id), mpId, p.id, p.title, extractColorway(p.title) || null,
+          p.image?.src || null, maxPrice, totalInv, (p.variants || []).length,
+          p.handle || null, p.status === 'active' ? 'active' : 'archived',
+        ]);
+      }
+      log.push(`rows_to_insert:${rows.length}`);
 
-        try {
-          await product.upsertStyle({
-            id: String(p.id), mpId, shopifyProductId: p.id, title: p.title,
-            colorway: extractColorway(p.title), heroImage: p.image?.src || null,
-            retail: maxPrice, inventory: totalInv, variantCount: (p.variants || []).length,
-            handle: p.handle || null, tags,
-            status: p.status === 'active' ? 'active' : 'archived',
-          });
-          created++;
-        } catch (e) {
-          if (created === 0 && e.message.includes('does not exist')) {
-            return NextResponse.json({ error: 'Styles table missing. Run Migration first.', log });
-          }
-          log.push(`style_err:${e.message.slice(0, 40)}`);
+      // Batch insert using Pool (one query per batch of 100)
+      let created = 0;
+      try {
+        const { Pool } = require('@neondatabase/serverless');
+        const pool = new Pool({ connectionString: process.env.NETLIFY_DATABASE_URL });
+        const BATCH = 100;
+
+        for (let i = 0; i < rows.length; i += BATCH) {
+          const batch = rows.slice(i, i + BATCH);
+          const values = [];
+          const placeholders = batch.map((row, ri) => {
+            const offset = ri * 11;
+            row.forEach(v => values.push(v));
+            return `($${offset+1},$${offset+2},$${offset+3},$${offset+4},$${offset+5},$${offset+6},$${offset+7},$${offset+8},$${offset+9},$${offset+10},$${offset+11})`;
+          }).join(',');
+
+          await pool.query(`
+            INSERT INTO styles (id, mp_id, external_product_id, title, colorway, hero_image, retail, inventory, variant_count, external_handle, status)
+            VALUES ${placeholders}
+            ON CONFLICT (id) DO UPDATE SET
+              title = EXCLUDED.title, colorway = EXCLUDED.colorway, hero_image = EXCLUDED.hero_image,
+              retail = EXCLUDED.retail, inventory = EXCLUDED.inventory, variant_count = EXCLUDED.variant_count,
+              status = EXCLUDED.status, updated_at = NOW()
+          `, values);
+          created += batch.length;
         }
+        await pool.end();
+      } catch (e) {
+        if (e.message.includes('does not exist')) {
+          return NextResponse.json({ error: 'Styles table missing. Run Migration first.', log });
+        }
+        log.push(`batch_err:${e.message.slice(0, 60)}`);
       }
 
       return NextResponse.json({
