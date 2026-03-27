@@ -9,6 +9,7 @@ const TILES = [
   { href: '/cash-flow', label: 'Cash Flow', desc: '12-week projection, AP/AR', icon: '◈', accent: '#714b67' },
   { href: '/stock', label: 'Stock', desc: 'Inventory by product and store', icon: '▦', accent: '#6c584c' },
   { href: '/vendors', label: 'Vendors', desc: 'Vendor cards, PO rollup', icon: '⊞', accent: '#264653' },
+  { href: '/warehouse', label: 'Warehouse', desc: 'Receiving, transfers, van routes', icon: '⊡', accent: '#6c584c' },
   { href: '/analytics', label: 'Analytics', desc: 'Velocity, demand, margins', icon: '◩', accent: '#495057' },
 ];
 

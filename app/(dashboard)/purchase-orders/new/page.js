@@ -1,18 +1,44 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function NewPOPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [products, setProducts] = useState([]);
   const [form, setForm] = useState({
     mpId: '', vendor: '', fob: '', units: '', moq: '',
     lead: '', duty: '24', hts: '', etd: '', notes: '', paymentTerms: 'standard',
   });
 
+  useEffect(() => {
+    fetch('/api/products').then(r => r.json()).then(d => {
+      setProducts(d.products || []);
+    }).catch(() => {});
+  }, []);
+
   const u = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  function selectProduct(mpId) {
+    const mp = products.find(p => p.id === mpId);
+    if (mp) {
+      setForm(prev => ({
+        ...prev,
+        mpId: mp.id,
+        vendor: mp.vendor_id || prev.vendor,
+        fob: mp.fob > 0 ? String(mp.fob) : prev.fob,
+        duty: mp.duty > 0 ? String(mp.duty) : prev.duty,
+        hts: mp.hts || prev.hts,
+        lead: mp.lead_days > 0 ? String(mp.lead_days) : prev.lead,
+        moq: mp.moq > 0 ? String(mp.moq) : prev.moq,
+      }));
+    } else {
+      u('mpId', mpId);
+    }
+  }
+
   const fobTotal = (parseFloat(form.fob) || 0) * (parseInt(form.units) || 0);
 
   async function submit(e) {
@@ -20,10 +46,16 @@ export default function NewPOPage() {
     if (!form.vendor) { setError('Vendor required'); return; }
     setLoading(true); setError(null);
     try {
+      const selectedMP = products.find(p => p.id === form.mpId);
       const res = await fetch('/api/purchase-orders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          mpId: form.mpId || null, vendor: form.vendor, vendorName: form.vendor,
+          mpId: form.mpId || null,
+          mpName: selectedMP?.name || null,
+          mpCode: selectedMP?.code || null,
+          category: selectedMP?.category || null,
+          vendor: form.vendor, vendorName: form.vendor,
+          vendorId: selectedMP?.vendor_id || null,
           fob: parseFloat(form.fob) || 0, units: parseInt(form.units) || 0,
           moq: parseInt(form.moq) || 0, lead: parseInt(form.lead) || 0,
           duty: parseFloat(form.duty) || 0 || 0, hts: form.hts || null,
@@ -47,8 +79,17 @@ export default function NewPOPage() {
 
       <form onSubmit={submit}>
         <Card title="Product & Vendor">
+          <div className="mb-2">
+            <label className="block text-xs font-semibold text-text-secondary mb-1">Product</label>
+            <select value={form.mpId} onChange={e => selectProduct(e.target.value)}
+              className="w-full px-3 py-2 rounded-[--radius-sm] border border-border-strong text-sm bg-surface">
+              <option value="">— Select product (optional) —</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>{p.name} ({p.code}) — ${p.fob} FOB</option>
+              ))}
+            </select>
+          </div>
           <Input label="Vendor" value={form.vendor} onChange={v => u('vendor', v)} placeholder="e.g. TAL Group" required />
-          <Input label="Product ID" value={form.mpId} onChange={v => u('mpId', v)} placeholder="e.g. londoner (optional)" />
         </Card>
 
         <Card title="Pricing & Quantity">

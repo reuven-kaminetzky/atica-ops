@@ -25,8 +25,41 @@ DO NOT TOUCH: app/, lib/dal/, lib/product/, lib/supply-chain/,
               lib/events.js, lib/event-handlers.js,
               lib/validate.js, lib/constants.js
 ```
-**Current work:** XSS fixes, escapeHtml, stale container guards,
-magic number extraction in legacy modules. All correct. Keep going.
+
+**Current tasks (priority order):**
+
+1. FINISH: XSS fixes, escapeHtml, stale container guards, magic numbers
+   (already in progress — keep going)
+
+2. WIRE: PO payment schedule in modules/cash-flow.js
+   Backend endpoints ready:
+   - GET /api/purchase-orders/:id → returns { ...po, payments: [{id, type, label, amount, status, due_date}] }
+   - Payment statuses: planned → upcoming → due → overdue → paid
+   Show deposit/production/balance payments with due dates and status badges.
+
+3. WIRE: Vendor scoring in modules/vendors.js
+   Backend data available:
+   - GET /api/purchase-orders → each PO has vendor_name, stage, created_at, eta
+   Compute locally in module: onTime%, avg lead time, PO count, total committed.
+   Add tier badge (strategic/preferred/standard/probation) based on scores.
+
+4. WIRE: Shopify sync trigger
+   Backend endpoint: POST /api/sync
+   Returns: { synced, elapsed, shopify: {products, matched}, updated: {inventory, velocity} }
+   Add a "Sync Now" button somewhere visible in the legacy app. Settings or header.
+
+**Backend endpoints San can call (all live on legacy site via Netlify Functions):**
+```
+GET  /api/shopify/status          → connection check
+POST /api/shopify/sync/products   → all products
+POST /api/shopify/sync/orders     → orders since date
+POST /api/shopify/sync/inventory  → all inventory levels
+GET  /api/shopify/sales?days=30   → sales summary
+GET  /api/shopify/velocity?days=30 → SKU velocity
+GET  /api/pos/today               → today's POS sales
+GET  /api/pos/by-location?days=7  → sales by store
+GET  /api/pos/feed?limit=50       → recent transactions
+```
 
 ### Nikita (this project, architecture session)
 ```
@@ -38,8 +71,9 @@ OWNS:       app/, lib/dal/, lib/product/, lib/supply-chain/,
 CAN EDIT:   lib/shopify.js, lib/locations.js (shared)
 DO NOT TOUCH: modules/*.js, netlify/functions/*.js
 ```
-**Current work:** v3 app — domain modules, Tailwind UI, Shopify sync,
-event wiring, security hardening.
+**Current work:** v3 app — Warehouse page just shipped, Tailwind on all pages,
+Shopify sync API built, event handlers wired, Logistics domain built (259 lines).
+Now building: store perspective, wiring event subscribers that actually act.
 
 ### SHARED FILES — coordinate before editing
 ```
@@ -73,6 +107,8 @@ These sessions were built for the legacy monolith. If reactivated:
 
 ## What's Been Done (v3)
 
+> Last updated: 2026-03-27
+
 ### Infrastructure
 - [x] Next.js app deployed at atica-ops-v3.netlify.app
 - [x] Neon Postgres — 16 tables, 3 views, 6 triggers, 4 logistics tables
@@ -80,7 +116,7 @@ These sessions were built for the legacy monolith. If reactivated:
 - [x] 75 automated tests (node test.js)
 - [x] Domain-driven architecture (7 domains)
 
-### Pages (20 routes)
+### Pages (24 routes)
 - [x] Dashboard — live health stats, nav tiles
 - [x] Products — category-grouped cards, margin/stock badges
 - [x] Product detail — metrics, stack, POs, PLM history
@@ -92,6 +128,9 @@ These sessions were built for the legacy monolith. If reactivated:
 - [x] Stock — inventory table with signals
 - [x] Analytics — category breakdown, PO pipeline
 - [x] Settings — migration, seed, Shopify sync
+- [x] Warehouse — receiving queue, transfers, van routes, compliance
+- [x] Store View — per-store stats, incoming, low stock, upcoming POs
+- [x] **Warehouse** — receiving queue, transfers, van routes, unconfirmed escalation
 
 ### API
 - [x] GET/POST /api/purchase-orders
@@ -100,6 +139,8 @@ These sessions were built for the legacy monolith. If reactivated:
 - [x] POST /api/sync (Shopify → Postgres)
 - [x] POST /api/migrate, POST /api/seed
 - [x] GET /api/health
+- [x] GET /api/products
+- [x] GET /api/store/[name]
 
 ### Security (commit 3aa8aa0)
 - [x] SQL injection fixed (logistics — killed db.unsafe)
@@ -110,7 +151,7 @@ These sessions were built for the legacy monolith. If reactivated:
 
 ### Events
 - [x] Event bus (lib/events.js — 35 event types)
-- [x] Event handlers wired (lib/event-handlers.js)
+- [x] Event handlers wired with REAL implementations (lib/event-handlers.js)
 - [x] Audit middleware persists every event
 - [x] instrumentation.js initializes on server startup
 

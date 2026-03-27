@@ -95,8 +95,9 @@ export async function POST() {
 
     // ── 3. Orders: velocity + demand signals (30 days) ────────
 
+    const { REORDER_VELOCITY_DAYS: VELOCITY_DAYS } = require('../../../lib/constants');
     const since = new Date();
-    since.setDate(since.getDate() - 30);
+    since.setDate(since.getDate() - VELOCITY_DAYS);
     const { orders } = await client.getOrders({ created_at_min: since.toISOString() });
 
     const salesByMP = {};  // mpId → { units, revenue }
@@ -119,7 +120,7 @@ export async function POST() {
     }
 
     // Compute velocity and demand signals
-    const DAYS = 30;
+    const DAYS = VELOCITY_DAYS;
     const WEEKS = DAYS / 7;
     const currentMonth = new Date().getMonth() + 1;
 
