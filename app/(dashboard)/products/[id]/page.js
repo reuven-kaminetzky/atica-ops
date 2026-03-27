@@ -64,6 +64,41 @@ export default async function ProductDetailPage({ params }) {
       {/* Stack — editable */}
       <StackEditor mpId={mp.id} stack={mp.stack} />
 
+      {/* Styles (colorways from Shopify) */}
+      {mp.styles?.length > 0 && (
+        <Section title={`Styles — ${mp.styles.length} colorways`}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {mp.styles.map(s => (
+              <div key={s.id} className="flex items-start gap-3 p-3 rounded-[--radius-sm] border border-border/50 hover:border-border transition-colors">
+                {s.hero_image && (
+                  <div className="w-14 h-14 rounded bg-surface-sunken overflow-hidden flex-shrink-0">
+                    <img src={s.hero_image} alt={s.colorway || s.title} className="w-full h-full object-cover" loading="lazy" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{s.colorway || s.title}</div>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-text-secondary">
+                    <span>${parseFloat(s.retail || 0).toFixed(0)}</span>
+                    <span className="text-text-tertiary">·</span>
+                    <span className={(parseInt(s.inventory) || 0) === 0 ? 'text-danger font-semibold' : (parseInt(s.inventory) || 0) < 10 ? 'text-warning' : ''}>{s.inventory || 0} units</span>
+                    <span className="text-text-tertiary">·</span>
+                    <span>{s.variant_count || 0} SKUs</span>
+                  </div>
+                  {s.grade && (
+                    <span className={`mt-1 inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      s.grade === 'A' ? 'bg-success-light text-success' :
+                      s.grade === 'B' ? 'bg-info-light text-info' :
+                      s.grade === 'C' ? 'bg-warning-light text-warning' :
+                      'bg-surface-sunken text-text-tertiary'
+                    }`}>Grade {s.grade}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
       {/* POs */}
       <Section title={`Purchase Orders (${mp.purchaseOrders?.length || 0})`}>
         {mp.purchaseOrders?.length > 0 ? (

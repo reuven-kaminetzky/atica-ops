@@ -3,6 +3,31 @@ import { NextResponse } from 'next/server';
 export const maxDuration = 60;
 
 /**
+ * Extract colorway from a Shopify product title.
+ * "Half Canvas Suit | Lorenzo A | Drop 6 | Navy" → "Navy"
+ * "Everyday Blue Gingham Shirt" → "Blue Gingham"
+ * "Londoner White Shirt" → "White"
+ */
+function extractColorway(title) {
+  if (!title) return null;
+  // Pipe-separated: last segment is usually the colorway
+  if (title.includes('|')) {
+    const parts = title.split('|').map(s => s.trim());
+    const last = parts[parts.length - 1];
+    // Skip if last part is a fit/drop descriptor
+    if (/drop\s+\d|lapel|classic|slim/i.test(last)) return parts.length > 2 ? parts[parts.length - 2].trim() : null;
+    return last || null;
+  }
+  // Strip known MP/product type words and what's left is the colorway
+  let color = title
+    .replace(/\b(shirt|suit|pant|pants|blazer|coat|sweater|polo|glove|scarf|belt|sock|sneaker|vest|kapote|hat|cap|oxford|derby|loafer|monk)\b/gi, '')
+    .replace(/\b(londoner|milano|edinburgh|firenze|tokyo|yorkshire|boston|providence|greenwich|oxfordshire|riviera|everyday|essential|parkway|luxury|performance|half\s+canvas|italian\s+fabric|baseball|rudy|laceless|fakelace|dress|wingtip|cashmere|nappa|leather|napa|baby\s+alpaca|quarter\s+zip|comfy|pull\s+over|viscose|wool|collared|standing\s+collar|car)\b/gi, '')
+    .replace(/\b(modern|contemporary|classic|extra\s+slim|slim|regular|relaxed|men'?s|atica\s+man|w\s+flap|86025|blend|lined|touch\s*screen|hand\s*stitched|merino|rabbit\s+fur|check(ed)?|stripe[ds]?|gingham|grid|poplin|tonal|textured|micro|mini|double|light|solid|re-?defined|re-?stock|do\s+not\s+use)\b/gi, '')
+    .replace(/\s+/g, ' ').trim();
+  return color || null;
+}
+
+/**
  * POST /api/sync — Shopify → Postgres sync
  * GET /api/sync — quick connection test
  */
@@ -24,10 +49,11 @@ export async function POST(request) {
 
   try {
     const { createClient } = require('../../../lib/shopify');
-    const { matchProduct, classifyDemand, adjustVelocity } = require('../../../lib/products');
+    const product = require('../../../lib/product');
     const { REORDER_VELOCITY_DAYS, SEASONAL_MULTIPLIERS } = require('../../../lib/constants');
-    const { neon } = require('@netlify/neon');
-    const sql = neon();
+
+    // Product domain gives us matching + DB writes
+    const { matchProduct, classifyDemand, adjustVelocity } = product;
 
     log.push('imports_ok');
 
@@ -64,16 +90,50 @@ export async function POST(request) {
     let mpUpdated = 0;
     for (const [mpId, data] of Object.entries(mpMatches)) {
       try {
-        await sql`UPDATE master_products SET shopify_product_ids = ${data.shopifyIds}, hero_image = ${data.images[0] || null} WHERE id = ${mpId}`;
+        await db`UPDATE master_products SET external_ids = ${data.shopifyIds}, hero_image = ${data.images[0] || null} WHERE id = ${mpId}`;
         mpUpdated++;
       } catch (e) { log.push(`mp_err:${mpId}:${e.message.slice(0, 40)}`); }
     }
     log.push(`mp_updated:${mpUpdated}`);
 
+    // Create style records — each matched Shopify product is a style (colorway)
+    let stylesCreated = 0;
+    for (const p of products) {
+      const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
+      const mpId = matchProduct(p.title, maxPrice);
+      if (!mpId) continue;
+
+      const colorway = extractColorway(p.title);
+      const totalInv = (p.variants || []).reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+      const tags = typeof p.tags === 'string' ? p.tags.split(',').map(t => t.trim()).filter(Boolean) : (p.tags || []);
+
+      try {
+        await db`
+          INSERT INTO styles (id, mp_id, external_product_id, title, colorway, hero_image, retail, inventory, variant_count, external_handle, tags, status)
+          VALUES (${String(p.id)}, ${mpId}, ${p.id}, ${p.title}, ${colorway}, ${p.image?.src || null},
+            ${maxPrice}, ${totalInv}, ${(p.variants || []).length}, ${p.handle || null}, ${tags},
+            ${p.status === 'active' ? 'active' : 'archived'})
+          ON CONFLICT (id) DO UPDATE SET
+            title = EXCLUDED.title, colorway = EXCLUDED.colorway, hero_image = EXCLUDED.hero_image,
+            retail = EXCLUDED.retail, inventory = EXCLUDED.inventory, variant_count = EXCLUDED.variant_count,
+            tags = EXCLUDED.tags, status = EXCLUDED.status, updated_at = NOW()
+        `;
+        stylesCreated++;
+      } catch (e) {
+        // Table might not exist yet (migration not run) — silently skip
+        if (stylesCreated === 0 && e.message.includes('does not exist')) {
+          log.push('styles_table_missing');
+          break;
+        }
+      }
+    }
+    if (stylesCreated > 0) log.push(`styles:${stylesCreated}`);
+
     if (step === 'products') {
       return NextResponse.json({
         synced: true, step: 'products', elapsed: `${Date.now() - started}ms`,
         products: products.length, matched: Object.keys(mpMatches).length,
+        matchedMPs: Object.keys(mpMatches).length, styles: stylesCreated,
         unmatched, log,
       });
     }
@@ -95,7 +155,7 @@ export async function POST(request) {
 
       for (const [mpId, stock] of Object.entries(stockByMP)) {
         try {
-          await sql`UPDATE master_products SET total_inventory = ${stock} WHERE id = ${mpId}`;
+          await db`UPDATE master_products SET total_inventory = ${stock} WHERE id = ${mpId}`;
           invUpdated++;
         } catch (e) { /* skip */ }
       }
@@ -144,7 +204,7 @@ export async function POST(request) {
         const dos = vel > 0 ? Math.round(stock / (vel / 7)) : 999;
         const sig = classifyDemand(st, vel);
         try {
-          await sql`UPDATE master_products SET velocity_per_week=${vel}, sell_through=${st}, days_of_stock=${dos}, signal=${sig} WHERE id=${mpId}`;
+          await db`UPDATE master_products SET velocity_per_week=${vel}, sell_through=${st}, days_of_stock=${dos}, signal=${sig} WHERE id=${mpId}`;
           velUpdated++;
         } catch (e) { /* skip */ }
       }

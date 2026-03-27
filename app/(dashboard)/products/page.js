@@ -93,9 +93,14 @@ function ProductCard({ mp }) {
         <span className="text-[11px] px-2 py-0.5 rounded bg-surface-sunken text-text-secondary">
           {(mp.phase || 'in_store').replace(/_/g, ' ')}
         </span>
-        {parseInt(mp.active_pos) || 0 > 0 && (
+        {(parseInt(mp.style_count) || 0) > 0 && (
+          <span className="text-[11px] px-2 py-0.5 rounded bg-brand-100 text-brand font-semibold">
+            {mp.style_count} style{parseInt(mp.style_count) > 1 ? 's' : ''}
+          </span>
+        )}
+        {(parseInt(mp.active_pos) || 0) > 0 && (
           <span className="text-[11px] px-2 py-0.5 rounded bg-info-light text-info font-semibold">
-            {mp.active_pos} PO{parseInt(mp.active_pos) || 0 > 1 ? 's' : ''}
+            {mp.active_pos} PO{parseInt(mp.active_pos) > 1 ? 's' : ''}
           </span>
         )}
         {mp.completeness > 0 && (

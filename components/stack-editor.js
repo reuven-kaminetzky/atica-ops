@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { updateStack } from '../app/(dashboard)/actions';
 
 const FIELDS = [
   { key: 'fabric_type', label: 'Fabric Type', placeholder: 'e.g. Italian wool twill' },
@@ -39,15 +40,10 @@ export default function StackEditor({ mpId, stack }) {
       }
       if (Object.keys(updates).length === 0) { setEditing(false); setSaving(false); return; }
 
-      const res = await fetch(`/api/products/${encodeURIComponent(mpId)}/stack`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      const data = await res.json();
-      if (data.completeness !== undefined) setCompleteness(data.completeness);
-      setSavedStack({ ...savedStack, ...updates });
-      setEditing(false);
+      const res = await updateStack(mpId, updates);
+      if (res.completeness !== undefined) setCompleteness(res.completeness);
+      if (res.error) { console.error('Stack save failed:', res.error); }
+      else { setSavedStack({ ...savedStack, ...updates }); setEditing(false); }
     } catch (e) {
       console.error('Stack save failed:', e);
     }

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useTransition } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import { getPurchaseOrder, advancePOStage } from '../../actions';
 
 const STAGES = [
   'concept', 'design', 'sample', 'approved', 'costed', 'ordered',
@@ -14,15 +15,14 @@ export default function PODetailPage() {
   const { id } = useParams();
   const [po, setPo] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [advancing, setAdvancing] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [checkedBy, setCheckedBy] = useState('');
   const [error, setError] = useState(null);
 
   async function load() {
     try {
-      const res = await fetch(`/api/purchase-orders/${encodeURIComponent(id)}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      const data = await getPurchaseOrder(id);
+      if (!data) throw new Error('PO not found');
       setPo(data);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -30,22 +30,19 @@ export default function PODetailPage() {
 
   useEffect(() => { load(); }, [id]);
 
-  async function advance() {
-    setAdvancing(true); setError(null);
-    try {
+  function advance() {
+    setError(null);
+    startTransition(async () => {
       const next = STAGES[STAGES.indexOf(po.stage) + 1];
       const body = {};
       if (GATES[next]) body.checkedBy = checkedBy;
-      const res = await fetch(`/api/purchase-orders/${encodeURIComponent(id)}/stage`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      body.advancedBy = checkedBy || 'system';
+
+      const result = await advancePOStage(id, body);
+      if (result.error) { setError(result.error); return; }
       await load();
       setCheckedBy('');
-    } catch (e) { setError(e.message); }
-    setAdvancing(false);
+    });
   }
 
   if (loading) return <div className="py-12 text-center text-text-tertiary">Loading...</div>;
@@ -104,9 +101,9 @@ export default function PODetailPage() {
             </div>
           )}
           {error && <p className="text-danger text-sm mb-2">{error}</p>}
-          <button onClick={advance} disabled={advancing || (needsGate && !checkedBy.trim())}
+          <button onClick={advance} disabled={isPending || (needsGate && !checkedBy.trim())}
             className="px-5 py-2 rounded-[--radius-sm] bg-brand text-white font-semibold text-sm hover:bg-brand-dark disabled:opacity-40 disabled:cursor-not-allowed">
-            {advancing ? 'Advancing...' : `Advance to ${next?.replace(/_/g, ' ')}`}
+            {isPending ? 'Advancing...' : `Advance to ${next?.replace(/_/g, ' ')}`}
           </button>
         </div>
       )}

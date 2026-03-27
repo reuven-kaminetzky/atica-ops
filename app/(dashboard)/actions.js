@@ -106,3 +106,78 @@ export async function getStoreData(store) {
     return { incomingTransfers: [], needsConfirmation: [], stockAlerts: [], incomingPOs: [], store };
   }
 }
+
+// ── Mutations (for client components) ──
+
+export async function createPurchaseOrder(data) {
+  'use server';
+  try {
+    const sc = require('../../lib/supply-chain');
+    const { emit, Events } = require('../../lib/events');
+    const { validatePOCreate } = require('../../lib/validate');
+
+    const { valid, data: clean, error } = validatePOCreate(data);
+    if (!valid) return { error };
+
+    const po = await sc.po.create(clean);
+
+    await emit(Events.PO_CREATED, { poId: po.id, mpId: po.mp_id, vendor: po.vendor_name });
+
+    return { created: true, po };
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function advancePOStage(poId, body) {
+  'use server';
+  try {
+    const sc = require('../../lib/supply-chain');
+    const { emit, Events } = require('../../lib/events');
+
+    const po = await sc.po.getById(poId);
+    if (!po) return { error: 'PO not found' };
+
+    const updated = await sc.po.advanceStage(poId, {
+      proof: body.proof || null,
+      advancedBy: body.advancedBy || null,
+    });
+
+    await emit(Events.PO_STAGE_ADVANCED, {
+      poId, fromStage: po.stage, toStage: updated.stage,
+    });
+
+    return { advanced: true, po: updated };
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function updateStack(mpId, updates) {
+  'use server';
+  try {
+    const product = require('../../lib/product');
+    const { emit, Events } = require('../../lib/events');
+
+    const result = await product.updateStack(mpId, updates);
+
+    if (result.changed) {
+      await emit(Events.STACK_UPDATED, { mpId, fields: Object.keys(updates), completeness: result.completeness });
+    }
+
+    return result;
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function getProductList() {
+  'use server';
+  try {
+    const product = require('../../lib/product');
+    const products = await product.getAll();
+    return products.map(p => ({ id: p.id, name: p.name, category: p.category, code: p.code }));
+  } catch (e) { return []; }
+}
+
+export async function getPurchaseOrder(id) {
+  'use server';
+  try {
+    const sc = require('../../lib/supply-chain');
+    return await sc.po.getById(id);
+  } catch (e) { return null; }
+}

@@ -26,30 +26,52 @@ DO NOT TOUCH: app/, lib/dal/, lib/product/, lib/supply-chain/,
               lib/validate.js, lib/constants.js
 ```
 
-**Current tasks (priority order):**
+**Tasks — do in this order:**
 
-1. FINISH: XSS fixes, escapeHtml, stale container guards, magic numbers
-   (already in progress — keep going)
+**1. FINISH security sweep (in progress)**
+   XSS/escapeHtml across modules, stale container guards, magic numbers.
+   You're already on this. Finish it.
 
-2. WIRE: PO payment schedule in modules/cash-flow.js
-   Backend endpoints ready:
-   - GET /api/purchase-orders/:id → returns { ...po, payments: [{id, type, label, amount, status, due_date}] }
-   - Payment statuses: planned → upcoming → due → overdue → paid
-   Show deposit/production/balance payments with due dates and status badges.
+**2. WIRE: PO payment schedule display in modules/cash-flow.js**
+   Endpoint: `GET /api/purchase-orders/:id`
+   Response includes: `{ ...po, payments: [{id, type, label, amount, status, due_date}] }`
+   Payment statuses: planned → upcoming → due → overdue → paid
+   Show deposit/production/balance rows with due dates and colored status badges.
+   Wire `refreshPaymentStatuses` to fire on `po:stage-changed` event in legacy event bus.
 
-3. WIRE: Vendor scoring in modules/vendors.js
-   Backend data available:
-   - GET /api/purchase-orders → each PO has vendor_name, stage, created_at, eta
-   Compute locally in module: onTime%, avg lead time, PO count, total committed.
-   Add tier badge (strategic/preferred/standard/probation) based on scores.
+**3. WIRE: Vendor scoring in modules/vendors.js**
+   Endpoint: `GET /api/purchase-orders` → each PO has vendor_name, stage, created_at, eta
+   Compute locally: onTime%, avg lead time, total POs, total committed $.
+   Add `preferred_terms` field (read from vendor data if available).
+   Display tier badge based on scores.
 
-4. WIRE: Shopify sync trigger
-   Backend endpoint: POST /api/sync
-   Returns: { synced, elapsed, shopify: {products, matched}, updated: {inventory, velocity} }
-   Add a "Sync Now" button somewhere visible in the legacy app. Settings or header.
+**4. WIRE: Real-time POS feed in modules/pos.js**
+   Endpoint: `GET /api/pos/feed?limit=50` → recent transactions with customer names
+   Endpoint: `GET /api/pos/today` → today's total by store
+   Endpoint: `GET /api/pos/by-location?days=7` → revenue/orders/units per store
+   Show live feed of transactions. Auto-refresh every 60 seconds.
 
-**Backend endpoints San can call (all live on legacy site via Netlify Functions):**
+**5. WIRE: Stock alerts in modules/stock.js**
+   Endpoint: `GET /api/shopify/velocity?days=30` → SKU velocity data
+   Products data already available. Filter for:
+   - total_inventory = 0 → OUT OF STOCK (red)
+   - days_of_stock < 30 → CRITICAL (red)
+   - days_of_stock < 60 → LOW (yellow)
+   Show alerts at top of stock module. Link to product detail.
+
+**6. ADD: Sync button to legacy settings module**
+   Endpoint: `POST /api/sync?step=products` → fast, maps Shopify titles to MPs
+   Add "Sync Products" button to modules/settings.js. Show result JSON.
+   This is a one-liner — the endpoint exists and works.
+
+**7. WIRE: Seasonal multiplier in cash flow projection**
+   The sync response includes: `{ seasonal: { month, multiplier } }`
+   Use the returned multiplier in cash flow projections instead of
+   hardcoding seasonal arrays in the module. One source of truth.
+
+**Backend endpoints San can call:**
 ```
+# Legacy Netlify Functions (always available)
 GET  /api/shopify/status          → connection check
 POST /api/shopify/sync/products   → all products
 POST /api/shopify/sync/orders     → orders since date
@@ -59,6 +81,13 @@ GET  /api/shopify/velocity?days=30 → SKU velocity
 GET  /api/pos/today               → today's POS sales
 GET  /api/pos/by-location?days=7  → sales by store
 GET  /api/pos/feed?limit=50       → recent transactions
+
+# v3 API (also available from legacy via fetch)
+GET  /api/purchase-orders         → all POs with payment rollup
+GET  /api/purchase-orders/:id     → single PO with payments array
+POST /api/sync?step=products      → match Shopify → MPs (fast)
+POST /api/sync?step=inventory     → update stock levels
+POST /api/sync?step=orders        → compute velocity/demand
 ```
 
 ### Nikita (this project, architecture session)
