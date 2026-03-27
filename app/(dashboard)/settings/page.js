@@ -35,17 +35,18 @@ export default function SettingsPage() {
 
       <Section title="Shopify Sync">
         <p className="text-sm text-text-secondary mb-3">
-          <strong>Initial setup:</strong> Run steps 1-3 once to load all data.
-          After that, webhooks handle real-time updates automatically.
+          Run in order. Step 1 is required. Steps 2-4 enrich the data.
         </p>
         <div className="flex gap-2 mb-4 flex-wrap">
           <Btn onClick={() => run('sync?step=products')} loading={loading === 'sync?step=products'} primary>1. Products</Btn>
-          <Btn onClick={() => run('sync?step=inventory')} loading={loading === 'sync?step=inventory'}>2. Inventory</Btn>
+          <Btn onClick={() => run('sync?step=styles')} loading={loading === 'sync?step=styles'}>2. Styles</Btn>
           <Btn onClick={() => run('sync?step=orders')} loading={loading === 'sync?step=orders'}>3. Orders</Btn>
+          <Btn onClick={() => run('sync?step=inventory')} loading={loading === 'sync?step=inventory'}>4. Inventory</Btn>
         </div>
         {results['sync?step=products'] && <Result data={results['sync?step=products']} />}
-        {results['sync?step=inventory'] && <Result data={results['sync?step=inventory']} />}
+        {results['sync?step=styles'] && <Result data={results['sync?step=styles']} />}
         {results['sync?step=orders'] && <Result data={results['sync?step=orders']} />}
+        {results['sync?step=inventory'] && <Result data={results['sync?step=inventory']} />}
       </Section>
 
       <Section title="Webhooks">
