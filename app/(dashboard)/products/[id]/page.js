@@ -19,6 +19,15 @@ export default async function ProductDetailPage({ params }) {
   const margin = mp.fob > 0 && mp.retail > 0 ? ((1 - mp.fob * LANDED_COST_FACTOR / mp.retail) * 100).toFixed(0) : null;
   const landed = mp.fob > 0 ? (mp.fob * (1 + (mp.duty || DEFAULT_DUTY_PCT) / 100) * FREIGHT_MULTIPLIER).toFixed(2) : null;
 
+  // Reorder calculation
+  const vel = parseFloat(mp.velocity_per_week) || 0;
+  const stock = parseInt(mp.total_inventory) || 0;
+  const targetWeeks = 16; // 12 cover + 4 lead buffer
+  const targetUnits = Math.ceil(vel * targetWeeks);
+  const deficit = Math.max(0, targetUnits - stock);
+  const moq = parseInt(mp.moq) || 0;
+  const reorderQty = moq > 0 && deficit > 0 ? Math.max(deficit, moq) : deficit;
+
   return (
     <div>
       <Link href="/products" className="text-sm text-brand no-underline hover:underline">← Back to products</Link>
@@ -43,13 +52,29 @@ export default async function ProductDetailPage({ params }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 mb-5">
         <Stat label="FOB" value={`$${mp.fob}`} />
         <Stat label="Retail" value={`$${mp.retail}`} />
-        <Stat label="Margin" value={margin ? `${margin}%` : '—'} color={margin >= 55 ? 'text-success' : 'text-warning'} />
+        <Stat label="Margin" value={margin ? `${margin}%` : '—'} color={parseInt(margin) >= 55 ? 'text-success' : 'text-warning'} />
         <Stat label="Landed" value={landed ? `$${landed}` : '—'} />
-        <Stat label="Lead" value={mp.lead_days ? `${mp.lead_days}d` : '—'} />
-        <Stat label="MOQ" value={mp.moq || '—'} />
-        <Stat label="Duty" value={mp.duty ? `${mp.duty}%` : '—'} />
-        <Stat label="Stock" value={mp.total_inventory || 0} color={mp.total_inventory > 0 ? 'text-success' : 'text-danger'} />
+        <Stat label="Stock" value={mp.total_inventory || 0} color={(parseInt(mp.total_inventory) || 0) > 0 ? 'text-success' : 'text-danger'} />
+        <Stat label="Vel/wk" value={parseFloat(mp.velocity_per_week) > 0 ? parseFloat(mp.velocity_per_week).toFixed(1) : '—'} />
+        <Stat label="Days Left" value={parseInt(mp.days_of_stock) > 0 && parseInt(mp.days_of_stock) < 999 ? `${mp.days_of_stock}d` : '—'} color={parseInt(mp.days_of_stock) < 30 ? 'text-danger' : parseInt(mp.days_of_stock) < 60 ? 'text-warning' : ''} />
+        <Stat label="Signal" value={mp.signal || '—'} color={mp.signal === 'hot' ? 'text-danger' : mp.signal === 'rising' ? 'text-warning' : mp.signal === 'slow' ? 'text-info' : ''} />
       </div>
+
+      {/* Reorder suggestion */}
+      {reorderQty > 0 && (
+        <div className="bg-brand/5 border border-brand/20 rounded-[--radius-md] p-4 mb-5 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-brand">Reorder Suggested</div>
+            <div className="text-xs text-text-secondary mt-0.5">
+              {reorderQty} units · ${Math.round(reorderQty * mp.fob).toLocaleString()} FOB · {mp.lead_days || 90}d lead time
+            </div>
+          </div>
+          <Link href={`/purchase-orders/new?mp=${mp.id}`}
+            className="px-3 py-1.5 rounded-[--radius-sm] bg-brand text-white text-sm font-semibold no-underline hover:bg-brand-dark">
+            Create PO
+          </Link>
+        </div>
+      )}
 
       {/* Fits */}
       {mp.fits?.length > 0 && (
