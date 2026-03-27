@@ -1,4 +1,5 @@
 import { getProduct } from '../../actions';
+const { LANDED_COST_FACTOR, DEFAULT_DUTY_PCT, FREIGHT_MULTIPLIER } = require("../../../../lib/constants");
 import StackEditor from '../../../../components/stack-editor';
 import Link from 'next/link';
 
@@ -15,8 +16,8 @@ export default async function ProductDetailPage({ params }) {
     );
   }
 
-  const margin = mp.fob > 0 && mp.retail > 0 ? ((1 - mp.fob * 1.34 / mp.retail) * 100).toFixed(0) : null;
-  const landed = mp.fob > 0 ? (mp.fob * (1 + (mp.duty || 24) / 100) * 1.08).toFixed(2) : null;
+  const margin = mp.fob > 0 && mp.retail > 0 ? ((1 - mp.fob * LANDED_COST_FACTOR / mp.retail) * 100).toFixed(0) : null;
+  const landed = mp.fob > 0 ? (mp.fob * (1 + (mp.duty || DEFAULT_DUTY_PCT) / 100) * FREIGHT_MULTIPLIER).toFixed(2) : null;
 
   return (
     <div>

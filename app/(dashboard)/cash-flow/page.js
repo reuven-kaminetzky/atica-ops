@@ -1,4 +1,5 @@
 import { getCashFlowData } from '../actions';
+const { PROJECTION_WEEKS, WEEKS_PER_MONTH } = require("../../../lib/constants");
 
 export const dynamic = 'force-dynamic';
 
@@ -7,7 +8,7 @@ export default async function CashFlowPage() {
 
   const weeks = [];
   const now = new Date();
-  for (let w = 0; w < 12; w++) {
+  for (let w = 0; w < PROJECTION_WEEKS; w++) {
     const start = new Date(now); start.setDate(now.getDate() + w * 7);
     const end = new Date(start); end.setDate(start.getDate() + 6);
     const wkPayments = payments.filter(p => {
@@ -16,7 +17,7 @@ export default async function CashFlowPage() {
       return d >= start && d <= end;
     });
     const outflow = wkPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-    weeks.push({ week: w + 1, label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), outflow: Math.round(outflow), opex: Math.round(opexMonthly / 4.33), payments: wkPayments });
+    weeks.push({ week: w + 1, label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), outflow: Math.round(outflow), opex: Math.round(opexMonthly / WEEKS_PER_MONTH), payments: wkPayments });
   }
   weeks.forEach(w => w.total = w.outflow + w.opex);
 
@@ -31,14 +32,14 @@ export default async function CashFlowPage() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         <Stat label="Active POs" value={activePOs.length} />
         <Stat label="Committed" value={`$${totalPOValue.toLocaleString()}`} />
-        <Stat label="12-Wk Projected" value={`$${totalProjected.toLocaleString()}`} />
+        <Stat label="Projected Outflow" value={`$${totalProjected.toLocaleString()}`} />
         <Stat label="Monthly OpEx" value={`$${opexMonthly.toLocaleString()}`} />
         <Stat label="Overdue" value={overdue} color={overdue > 0 ? 'text-danger' : 'text-success'} />
         <Stat label="Payments" value={payments.length} />
       </div>
 
       <div className="bg-surface rounded-[--radius-md] border border-border p-4 shadow-[--shadow-subtle] mb-4 overflow-auto">
-        <h2 className="text-sm font-semibold mb-3">12-Week Projection</h2>
+        <h2 className="text-sm font-semibold mb-3">Rolling Projection</h2>
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b border-border">

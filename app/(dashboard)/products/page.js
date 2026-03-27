@@ -1,4 +1,5 @@
 import { getProducts } from '../actions';
+const { LANDED_COST_FACTOR, DEFAULT_DUTY_PCT, FREIGHT_MULTIPLIER } = require("../../../lib/constants");
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +49,7 @@ export default async function ProductsPage() {
 
 function ProductCard({ mp }) {
   const margin = mp.fob > 0 && mp.retail > 0
-    ? ((1 - mp.fob * 1.34 / mp.retail) * 100).toFixed(0) : null;
+    ? ((1 - mp.fob * LANDED_COST_FACTOR / mp.retail) * 100).toFixed(0) : null;
   const stock = parseInt(mp.total_inventory) || 0;
   const stockColor = stock === 0 ? 'text-danger' : stock < 20 ? 'text-warning' : 'text-success';
 
