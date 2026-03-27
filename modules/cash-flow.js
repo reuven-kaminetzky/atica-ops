@@ -194,6 +194,93 @@ function renderOverview(el) {
       </div>
     </div>
 
+    <!-- 12-Week Cash Flow Projection -->
+    ${(() => {
+      const reorder = state.reorderPlan;
+      if (!reorder?.plan) return '';
+      const plan = reorder.plan;
+
+      // Projected weekly revenue from velocity × retail
+      const weeklyRevenue = plan.reduce((sum, p) => {
+        const seed = state.seeds.find(s => s.id === p.mpId);
+        const retail = seed?.retail || 0;
+        return sum + (p.unitsPerDay * 7 * retail);
+      }, 0);
+
+      // Projected weekly COGS from velocity × landed cost
+      const weeklyCOGS = plan.reduce((sum, p) => {
+        const seed = state.seeds.find(s => s.id === p.mpId);
+        const landed = seed ? seed.fob * (1 + (seed.duty || 0) / 100) : p.fob || 0;
+        return sum + (p.unitsPerDay * 7 * landed);
+      }, 0);
+
+      // PO payment schedule: spread active PO costs over expected timeline
+      const weeklyPOCost = totalPOCost / 12; // spread over ~12 weeks
+
+      const weeks = Array.from({ length: 12 }, (_, i) => {
+        const wkRev = weeklyRevenue;
+        const wkCost = weeklyCOGS + weeklyPOCost;
+        const wkNet = wkRev - wkCost;
+        return { week: i + 1, revenue: +wkRev.toFixed(0), cost: +wkCost.toFixed(0), net: +wkNet.toFixed(0) };
+      });
+
+      // Running cumulative
+      let cumNet = netPosition;
+      const cumWeeks = weeks.map(w => {
+        cumNet += w.net;
+        return { ...w, cumulative: +cumNet.toFixed(0) };
+      });
+
+      const maxVal = Math.max(...cumWeeks.map(w => Math.max(Math.abs(w.cumulative), w.revenue)), 1);
+
+      return `
+        <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+            <h3 style="margin:0">12-Week Cash Flow Projection</h3>
+            <div style="font-size:0.72rem;color:var(--text-dim)">Based on current velocity + active POs</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;margin-bottom:1rem">
+            <div class="stat-card" style="padding:0.75rem">
+              <div class="stat-label">Projected Weekly Revenue</div>
+              <div class="stat-value" style="font-size:1.1rem;color:var(--success)">${formatCurrency(weeklyRevenue)}</div>
+            </div>
+            <div class="stat-card" style="padding:0.75rem">
+              <div class="stat-label">Projected Weekly COGS</div>
+              <div class="stat-value" style="font-size:1.1rem;color:var(--danger)">${formatCurrency(weeklyCOGS)}</div>
+            </div>
+            <div class="stat-card" style="padding:0.75rem">
+              <div class="stat-label">Week 12 Cumulative</div>
+              <div class="stat-value" style="font-size:1.1rem;color:${cumWeeks[11]?.cumulative >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatCurrency(cumWeeks[11]?.cumulative || 0)}</div>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table class="data-table" style="font-size:0.78rem">
+              <thead><tr>
+                <th>Wk</th><th style="text-align:right">Revenue</th><th style="text-align:right">COGS</th>
+                <th style="text-align:right">Net</th><th style="text-align:right">Cumulative</th><th style="width:120px"></th>
+              </tr></thead>
+              <tbody>
+                ${cumWeeks.map(w => `
+                  <tr>
+                    <td style="color:var(--text-dim)">${w.week}</td>
+                    <td style="text-align:right;font-family:var(--font-mono);color:var(--success)">${formatCurrency(w.revenue)}</td>
+                    <td style="text-align:right;font-family:var(--font-mono);color:var(--danger)">${formatCurrency(w.cost)}</td>
+                    <td style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${w.net >= 0 ? 'var(--success)' : 'var(--danger)'}">${w.net >= 0 ? '+' : ''}${formatCurrency(w.net)}</td>
+                    <td style="text-align:right;font-family:var(--font-mono);font-weight:700;color:${w.cumulative >= 0 ? 'var(--success)' : 'var(--danger)'}">${formatCurrency(w.cumulative)}</td>
+                    <td>
+                      <div style="height:6px;border-radius:3px;background:var(--surface-2);overflow:hidden">
+                        <div style="height:100%;width:${Math.min(100, Math.abs(w.cumulative) / maxVal * 100)}%;background:${w.cumulative >= 0 ? 'var(--success)' : 'var(--danger)'};border-radius:3px"></div>
+                      </div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    })()}
+
     <!-- Daily Revenue Chart -->
     ${s?.dailySales?.length ? `
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1.5rem">

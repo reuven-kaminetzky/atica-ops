@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { section: 'Operations', items: [
     { id: 'cash-flow',   label: 'Cash Flow',       icon: '◫' },
     { id: 'vendors',     label: 'Vendors',         icon: '⊞' },
+    { id: 'shipments',   label: 'Shipments',       icon: '◧' },
     { id: 'analytics',   label: 'Analytics',       icon: '◩' },
   ]},
   // Finance

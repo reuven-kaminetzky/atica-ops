@@ -365,7 +365,7 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 ### High Priority — Business Logic
 - [x] **Seasonal multipliers in reorder** — adjustVelocity() in reorder + mp-velocity, seasonal badge in analytics
 - [x] **Demand signals** — classifyDemand() in backend, signal badges in analytics table + summary panel
-- [ ] **Cash-flow cost projection** — use formula: revenue = velocity × retail × 4.33/mo, COGS = velocity × landed × 4.33. 12-week forward projection from PO payment schedules.
+- [x] **Cash-flow cost projection** — 12-week forward projection table with cumulative net, velocity × retail revenue, velocity × landed COGS, PO cost spread
 - [x] **Distribution weights** — ideal vs actual comparison bar in stock matrix view
 
 ### High Priority — Wiring
@@ -375,7 +375,7 @@ Each function gets its own esbuild-bundled cache copy. TTLs:
 - [x] Customer loyalty tiers — Bronze→Diamond with LTV thresholds, discount %, points multiplier
 
 ### Medium Priority
-- [ ] Shipments module — wire CRUD endpoints (auto-created on PO "In Transit")
+- [x] Shipments module — list, detail modal, update, arrive with event timeline
 - [x] Inventory transfer form — stock module Transfer tab with product/location selects, qty validation
 - [ ] Vendor scoring — add onTime%, qualScore, tier (Strategic/Preferred/Standard/Transactional) to vendor data
 - [ ] PO payment schedule — each PO has deposit/balance/final payments with due dates and status
