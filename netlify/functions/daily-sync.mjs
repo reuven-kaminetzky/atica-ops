@@ -1,5 +1,5 @@
-// Daily sync trigger — runs at 5:00 AM UTC (midnight ET)
-// Scheduled functions have 30s limit, so we just trigger the background function
+// Daily sync — scheduled at 5:00 AM UTC (midnight ET)
+// Triggers the sync-background function which has 15 min timeout
 
 export default async (req) => {
   const { next_run } = await req.json();
@@ -8,28 +8,21 @@ export default async (req) => {
   console.log(JSON.stringify({
     event: 'daily-sync.triggered',
     next_run,
-    timestamp: new Date().toISOString(),
+    ts: new Date().toISOString(),
   }));
 
-  // Trigger the background function which has 15 min timeout
   try {
-    const res = await fetch(`${siteUrl}/.netlify/functions/sync-all-background`, {
+    await fetch(`${siteUrl}/.netlify/functions/sync-background`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ triggeredBy: 'daily-schedule', next_run }),
     });
-    console.log(JSON.stringify({
-      event: 'daily-sync.background-triggered',
-      status: res.status,
-    }));
+    console.log(JSON.stringify({ event: 'daily-sync.background-triggered' }));
   } catch (e) {
-    console.error(JSON.stringify({
-      event: 'daily-sync.error',
-      message: e.message,
-    }));
+    console.error(JSON.stringify({ event: 'daily-sync.error', error: e.message }));
   }
 };
 
 export const config = {
-  schedule: '0 5 * * *', // 5:00 AM UTC = midnight ET
+  schedule: '0 5 * * *',
 };
