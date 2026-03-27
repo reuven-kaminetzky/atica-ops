@@ -16,6 +16,7 @@ const NAV = [
   ]},
   { section: 'INTELLIGENCE', items: [
     { href: '/analytics', label: 'Analytics', icon: '◩' },
+    { href: '/store', label: 'Store View', icon: '⊟' },
   ]},
   { section: 'SYSTEM', items: [
     { href: '/settings', label: 'Settings', icon: '⚙' },
