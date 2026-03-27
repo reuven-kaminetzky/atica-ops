@@ -41,7 +41,7 @@ export default async function StockPage() {
                   <td className={`py-2 px-3 text-right ${days <= 60 ? stockColor : 'text-text-secondary'}`}>{days < 999 ? days + 'd' : '—'}</td>
                   <td className="py-2 px-3"><span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${signalColors[signal] || 'bg-surface-sunken text-text-tertiary'}`}>{signal}</span></td>
                   <td className="py-2 px-3 text-right text-text-secondary">{vel > 0 ? vel.toFixed(1) : '—'}</td>
-                  <td className="py-2 px-3 text-right">{parseInt(mp.active_pos) > 0 ? <span className="text-info font-semibold">{mp.active_pos}</span> : '—'}</td>
+                  <td className="py-2 px-3 text-right">{parseInt(mp.active_pos || 0) > 0 ? <span className="text-info font-semibold">{mp.active_pos}</span> : '—'}</td>
                 </tr>
               );
             })}

@@ -4,57 +4,61 @@ import path from 'path';
 
 export async function POST() {
   try {
-    // Pool supports raw SQL strings (neon() only supports tagged templates)
     const { Pool } = require('@neondatabase/serverless');
     const pool = new Pool({ connectionString: process.env.NETLIFY_DATABASE_URL });
 
-    const migrationPath = path.join(process.cwd(), 'supabase', 'migrations', '001_initial_schema.sql');
-    if (!fs.existsSync(migrationPath)) {
-      return NextResponse.json({ error: 'Migration file not found' }, { status: 404 });
+    const migrationsDir = path.join(process.cwd(), 'supabase', 'migrations');
+    if (!fs.existsSync(migrationsDir)) {
+      return NextResponse.json({ error: 'Migrations directory not found' }, { status: 404 });
     }
 
-    const migration = fs.readFileSync(migrationPath, 'utf8');
+    // Run all .sql files in order
+    const files = fs.readdirSync(migrationsDir)
+      .filter(f => f.endsWith('.sql'))
+      .sort();
 
-    // Split carefully — handle $$ function bodies that contain semicolons
-    const statements = [];
-    let current = '';
-    let inDollarQuote = false;
+    let totalExecuted = 0;
+    const allErrors = [];
+    const allTables = [];
 
-    for (const line of migration.split('\n')) {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('--')) continue;
+    for (const file of files) {
+      const migration = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
-      if (trimmed.includes('$$')) {
-        inDollarQuote = !inDollarQuote;
-      }
+      // Split carefully — handle $$ function bodies
+      const statements = [];
+      let current = '';
+      let inDollarQuote = false;
 
-      current += line + '\n';
-
-      if (!inDollarQuote && trimmed.endsWith(';')) {
-        const stmt = current.trim();
-        if (stmt.length > 5) statements.push(stmt.replace(/;$/, ''));
-        current = '';
-      }
-    }
-
-    let executed = 0;
-    const errors = [];
-
-    for (const stmt of statements) {
-      try {
-        await pool.query(stmt);
-        executed++;
-      } catch (e) {
-        const msg = e.message || '';
-        if (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('cannot cast')) {
-          executed++;
-        } else {
-          errors.push({ sql: stmt.slice(0, 80), error: msg.slice(0, 120) });
+      for (const line of migration.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('--')) continue;
+        if (trimmed.includes('$$')) inDollarQuote = !inDollarQuote;
+        current += line + '\n';
+        if (!inDollarQuote && trimmed.endsWith(';')) {
+          const stmt = current.trim();
+          if (stmt.length > 5) statements.push(stmt.replace(/;$/, ''));
+          current = '';
         }
       }
+
+      let executed = 0;
+      for (const stmt of statements) {
+        try {
+          await pool.query(stmt);
+          executed++;
+        } catch (e) {
+          const msg = e.message || '';
+          if (msg.includes('already exists') || msg.includes('duplicate') || msg.includes('cannot cast')) {
+            executed++;
+          } else {
+            allErrors.push({ file, sql: stmt.slice(0, 60), error: msg.slice(0, 100) });
+          }
+        }
+      }
+      totalExecuted += executed;
     }
 
-    // Verify tables
+    // List all tables
     const { rows: tables } = await pool.query(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
     );
@@ -63,9 +67,9 @@ export async function POST() {
 
     return NextResponse.json({
       migrated: true,
-      executed,
-      total: statements.length,
-      errors: errors.slice(0, 10),
+      files: files,
+      executed: totalExecuted,
+      errors: allErrors.slice(0, 10),
       tables: tables.map(t => t.table_name),
     });
   } catch (e) {

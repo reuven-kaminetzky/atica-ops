@@ -78,7 +78,7 @@ export default async function PurchaseOrdersPage() {
                   <td className="px-3.5 py-2.5 text-sm text-right font-mono">{(po.units || 0).toLocaleString()}</td>
                   <td className="px-3.5 py-2.5 text-sm text-right font-semibold font-mono">${parseFloat(po.fob_total || 0).toLocaleString()}</td>
                   <td className="px-3.5 py-2.5 text-right">
-                    {parseInt(po.overdue_payments) > 0 && (
+                    {parseInt(po.overdue_payments) || 0 > 0 && (
                       <span className="text-[11px] font-semibold text-danger">{po.overdue_payments} overdue</span>
                     )}
                   </td>

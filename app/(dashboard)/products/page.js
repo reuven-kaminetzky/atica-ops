@@ -63,7 +63,7 @@ function ProductCard({ mp }) {
         </div>
         {margin && (
           <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-            parseInt(margin) >= 55 ? 'bg-success-light text-success' : 'bg-warning-light text-warning'
+            parseInt(margin) || 0 >= 55 ? 'bg-success-light text-success' : 'bg-warning-light text-warning'
           }`}>
             {margin}%
           </span>
@@ -87,9 +87,9 @@ function ProductCard({ mp }) {
         <span className="text-[11px] px-2 py-0.5 rounded bg-surface-sunken text-text-secondary">
           {(mp.phase || 'in_store').replace(/_/g, ' ')}
         </span>
-        {parseInt(mp.active_pos) > 0 && (
+        {parseInt(mp.active_pos) || 0 > 0 && (
           <span className="text-[11px] px-2 py-0.5 rounded bg-info-light text-info font-semibold">
-            {mp.active_pos} PO{parseInt(mp.active_pos) > 1 ? 's' : ''}
+            {mp.active_pos} PO{parseInt(mp.active_pos) || 0 > 1 ? 's' : ''}
           </span>
         )}
         {mp.completeness > 0 && (

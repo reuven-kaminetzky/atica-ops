@@ -29,9 +29,9 @@ export default async function VendorsPage() {
                   <div className="text-xs text-text-secondary mt-0.5">{v.country || 'Unknown'} · {v.tier || 'standard'}</div>
                 </div>
                 <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-                  parseInt(v.active_pos) > 0 ? 'bg-info-light text-info' : 'bg-surface-sunken text-text-tertiary'
+                  parseInt(v.active_pos || 0) > 0 ? 'bg-info-light text-info' : 'bg-surface-sunken text-text-tertiary'
                 }`}>
-                  {v.active_pos} active PO{parseInt(v.active_pos) !== 1 ? 's' : ''}
+                  {v.active_pos} active PO{parseInt(v.active_pos || 0) !== 1 ? 's' : ''}
                 </span>
               </div>
 

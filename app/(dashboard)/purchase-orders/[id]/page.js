@@ -134,7 +134,7 @@ export default function PODetailPage() {
                 <tr key={p.id} className="border-b border-border/30">
                   <td className="py-2 px-3">{p.type}</td>
                   <td className="py-2 px-3 text-text-secondary">{p.label}</td>
-                  <td className="py-2 px-3 text-right font-semibold">${parseFloat(p.amount).toLocaleString()}</td>
+                  <td className="py-2 px-3 text-right font-semibold">${(parseFloat(p.amount) || 0).toLocaleString()}</td>
                   <td className="py-2 px-3">
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
                       p.status === 'paid' ? 'bg-success-light text-success' :

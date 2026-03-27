@@ -16,8 +16,15 @@ export async function PATCH(request, { params }) {
   try {
     const { id } = await params;
     const sc = require('../../../../lib/supply-chain');
+    const { validatePOUpdate } = require('../../../../lib/validate');
+
     const body = await request.json();
-    const updated = await sc.po.update(id, body);
+    const validation = validatePOUpdate(body);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+
+    const updated = await sc.po.update(id, validation.data);
     if (!updated) return NextResponse.json({ error: 'PO not found' }, { status: 404 });
     return NextResponse.json({ updated: true, purchaseOrder: updated });
   } catch (e) {

@@ -26,7 +26,7 @@ export default function NewPOPage() {
           mpId: form.mpId || null, vendor: form.vendor, vendorName: form.vendor,
           fob: parseFloat(form.fob) || 0, units: parseInt(form.units) || 0,
           moq: parseInt(form.moq) || 0, lead: parseInt(form.lead) || 0,
-          duty: parseFloat(form.duty) || 0, hts: form.hts || null,
+          duty: parseFloat(form.duty) || 0 || 0, hts: form.hts || null,
           etd: form.etd || null, notes: form.notes, paymentTerms: form.paymentTerms,
         }),
       });
@@ -63,7 +63,7 @@ export default function NewPOPage() {
               <span className="font-semibold">FOB Total: ${fobTotal.toLocaleString()}</span>
               {form.duty && (
                 <span className="ml-4 text-text-secondary">
-                  Landed: ${(fobTotal * (1 + parseFloat(form.duty) / 100)).toLocaleString()}
+                  Landed: ${(fobTotal * (1 + parseFloat(form.duty) || 0 / 100)).toLocaleString()}
                 </span>
               )}
             </div>

@@ -14,11 +14,15 @@ export async function POST(request) {
   try {
     const sc = require('../../../lib/supply-chain');
     const { emit, Events } = require('../../../lib/events');
+    const { validatePOCreate } = require('../../../lib/validate');
+
     const body = await request.json();
-    if (!body.mpId && !body.vendor) {
-      return NextResponse.json({ error: 'mpId or vendor required' }, { status: 400 });
+    const validation = validatePOCreate(body);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const po = await sc.po.create(body);
+
+    const po = await sc.po.create(validation.data);
     await emit(Events.PO_CREATED, po);
     return NextResponse.json({ created: true, purchaseOrder: po });
   } catch (e) {
