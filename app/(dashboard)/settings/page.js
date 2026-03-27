@@ -59,6 +59,49 @@ export default function SettingsPage() {
         {results['webhooks/register'] && <Result data={results['webhooks/register']} />}
       </Section>
 
+      <Section title="Data Verification">
+        <p className="text-sm text-text-secondary mb-3">
+          Checks all data integrity: MPs linked to Shopify, images, inventory,
+          velocity, styles. Grades the system A-F. Run after every sync.
+        </p>
+        <div className="flex gap-2 mb-4">
+          <Btn onClick={async () => {
+            setLoading('verify');
+            try {
+              const res = await fetch('/api/verify');
+              const data = await res.json();
+              setResults(prev => ({ ...prev, verify: data }));
+            } catch (e) { setResults(prev => ({ ...prev, verify: { error: e.message } })); }
+            setLoading('');
+          }} loading={loading === 'verify'} primary>Verify Data</Btn>
+        </div>
+        {results.verify && (
+          <div className="space-y-3">
+            <div className={`flex items-center gap-3 p-3 rounded-[--radius-md] ${
+              results.verify.verified ? 'bg-success/10 border border-success/20' : 'bg-danger/10 border border-danger/20'
+            }`}>
+              <span className="text-2xl font-bold">{results.verify.grade || '?'}</span>
+              <div>
+                <div className="text-sm font-semibold">{results.verify.verified ? 'Data Verified' : 'Issues Found'}</div>
+                <div className="text-xs text-text-secondary">Score: {results.verify.score}/100</div>
+              </div>
+            </div>
+            {results.verify.issues?.length > 0 && (
+              <div className="space-y-1">
+                {results.verify.issues.map((issue, i) => (
+                  <div key={i} className={`text-xs p-2 rounded ${
+                    issue.severity === 'critical' ? 'bg-danger/10 text-danger' :
+                    issue.severity === 'warning' ? 'bg-warning/10 text-warning' :
+                    'bg-surface-sunken text-text-secondary'
+                  }`}>{issue.severity.toUpperCase()}: {issue.message}</div>
+                ))}
+              </div>
+            )}
+            <Result data={results.verify} />
+          </div>
+        )}
+      </Section>
+
       <Section title="Shopify Connection">
         <div className="grid grid-cols-2 gap-3 text-sm">
           <KV label="Store URL" value="atica-brand.myshopify.com" />

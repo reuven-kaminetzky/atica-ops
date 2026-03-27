@@ -16,78 +16,82 @@ Both are live. Both serve real users. Don't break either.
 ## File Ownership — WHO CAN TOUCH WHAT
 
 ### Shendrao-san (Claude Code)
+
+**IMPORTANT: Legacy app is being killed. Do NOT build new features in
+modules/*.js or atica_app.html. All new work goes in the v3 app.**
+
 ```
-OWNS:       modules/*.js, modules/core.js, css/
-CAN EDIT:   netlify/functions/*.js
-DO NOT TOUCH: app/, lib/dal/, lib/product/, lib/supply-chain/,
-              lib/inventory/, lib/sales/, lib/finance/,
-              lib/logistics/, lib/marketing/,
-              lib/events.js, lib/event-handlers.js,
-              lib/validate.js, lib/constants.js
+WORKS IN:   app/, lib/, components/, supabase/
+OWNS:       Scheduled functions, CI pipeline, auth, observability
+CAN EDIT:   Everything except lib/products.js matchers (ask Reuven first)
 ```
 
 **Tasks — do in this order:**
 
-**1. FINISH security sweep (in progress)**
-   XSS/escapeHtml across modules, stale container guards, magic numbers.
-   You're already on this. Finish it.
+**1. BUILD: Automated sync verification (POST /api/verify)**
+   After sync runs, this endpoint should:
+   - Query master_products: count where external_ids IS NOT NULL
+   - Query styles: count, group by mp_id
+   - Spot-check: pick 5 random MPs, verify total_inventory > 0
+   - Spot-check: pick 5 random styles, verify hero_image IS NOT NULL
+   - Compare matched count vs total Shopify products (should be >50%)
+   - Return a health report: { verified: true/false, issues: [], stats: {} }
+   
+   The point: Reuven should never have to manually verify sync results.
+   The system tells him if the data is trustworthy.
 
-**2. WIRE: PO payment schedule display in modules/cash-flow.js**
-   Endpoint: `GET /api/purchase-orders/:id`
-   Response includes: `{ ...po, payments: [{id, type, label, amount, status, due_date}] }`
-   Payment statuses: planned → upcoming → due → overdue → paid
-   Show deposit/production/balance rows with due dates and colored status badges.
-   Wire `refreshPaymentStatuses` to fire on `po:stage-changed` event in legacy event bus.
+**2. BUILD: Scheduled daily sync (Netlify Scheduled Function)**
+   File: `netlify/functions/daily-sync-background.mjs`
+   Schedule: 5:00 AM UTC daily (midnight ET)
+   Does: POST /api/sync (all 3 steps) → POST /api/verify
+   Logs results. If verification fails, stores error in app_settings.
+   This is the daily reconciliation that keeps data fresh without manual action.
 
-**3. WIRE: Vendor scoring in modules/vendors.js**
-   Endpoint: `GET /api/purchase-orders` → each PO has vendor_name, stage, created_at, eta
-   Compute locally: onTime%, avg lead time, total POs, total committed $.
-   Add `preferred_terms` field (read from vendor data if available).
-   Display tier badge based on scores.
+**3. BUILD: Authentication**
+   Minimum viable: Netlify site password protection on v3 site.
+   Next level: simple token auth on API routes (webhook routes
+   already verify HMAC, other routes need at minimum a bearer token).
+   Set SKIP_AUTH=false once auth is in place.
 
-**4. WIRE: Real-time POS feed in modules/pos.js**
-   Endpoint: `GET /api/pos/feed?limit=50` → recent transactions with customer names
-   Endpoint: `GET /api/pos/today` → today's total by store
-   Endpoint: `GET /api/pos/by-location?days=7` → revenue/orders/units per store
-   Show live feed of transactions. Auto-refresh every 60 seconds.
+**4. BUILD: Dashboard with real data (app/(dashboard)/page.js)**
+   The landing page should show 5 cards answering the 5 daily questions:
+   - Total inventory value (SUM of total_inventory × fob across MPs)
+   - Top 5 MPs by velocity (from velocity_per_week)
+   - POs in pipeline (count by stage)
+   - Payments due this week (from po_payments)
+   - Stock alerts (MPs where days_of_stock < 30)
+   All from server actions, all from Postgres. No Shopify API calls.
 
-**5. WIRE: Stock alerts in modules/stock.js**
-   Endpoint: `GET /api/shopify/velocity?days=30` → SKU velocity data
-   Products data already available. Filter for:
-   - total_inventory = 0 → OUT OF STOCK (red)
-   - days_of_stock < 30 → CRITICAL (red)
-   - days_of_stock < 60 → LOW (yellow)
-   Show alerts at top of stock module. Link to product detail.
+**5. BUILD: Structured logging**
+   Every sync, webhook, and error should log to a structured format.
+   Minimum: console.log with JSON structure that Netlify captures.
+   { event: 'sync.complete', matched: 350, elapsed: '12s', errors: 0 }
+   { event: 'webhook.received', topic: 'orders/create', order: '#1234' }
+   { event: 'error', route: '/api/sync', message: '...' }
 
-**6. ADD: Sync button to legacy settings module**
-   Endpoint: `POST /api/sync?step=products` → fast, maps Shopify titles to MPs
-   Add "Sync Products" button to modules/settings.js. Show result JSON.
-   This is a one-liner — the endpoint exists and works.
+**6. BUILD: CI test pipeline**
+   GitHub Action that runs `node test.js` on every push.
+   Blocks merge if tests fail. Simple, no fancy setup.
 
-**7. WIRE: Seasonal multiplier in cash flow projection**
-   The sync response includes: `{ seasonal: { month, multiplier } }`
-   Use the returned multiplier in cash flow projections instead of
-   hardcoding seasonal arrays in the module. One source of truth.
+**7. IMPROVE: Cash flow page with real payment data**
+   File: `app/(dashboard)/cash-flow/page.js`
+   Currently uses static formulas. Should pull from:
+   - po_payments table (outflow: when payments are due)
+   - sales table (inflow: actual revenue by week)
+   - Show projected vs actual variance
 
-**Backend endpoints San can call:**
-```
-# Legacy Netlify Functions (always available)
-GET  /api/shopify/status          → connection check
-POST /api/shopify/sync/products   → all products
-POST /api/shopify/sync/orders     → orders since date
-POST /api/shopify/sync/inventory  → all inventory levels
-GET  /api/shopify/sales?days=30   → sales summary
-GET  /api/shopify/velocity?days=30 → SKU velocity
-GET  /api/pos/today               → today's POS sales
-GET  /api/pos/by-location?days=7  → sales by store
-GET  /api/pos/feed?limit=50       → recent transactions
+**What San should NOT do:**
+- Don't touch modules/*.js (legacy, being killed)
+- Don't touch atica_app.html (legacy monolith)
+- Don't build features that only work in the legacy app
+- Don't wire legacy event bus or legacy modules
 
-# v3 API (also available from legacy via fetch)
-GET  /api/purchase-orders         → all POs with payment rollup
-GET  /api/purchase-orders/:id     → single PO with payments array
-POST /api/sync?step=products      → match Shopify → MPs (fast)
-POST /api/sync?step=inventory     → update stock levels
-POST /api/sync?step=orders        → compute velocity/demand
+**Domain modules San can import:**
+```javascript
+const product = require('../../lib/product');       // getAll, getById, matchProduct
+const sc = require('../../lib/supply-chain');        // po.getAll, po.getById, vendor.getAll
+const finance = require('../../lib/finance');         // getPaymentsDue, projectCashFlow
+const inventory = require('../../lib/inventory');     // getStockByProduct, adjustVelocity
 ```
 
 ### Nikita (this project, architecture session)
