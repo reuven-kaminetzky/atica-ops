@@ -138,6 +138,7 @@ function buildVendorView(seeds, pos) {
         name: v, products: [], categories: new Set(), totalMPs: 0,
         avgFob: 0, avgLead: 0, pos: [],
         activePOCost: 0, activePOUnits: 0, totalPOCost: 0,
+        preferredTerms: 'standard',
       };
     }
     vendors[v].products.push({ id: seed.id, name: seed.name, code: seed.code, cat: seed.cat, fob: seed.fob });
@@ -240,7 +241,7 @@ function renderVendorCard(v, idx) {
             <span style="font-size:0.68rem;font-weight:700;padding:0.1rem 0.45rem;border-radius:3px;background:${tier.color}15;color:${tier.color};border:1px solid ${tier.color}30">${esc(tier.name)}</span>
           </div>
           <div style="font-size:0.78rem;color:var(--text-dim)">
-            ${v.totalMPs} MPs · ${esc(v.categories.join(', '))} · avg lead ${v.avgLead}d
+            ${v.totalMPs} MPs · ${esc(v.categories.join(', '))} · avg lead ${v.avgLead}d · terms: ${esc(v.preferredTerms)}
           </div>
           <!-- Score bar -->
           <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem">

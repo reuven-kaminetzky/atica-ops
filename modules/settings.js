@@ -89,7 +89,16 @@ function render() {
     </div>
 
     <div class="settings-section">
-      <h3>Sync All</h3>
+      <h3>Shopify Sync (v3)</h3>
+      <div style="font-size:0.82rem;color:var(--text-dim);margin-bottom:0.5rem">
+        Pull products, inventory, and 30-day orders from Shopify. Updates product matching, stock levels, velocity, and demand signals.
+      </div>
+      <button id="settings-shopify-sync" class="btn btn-primary">Sync from Shopify</button>
+      <div id="sync-result" style="margin-top:0.5rem;font-size:0.78rem;font-family:var(--font-mono);white-space:pre-wrap;max-height:200px;overflow-y:auto"></div>
+    </div>
+
+    <div class="settings-section">
+      <h3>Sync All (Legacy)</h3>
       <div class="sync-actions">
         <button id="settings-sync-products" class="btn btn-secondary">Sync Products</button>
         <button id="settings-sync-orders" class="btn btn-secondary">Sync Orders</button>
@@ -121,7 +130,14 @@ function bindEvents() {
     btn.textContent = 'Working...';
 
     try {
-      if (btn.id === 'settings-clear-cache') {
+      if (btn.id === 'settings-shopify-sync') {
+        const resultEl = document.getElementById('sync-result');
+        if (resultEl) resultEl.textContent = 'Syncing...';
+        const r = await api.post('/api/sync');
+        if (resultEl) resultEl.textContent = JSON.stringify(r, null, 2);
+        emit('sync:complete', { source: 'shopify' });
+        emit('toast:show', { message: 'Shopify sync complete', type: 'success' });
+      } else if (btn.id === 'settings-clear-cache') {
         await api.post('/api/status/cache/clear');
         state.cache = await api.get('/api/status/cache');
         emit('toast:show', { message: 'Cache cleared', type: 'success' });

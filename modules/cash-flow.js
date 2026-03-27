@@ -92,6 +92,29 @@ export async function init(container) {
       render();
     } catch (e) { /* ignore */ }
   }));
+
+  // Auto-refresh payment statuses when PO stage changes
+  _unsubs.push(on('po:updated', async ({ id }) => {
+    if (!_container || !id) return;
+    try {
+      await api.post(`/api/purchase-orders/${encodeURIComponent(id)}/refresh`);
+      const posData = await api.get('/api/purchase-orders');
+      if (!_container) return;
+      state.purchaseOrders = posData.purchaseOrders || [];
+      render();
+    } catch (e) { /* ignore — refresh is best-effort */ }
+  }));
+
+  _unsubs.push(on('po:created', async () => {
+    if (!_container) return;
+    try {
+      const posData = await api.get('/api/purchase-orders');
+      if (!_container) return;
+      state.purchaseOrders = posData.purchaseOrders || [];
+      render();
+      bindPOButton();
+    } catch (e) { /* ignore */ }
+  }));
 }
 
 function render() {
