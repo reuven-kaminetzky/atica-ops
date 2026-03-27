@@ -1,61 +1,43 @@
 import { getProducts } from '../actions';
-export const dynamic = 'force-dynamic';
 import Link from 'next/link';
+
+export const dynamic = 'force-dynamic';
 
 export default async function ProductsPage() {
   const products = await getProducts();
 
-  // Group by category
   const categories = {};
   for (const p of products) {
     const cat = p.category || 'Other';
-    if (!categories[cat]) categories[cat] = [];
-    categories[cat].push(p);
+    (categories[cat] ||= []).push(p);
   }
 
   const catOrder = ['Dress Shirts', 'Suits', 'Blazers', 'Pants', 'Outerwear', 'Sweaters', 'Knits', 'Accessories', 'Boys'];
 
   return (
     <div>
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: '1.5rem',
-      }}>
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700 }}>Master Products</h1>
-          <p style={{ fontSize: '0.82rem', color: '#5f6880', marginTop: '0.25rem' }}>
+          <h1 className="text-2xl font-bold tracking-tight text-text">Master Products</h1>
+          <p className="text-sm text-text-secondary mt-0.5">
             {products.length} products across {Object.keys(categories).length} categories
           </p>
         </div>
       </div>
 
       {products.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: '3rem', color: '#9ba3b5',
-          background: 'white', borderRadius: 10, border: '1px solid #e5e8ed',
-        }}>
-          <p style={{ fontSize: '1.1rem', marginBottom: '0.5rem' }}>No products in database</p>
-          <p style={{ fontSize: '0.85rem' }}>Run the seed script: <code>node scripts/seed-db.js</code></p>
+        <div className="text-center py-16 bg-surface rounded-[--radius-md] border border-border">
+          <p className="text-text-secondary text-lg mb-1">No products in database</p>
+          <p className="text-sm text-text-tertiary">Go to Settings → Seed Data</p>
         </div>
       ) : (
         catOrder.filter(cat => categories[cat]).map(cat => (
-          <div key={cat} style={{ marginBottom: '2rem' }}>
-            <h2 style={{
-              fontSize: '0.82rem', fontWeight: 600, textTransform: 'uppercase',
-              letterSpacing: '0.06em', color: '#5f6880', marginBottom: '0.75rem',
-              paddingBottom: '0.5rem', borderBottom: '1px solid #e5e8ed',
-            }}>
-              {cat} <span style={{ color: '#9ba3b5', fontWeight: 400 }}>({categories[cat].length})</span>
+          <div key={cat} className="mb-8">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-text-secondary mb-3 pb-2 border-b border-border">
+              {cat} <span className="text-text-tertiary font-normal">({categories[cat].length})</span>
             </h2>
-
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: '0.75rem',
-            }}>
-              {categories[cat].map(mp => (
-                <ProductCard key={mp.id} mp={mp} />
-              ))}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {categories[cat].map(mp => <ProductCard key={mp.id} mp={mp} />)}
             </div>
           </div>
         ))
@@ -66,75 +48,52 @@ export default async function ProductsPage() {
 
 function ProductCard({ mp }) {
   const margin = mp.fob > 0 && mp.retail > 0
-    ? ((1 - mp.fob * 1.34 / mp.retail) * 100).toFixed(0)
-    : null;
-
-  const stockColor = (mp.total_inventory || 0) === 0 ? '#dc2626'
-    : mp.total_inventory < 20 ? '#ca8a04' : '#16a34a';
+    ? ((1 - mp.fob * 1.34 / mp.retail) * 100).toFixed(0) : null;
+  const stock = parseInt(mp.total_inventory) || 0;
+  const stockColor = stock === 0 ? 'text-danger' : stock < 20 ? 'text-warning' : 'text-success';
 
   return (
-    <Link href={`/products/${mp.id}`} style={{
-      display: 'block', background: 'white', border: '1px solid #e5e8ed',
-      borderRadius: 10, padding: '1rem', textDecoration: 'none', color: '#1e2330',
-      transition: 'all 0.15s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+    <Link href={`/products/${mp.id}`}
+      className="group bg-surface rounded-[--radius-md] border border-border p-4 no-underline text-text shadow-[--shadow-subtle] hover:shadow-[--shadow-card] hover:border-border-strong transition-all"
+    >
+      <div className="flex items-start justify-between">
         <div>
-          <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{mp.name}</div>
-          <div style={{ fontSize: '0.78rem', color: '#5f6880', marginTop: '0.15rem' }}>
-            {mp.code} · {mp.vendor_id || '—'}
-          </div>
+          <div className="font-semibold text-[15px] group-hover:text-brand transition-colors">{mp.name}</div>
+          <div className="text-xs text-text-secondary mt-0.5">{mp.code} · {mp.vendor_id || '—'}</div>
         </div>
         {margin && (
-          <div style={{
-            fontSize: '0.72rem', fontWeight: 600, padding: '0.15rem 0.5rem',
-            borderRadius: 4, background: parseInt(margin) >= 55 ? '#dcfce7' : '#fef3c7',
-            color: parseInt(margin) >= 55 ? '#16a34a' : '#ca8a04',
-          }}>
+          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
+            parseInt(margin) >= 55 ? 'bg-success-light text-success' : 'bg-warning-light text-warning'
+          }`}>
             {margin}%
-          </div>
+          </span>
         )}
       </div>
 
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginTop: '0.75rem', fontSize: '0.82rem',
-      }}>
+      <div className="flex items-center justify-between mt-3 text-sm">
         <div>
-          <span style={{ color: '#5f6880' }}>FOB </span>
-          <span style={{ fontWeight: 600 }}>${mp.fob}</span>
-          <span style={{ color: '#5f6880', margin: '0 0.5rem' }}>·</span>
-          <span style={{ color: '#5f6880' }}>Retail </span>
-          <span style={{ fontWeight: 600 }}>${mp.retail}</span>
+          <span className="text-text-secondary">FOB </span>
+          <span className="font-semibold">${mp.fob}</span>
+          <span className="text-text-tertiary mx-1.5">·</span>
+          <span className="text-text-secondary">Retail </span>
+          <span className="font-semibold">${mp.retail}</span>
         </div>
-        <div style={{ fontWeight: 600, color: stockColor, fontSize: '0.78rem' }}>
-          {mp.total_inventory || 0} units
-        </div>
+        <span className={`font-semibold text-xs ${stockColor}`}>
+          {stock} units
+        </span>
       </div>
 
-      <div style={{
-        display: 'flex', gap: '0.5rem', marginTop: '0.65rem',
-        alignItems: 'center', fontSize: '0.72rem',
-      }}>
-        <span style={{
-          padding: '0.12rem 0.45rem', borderRadius: 3,
-          background: '#f0f2f5', color: '#5f6880',
-        }}>
-          {mp.phase?.replace(/_/g, ' ') || 'in store'}
+      <div className="flex gap-1.5 mt-3 flex-wrap">
+        <span className="text-[11px] px-2 py-0.5 rounded bg-surface-sunken text-text-secondary">
+          {(mp.phase || 'in_store').replace(/_/g, ' ')}
         </span>
         {parseInt(mp.active_pos) > 0 && (
-          <span style={{
-            padding: '0.12rem 0.45rem', borderRadius: 3,
-            background: '#dbeafe', color: '#1d4ed8',
-          }}>
+          <span className="text-[11px] px-2 py-0.5 rounded bg-info-light text-info font-semibold">
             {mp.active_pos} PO{parseInt(mp.active_pos) > 1 ? 's' : ''}
           </span>
         )}
         {mp.completeness > 0 && (
-          <span style={{
-            padding: '0.12rem 0.45rem', borderRadius: 3,
-            background: '#f0fdf4', color: '#16a34a',
-          }}>
+          <span className="text-[11px] px-2 py-0.5 rounded bg-success-light text-success">
             Stack {mp.completeness}%
           </span>
         )}

@@ -1,94 +1,68 @@
 import { getProducts, getPurchaseOrders } from '../actions';
+
 export const dynamic = 'force-dynamic';
 
 export default async function AnalyticsPage() {
   const [products, pos] = await Promise.all([getProducts(), getPurchaseOrders()]);
 
-  // Category breakdown
   const catStats = {};
   for (const mp of products) {
     const cat = mp.category || 'Other';
-    if (!catStats[cat]) catStats[cat] = { count: 0, totalStock: 0, totalFOB: 0, totalRetail: 0, lowStock: 0 };
+    if (!catStats[cat]) catStats[cat] = { count: 0, stock: 0, oos: 0, fobSum: 0, retailSum: 0 };
     catStats[cat].count++;
-    catStats[cat].totalStock += parseInt(mp.total_inventory) || 0;
-    catStats[cat].totalFOB += parseFloat(mp.fob) || 0;
-    catStats[cat].totalRetail += parseFloat(mp.retail) || 0;
-    if ((parseInt(mp.total_inventory) || 0) === 0) catStats[cat].lowStock++;
+    catStats[cat].stock += parseInt(mp.total_inventory) || 0;
+    if ((parseInt(mp.total_inventory) || 0) === 0) catStats[cat].oos++;
+    catStats[cat].fobSum += parseFloat(mp.fob) || 0;
+    catStats[cat].retailSum += parseFloat(mp.retail) || 0;
   }
 
-  // PO stage pipeline
   const stageCounts = {};
-  for (const po of pos) {
-    const s = (po.stage || 'concept').replace(/_/g, ' ');
-    stageCounts[s] = (stageCounts[s] || 0) + 1;
-  }
+  for (const po of pos) stageCounts[(po.stage || 'concept').replace(/_/g, ' ')] = (stageCounts[(po.stage || 'concept').replace(/_/g, ' ')] || 0) + 1;
 
-  // Overall metrics
-  const totalProducts = products.length;
-  const totalStock = products.reduce((s, p) => s + (parseInt(p.total_inventory) || 0), 0);
   const avgMargin = products.filter(p => p.fob > 0 && p.retail > 0)
-    .reduce((s, p, _, arr) => s + ((1 - p.fob * 1.34 / p.retail) * 100) / arr.length, 0);
+    .reduce((s, p, _, a) => s + ((1 - p.fob * 1.34 / p.retail) * 100) / a.length, 0);
   const totalPOValue = pos.reduce((s, po) => s + parseFloat(po.fob_total || 0), 0);
 
   return (
     <div>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem' }}>Analytics</h1>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.65rem', marginBottom: '1.5rem' }}>
-        <Card label="Products" value={totalProducts} />
-        <Card label="Total Stock" value={totalStock.toLocaleString()} />
-        <Card label="Avg Margin" value={avgMargin.toFixed(0) + '%'} color={avgMargin >= 55 ? '#16a34a' : '#ca8a04'} />
-        <Card label="PO Pipeline" value={pos.length} />
-        <Card label="PO Value" value={'$' + totalPOValue.toLocaleString()} />
+      <h1 className="text-2xl font-bold tracking-tight mb-6">Analytics</h1>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        <Stat label="Products" value={products.length} />
+        <Stat label="Total Stock" value={products.reduce((s, p) => s + (parseInt(p.total_inventory) || 0), 0).toLocaleString()} />
+        <Stat label="Avg Margin" value={`${avgMargin.toFixed(0)}%`} color={avgMargin >= 55 ? 'text-success' : 'text-warning'} />
+        <Stat label="PO Pipeline" value={pos.length} />
+        <Stat label="PO Value" value={`$${totalPOValue.toLocaleString()}`} />
       </div>
 
-      {/* Category breakdown */}
-      <div style={{
-        background: 'white', border: '1px solid #e5e8ed', borderRadius: 10,
-        padding: '1rem', marginBottom: '1rem', overflow: 'auto',
-      }}>
-        <h2 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>Category Breakdown</h2>
-        <table style={{ width: '100%', fontSize: '0.82rem', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid #e5e8ed' }}>
-              <th style={th}>Category</th>
-              <th style={{ ...th, textAlign: 'right' }}>Products</th>
-              <th style={{ ...th, textAlign: 'right' }}>Stock</th>
-              <th style={{ ...th, textAlign: 'right' }}>Out of Stock</th>
-              <th style={{ ...th, textAlign: 'right' }}>Avg FOB</th>
-              <th style={{ ...th, textAlign: 'right' }}>Avg Retail</th>
-            </tr>
-          </thead>
+      <div className="bg-surface rounded-[--radius-md] border border-border p-4 shadow-[--shadow-subtle] mb-4 overflow-auto">
+        <h2 className="text-sm font-semibold mb-3">Category Breakdown</h2>
+        <table className="w-full text-sm border-collapse">
+          <thead><tr className="border-b border-border">
+            <Th>Category</Th><Th right>Products</Th><Th right>Stock</Th><Th right>Out of Stock</Th><Th right>Avg FOB</Th><Th right>Avg Retail</Th>
+          </tr></thead>
           <tbody>
-            {Object.entries(catStats).sort((a, b) => b[1].count - a[1].count).map(([cat, stats]) => (
-              <tr key={cat} style={{ borderBottom: '1px solid #f0f2f5' }}>
-                <td style={{ ...td, fontWeight: 600 }}>{cat}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{stats.count}</td>
-                <td style={{ ...td, textAlign: 'right' }}>{stats.totalStock.toLocaleString()}</td>
-                <td style={{ ...td, textAlign: 'right', color: stats.lowStock > 0 ? '#dc2626' : '#16a34a' }}>{stats.lowStock}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#5f6880' }}>${(stats.totalFOB / stats.count).toFixed(0)}</td>
-                <td style={{ ...td, textAlign: 'right', color: '#5f6880' }}>${(stats.totalRetail / stats.count).toFixed(0)}</td>
+            {Object.entries(catStats).sort((a, b) => b[1].count - a[1].count).map(([cat, s]) => (
+              <tr key={cat} className="border-b border-border/30">
+                <td className="py-2 px-3 font-semibold">{cat}</td>
+                <td className="py-2 px-3 text-right">{s.count}</td>
+                <td className="py-2 px-3 text-right">{s.stock.toLocaleString()}</td>
+                <td className={`py-2 px-3 text-right ${s.oos > 0 ? 'text-danger' : 'text-success'}`}>{s.oos}</td>
+                <td className="py-2 px-3 text-right text-text-secondary">${(s.fobSum / s.count).toFixed(0)}</td>
+                <td className="py-2 px-3 text-right text-text-secondary">${(s.retailSum / s.count).toFixed(0)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* PO Pipeline */}
       {Object.keys(stageCounts).length > 0 && (
-        <div style={{
-          background: 'white', border: '1px solid #e5e8ed', borderRadius: 10,
-          padding: '1rem',
-        }}>
-          <h2 style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>PO Stage Pipeline</h2>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div className="bg-surface rounded-[--radius-md] border border-border p-4 shadow-[--shadow-subtle]">
+          <h2 className="text-sm font-semibold mb-3">PO Stage Pipeline</h2>
+          <div className="flex gap-2 flex-wrap">
             {Object.entries(stageCounts).map(([stage, count]) => (
-              <div key={stage} style={{
-                padding: '0.5rem 0.85rem', borderRadius: 8,
-                background: '#f0f2f5', textAlign: 'center', minWidth: 80,
-              }}>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1e2330' }}>{count}</div>
-                <div style={{ fontSize: '0.68rem', color: '#5f6880', textTransform: 'uppercase', fontWeight: 600 }}>{stage}</div>
+              <div key={stage} className="bg-surface-sunken rounded-[--radius-sm] px-4 py-3 text-center min-w-[80px]">
+                <div className="text-lg font-bold">{count}</div>
+                <div className="text-[10px] text-text-secondary uppercase font-semibold tracking-wider">{stage}</div>
               </div>
             ))}
           </div>
@@ -98,14 +72,14 @@ export default async function AnalyticsPage() {
   );
 }
 
-function Card({ label, value, color }) {
+function Stat({ label, value, color }) {
   return (
-    <div style={{ background: 'white', border: '1px solid #e5e8ed', borderRadius: 8, padding: '0.65rem 0.85rem' }}>
-      <div style={{ fontSize: '0.65rem', fontWeight: 600, color: '#9ba3b5', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: '1.1rem', fontWeight: 700, color: color || '#1e2330', marginTop: '0.1rem' }}>{value}</div>
+    <div className="bg-surface rounded-[--radius-sm] border border-border p-3">
+      <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider mb-0.5">{label}</div>
+      <div className={`text-xl font-bold tracking-tight ${color || ''}`}>{value}</div>
     </div>
   );
 }
-
-const th = { padding: '0.5rem 0.6rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#9ba3b5', textTransform: 'uppercase' };
-const td = { padding: '0.5rem 0.6rem' };
+function Th({ children, right }) {
+  return <th className={`py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary border-b border-border ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
+}

@@ -4,80 +4,72 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV = [
-  { section: 'Catalog', items: [
+  { section: 'CATALOG', items: [
     { href: '/products', label: 'Master Products', icon: '▤' },
     { href: '/stock', label: 'Stock', icon: '▦' },
   ]},
-  { section: 'Operations', items: [
+  { section: 'OPERATIONS', items: [
     { href: '/purchase-orders', label: 'Purchase Orders', icon: '◫' },
     { href: '/vendors', label: 'Vendors', icon: '⊞' },
     { href: '/cash-flow', label: 'Cash Flow', icon: '◈' },
   ]},
-  { section: 'Intelligence', items: [
+  { section: 'INTELLIGENCE', items: [
     { href: '/analytics', label: 'Analytics', icon: '◩' },
   ]},
-  { section: 'System', items: [
+  { section: 'SYSTEM', items: [
     { href: '/settings', label: 'Settings', icon: '⚙' },
   ]},
 ];
 
-function Sidebar() {
+export default function DashboardLayout({ children }) {
   const pathname = usePathname();
 
   return (
-    <aside style={{
-      width: 250, background: '#714b67', color: 'white',
-      display: 'flex', flexDirection: 'column', overflow: 'auto',
-      position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 50,
-    }}>
-      <Link href="/" style={{
-        padding: '1rem 1.25rem', fontWeight: 700, fontSize: '1.1rem',
-        borderBottom: '1px solid rgba(255,255,255,0.12)',
-        color: 'white', textDecoration: 'none',
-        display: 'flex', alignItems: 'center', gap: '0.5rem',
-      }}>
-        Atica Man <span style={{ opacity: 0.6, fontWeight: 400, fontSize: '0.75rem' }}>OPS</span>
-      </Link>
+    <div className="flex min-h-screen bg-surface-sunken">
+      {/* Sidebar */}
+      <aside className="fixed top-0 left-0 bottom-0 w-60 bg-brand text-white flex flex-col overflow-y-auto z-50">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2 px-5 py-4 border-b border-white/10 no-underline text-white hover:bg-white/5">
+          <span className="text-lg font-bold tracking-tight">Atica Man</span>
+          <span className="text-[10px] font-medium tracking-widest text-white/50 uppercase">OPS</span>
+        </Link>
 
-      {NAV.map(section => (
-        <div key={section.section} style={{ padding: '0.75rem 0', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{
-            fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase',
-            letterSpacing: '0.1em', color: 'rgba(255,255,255,0.45)',
-            padding: '0 1.25rem', marginBottom: '0.35rem',
-          }}>
-            {section.section}
-          </div>
-          {section.items.map(item => {
-            const active = pathname === item.href || pathname?.startsWith(item.href + '/');
-            return (
-              <Link key={item.href} href={item.href} style={{
-                display: 'flex', alignItems: 'center', gap: '0.6rem',
-                padding: '0.5rem 1.25rem', fontSize: '0.85rem',
-                color: active ? 'white' : 'rgba(255,255,255,0.75)',
-                background: active ? 'rgba(255,255,255,0.18)' : 'transparent',
-                fontWeight: active ? 600 : 400,
-                textDecoration: 'none', transition: 'background 0.12s',
-              }}>
-                <span style={{ width: 18, textAlign: 'center' }}>{item.icon}</span>
-                {item.label}
-              </Link>
-            );
-          })}
+        {/* Nav sections */}
+        <nav className="flex-1 py-2">
+          {NAV.map(section => (
+            <div key={section.section} className="mb-1">
+              <div className="px-5 pt-4 pb-1.5 text-[10px] font-semibold tracking-[0.12em] text-white/40">
+                {section.section}
+              </div>
+              {section.items.map(item => {
+                const active = pathname === item.href || pathname?.startsWith(item.href + '/');
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-2.5 px-5 py-2 text-[13px] no-underline transition-colors ${
+                      active
+                        ? 'bg-white/15 text-white font-semibold'
+                        : 'text-white/70 hover:bg-white/8 hover:text-white'
+                    }`}
+                  >
+                    <span className="w-4 text-center text-xs">{item.icon}</span>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-white/10 text-[10px] text-white/30">
+          v3.0 · Next.js + Postgres
         </div>
-      ))}
-    </aside>
-  );
-}
+      </aside>
 
-export default function DashboardLayout({ children }) {
-  return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar />
-      <main style={{
-        marginLeft: 250, flex: 1, padding: '1.5rem 2rem',
-        maxWidth: 1200,
-      }}>
+      {/* Main content */}
+      <main className="ml-60 flex-1 p-6 max-w-[1200px]">
         {children}
       </main>
     </div>
