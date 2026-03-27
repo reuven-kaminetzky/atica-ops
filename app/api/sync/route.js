@@ -147,7 +147,16 @@ export async function POST() {
       }
     }
 
+    const { SEASONAL_MULTIPLIERS } = require('../../../lib/constants');
     const elapsed = Date.now() - started;
+
+    // Fire event so payment statuses refresh + subscribers react
+    const { emit, Events } = require('../../../lib/events');
+    await emit(Events.SYNC_COMPLETED, {
+      products: results.products, matched: results.matched,
+      inventory: results.inventory, velocity: results.velocity,
+      elapsed,
+    });
 
     return NextResponse.json({
       synced: true,
@@ -162,6 +171,11 @@ export async function POST() {
       updated: {
         inventory: results.inventory,
         velocity: results.velocity,
+      },
+      seasonal: {
+        currentMonth: currentMonth,
+        multiplier: SEASONAL_MULTIPLIERS[currentMonth] || 1.0,
+        multipliers: SEASONAL_MULTIPLIERS,
       },
       errors: results.errors.slice(0, 10),
     });
