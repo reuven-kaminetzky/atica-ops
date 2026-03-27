@@ -490,3 +490,240 @@ Phase 6: Van route planning.
 Phase 7: Marketing adapters.
 Phase 8: RFID integration (Inventory + Logistics).
 Phase 9: Auth + role-based perspectives.
+
+## Perspectives vs Domains
+
+Domains OWN data. Perspectives COMPOSE views across domains.
+
+A domain is a team that creates and manages entities: Product creates
+MPs, Supply Chain creates POs, Logistics creates transfers. They own
+their tables. They define their events.
+
+A perspective is a user who CONSUMES from multiple domains. A store
+manager doesn't create POs or plan van routes. They receive transfers,
+sell products, and need to see what's coming. That's not a domain.
+It's a lens.
+
+### Store Perspective
+
+The Flatbush store manager opens the app and sees:
+
+FROM LOGISTICS:
+  - Van arriving tomorrow at ~2pm with 3 boxes
+  - Load manifest: 15× Londoner White, 8× HC360 Navy, 12× Parkway Khaki
+  - Pending transfer confirmation (Monsey sent 5 items 2 days ago — confirm?)
+  - Their receiving history
+
+FROM SALES:
+  - Today's revenue: $2,340 (12 transactions, $195 AOV)
+  - This week vs last week
+  - Top selling items
+  - Walk-in customer lookup
+
+FROM INVENTORY:
+  - Current stock by product
+  - What's low / what's out
+  - Items they need but don't have (customer requests)
+
+FROM SUPPLY CHAIN (shallow):
+  - "3 POs arriving this month" (not the full PO detail — just awareness)
+  - "New Londoner colorway in production, ETA 6 weeks"
+
+FROM MARKETING:
+  - "Instagram campaign running on HC360 — expect traffic"
+  - "20% off Parkway this weekend — prepare stock"
+
+The store doesn't write to any of these domains. It reads from all of
+them. The only things a store WRITES are:
+  - transfer.confirmed (yes I received these items)
+  - sale.recorded (happens automatically via Shopify POS)
+  - customer notes (size preferences, special requests)
+
+### Executive Perspective
+
+Reuven opens the app and sees the health of the whole system:
+  - Revenue trend (Sales)
+  - Cash position + 12-week projection (Finance)
+  - Active PO pipeline (Supply Chain)
+  - Incoming shipments with ETAs (Logistics)
+  - Stock alerts (Inventory)
+  - Campaign ROAS (Marketing)
+  - Store-by-store performance (Sales × Inventory)
+
+Not a domain. A composition.
+
+### Warehouse Perspective
+
+The warehouse manager sees:
+  - Incoming containers with ETAs (Logistics)
+  - Today's receiving queue (Logistics)
+  - Packing list verification (Logistics × Supply Chain)
+  - Put-away queue — items without bin locations (Logistics)
+  - Transfer prep — what needs to go to which stores (Logistics × Inventory)
+  - Van load plan for tomorrow (Logistics)
+  - Online fulfillment queue (Logistics × Sales)
+  - Bin location search (Logistics)
+  - Store compliance — who confirmed receipt, who hasn't (Logistics)
+
+Almost entirely Logistics domain. The warehouse perspective is
+basically the Logistics domain's primary UI.
+
+### Finance Perspective
+
+Finance sees:
+  - Cash flow projection (Finance, but data from everywhere)
+  - AP schedule — upcoming vendor payments (Supply Chain → Finance)
+  - Payment status board — planned/upcoming/due/overdue (Finance)
+  - Shipment-triggered payments (Logistics → Finance)
+  - Revenue inflow (Sales → Finance)
+  - Margin analysis by product (Product + Sales)
+  - AR — wholesale invoices outstanding (Sales → Finance)
+
+Finance READS from Supply Chain, Logistics, and Sales.
+Finance WRITES payment statuses and projections.
+
+## Cross-Domain Data Flows
+
+These are the critical paths where domains must share data.
+Each flow is an event. No direct imports.
+
+### The Money-Goods Connection (Finance ↔ Logistics ↔ Supply Chain)
+
+This is the one most systems get wrong. The timeline of money is
+inseparable from the timeline of physical goods:
+
+```
+PO ordered (Supply Chain)
+  → payment.scheduled: deposit 30% due now
+  → Finance subscribes: adds to AP projection
+
+PO shipped (Supply Chain)
+  → Logistics subscribes: expects container at port
+  → payment.scheduled: production 40% due on ship
+
+Shipment at customs (Logistics)
+  → Finance subscribes: duty payment imminent
+  → shipment.customs_entry { dutyAmount, brokerFees }
+
+Shipment cleared (Logistics)
+  → Finance subscribes: duty + freight paid
+  → payment.due: balance 30% on arrival
+
+Shipment received at warehouse (Logistics)
+  → Inventory subscribes: stock added
+  → Finance subscribes: landed cost finalized
+  → Supply Chain subscribes: PO marked received
+```
+
+Finance can't project cash flow without knowing:
+  - Which shipments are in transit (Logistics)
+  - When they'll clear customs (Logistics)
+  - What duties are owed (Logistics × Supply Chain)
+  - When balance payments trigger (Supply Chain)
+
+### The Reorder Loop (Inventory → Supply Chain → Logistics → Inventory)
+
+```
+Inventory detects low stock on Londoner at Monsey
+  → inventory.low { mpId: 'londoner', location: 'Monsey', available: 4 }
+
+Option A: Transfer from warehouse
+  → Logistics creates transfer (warehouse → Monsey)
+  → Picks, loads van, delivers
+  → Store confirms
+  → Inventory updated
+
+Option B: No warehouse stock — need new PO
+  → inventory.reorder_triggered { mpId, deficit: 200 }
+  → Supply Chain: buyer sees reorder suggestion
+  → Buyer creates PO → vendor → production → ship → ...
+  → Eventually arrives at warehouse
+  → Logistics distributes to stores
+```
+
+### Store ↔ Logistics (The Daily Loop)
+
+```
+Every evening:
+  Inventory calculates per-store needs
+  → Logistics auto-generates transfer suggestions
+  → Warehouse reviews, adjusts, confirms
+  → Pick list generated
+  → Morning: picker pulls from bins
+  → Load van
+  → Plan route (Lakewood first? Monsey first? Depends on urgency)
+  → Van departs
+  → Deliver to each store
+  → Each store confirms receipt
+  → If store doesn't confirm within 4 hours → escalate
+  → Inventory updated per confirmed transfer
+```
+
+### Sales → Everyone
+
+Every sale touches almost every domain:
+
+```
+sale.recorded { orderId, store: 'Flatbush', items, total }
+  → Inventory: deduct stock at Flatbush
+  → Finance: record revenue inflow
+  → Product: update velocity per week
+  → Inventory: check if below reorder threshold
+  → Marketing: attempt campaign attribution
+  → Sales: update customer LTV
+```
+
+This is WHY the event bus matters. A sale is one fact.
+Seven domains care about it. Without events, you'd have
+one function calling seven other functions and creating
+a dependency nightmare.
+
+## Implementation: Perspectives
+
+Perspectives are Next.js route groups with their own layouts.
+They call domain functions and compose the view.
+
+```
+app/
+  (admin)/             ← sees everything
+    layout.js          ← full sidebar
+    page.js            ← system health dashboard
+    
+  (store)/             ← store employee view
+    layout.js          ← store-specific sidebar
+    page.js            ← today's sales + incoming + stock
+    receiving/page.js  ← confirm transfers
+    
+  (warehouse)/         ← warehouse manager view
+    layout.js          ← logistics-focused sidebar
+    page.js            ← receiving queue + transfers + van
+    receiving/page.js  ← packing list check
+    van/page.js        ← route planning
+    
+  (finance)/           ← finance team view
+    layout.js          ← finance sidebar
+    page.js            ← cash position + projection
+    payments/page.js   ← payment board
+    
+  (executive)/         ← Reuven's view
+    layout.js          ← high-level sidebar
+    page.js            ← everything that matters, one screen
+```
+
+Each perspective imports from domain public APIs.
+No perspective owns data. Domains own data.
+
+A page in the store perspective:
+```javascript
+// app/(store)/page.js
+const logistics = require('../../lib/logistics');
+const sales = require('../../lib/sales');
+const inventory = require('../../lib/inventory');
+
+const incoming = await logistics.getIncomingForStore('Flatbush');
+const todaySales = await sales.getTodayByStore('Flatbush');
+const stockAlerts = await inventory.getLowStockForStore('Flatbush');
+```
+
+Three domain calls. No SQL. No business logic in the page.
+Each domain owns its own queries and can change independently.
