@@ -78,31 +78,20 @@ export async function POST(request) {
       });
     }
 
-    // Step 2: Inventory
+    // Step 2: Inventory — use variant data already fetched (NO extra API calls)
     let invUpdated = 0;
     const stockByMP = {};
     try {
-      const locResp = await client.getLocations();
-      const locs = locResp.locations || locResp || [];
-      log.push(`locations:${locs.length}`);
-
-      for (const loc of locs) {
-        try {
-          const invResp = await client.getInventoryLevels(loc.id);
-          const levels = invResp.inventory_levels || invResp || [];
-          for (const level of levels) {
-            for (const p of products) {
-              for (const v of (p.variants || [])) {
-                if (v.inventory_item_id === level.inventory_item_id) {
-                  const maxPrice = Math.max(...(p.variants || []).map(vv => parseFloat(vv.price) || 0), 0);
-                  const mpId = matchProduct(p.title, maxPrice);
-                  if (mpId) stockByMP[mpId] = (stockByMP[mpId] || 0) + (level.available || 0);
-                }
-              }
-            }
-          }
-        } catch (e) { log.push(`inv_loc_err:${loc.name}:${e.message.slice(0, 40)}`); }
+      // Products already have inventory_quantity on each variant
+      for (const p of products) {
+        const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
+        const mpId = matchProduct(p.title, maxPrice);
+        if (mpId) {
+          const totalQty = (p.variants || []).reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+          stockByMP[mpId] = (stockByMP[mpId] || 0) + totalQty;
+        }
       }
+      log.push(`stock_mps:${Object.keys(stockByMP).length}`);
 
       for (const [mpId, stock] of Object.entries(stockByMP)) {
         try {

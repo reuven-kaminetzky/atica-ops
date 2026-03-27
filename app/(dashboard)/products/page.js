@@ -13,7 +13,7 @@ export default async function ProductsPage() {
     (categories[cat] ||= []).push(p);
   }
 
-  const catOrder = ['Dress Shirts', 'Suits', 'Blazers', 'Pants', 'Outerwear', 'Sweaters', 'Knits', 'Accessories', 'Boys'];
+  const catOrder = ['Shirts', 'Suits', 'Blazers', 'Pants', 'Outerwear', 'Kapote', 'Shoes', 'Accessories', 'Boys'];
 
   return (
     <div>
