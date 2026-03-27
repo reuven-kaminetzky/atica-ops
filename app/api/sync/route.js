@@ -90,6 +90,12 @@ export async function POST(request) {
         } catch (e) { log.push(`err:${mpId}:${e.message.slice(0, 30)}`); }
       }
 
+      // Save last sync time
+      try {
+        const syncInfo = JSON.stringify({ time: new Date().toISOString(), matched: totalMatched, products: products.length });
+        await db`INSERT INTO app_settings (key, value) VALUES ('last_sync', ${syncInfo}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`;
+      } catch (e) { /* non-critical */ }
+
       return NextResponse.json({
         synced: true, step: 'products',
         elapsed: `${Date.now() - started}ms`,

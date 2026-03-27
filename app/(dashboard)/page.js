@@ -14,7 +14,15 @@ export default async function DashboardHome() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold tracking-tight text-text mb-6">Operations Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-text">Operations Dashboard</h1>
+        {ops?.lastSync?.time && (
+          <div className="text-xs text-text-tertiary">
+            Last sync: {new Date(ops.lastSync.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            <span className="ml-1 text-text-secondary">({ops.lastSync.matched} matched)</span>
+          </div>
+        )}
+      </div>
 
       {health?.error ? (
         <div className="p-4 rounded-[--radius-md] bg-danger-light border border-danger/20 text-danger text-sm mb-6">
