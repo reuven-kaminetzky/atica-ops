@@ -3,10 +3,10 @@ import { NextResponse } from 'next/server';
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-    const dal = require('../../../../../lib/dal');
+    const sc = require('../../../../../lib/supply-chain');
     const { emit, Events } = require('../../../../../lib/events');
     const body = await request.json();
-    const result = await dal.purchaseOrders.advanceStage(id, { checkedBy: body.checkedBy });
+    const result = await sc.po.advanceStage(id, { checkedBy: body.checkedBy });
     if (result.error) return NextResponse.json(result, { status: 400 });
     await emit(Events.PO_STAGE_ADVANCED, { poId: id, ...result });
     if (result.to === 'received') {
