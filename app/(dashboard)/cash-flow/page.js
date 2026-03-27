@@ -1,4 +1,5 @@
 import { getCashFlowData } from '../actions';
+export const dynamic = 'force-dynamic';
 
 export default async function CashFlowPage() {
   const { payments, activePOs, opexMonthly } = await getCashFlowData();

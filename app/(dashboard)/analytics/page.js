@@ -1,4 +1,5 @@
 import { getProducts, getPurchaseOrders } from '../actions';
+export const dynamic = 'force-dynamic';
 
 export default async function AnalyticsPage() {
   const [products, pos] = await Promise.all([getProducts(), getPurchaseOrders()]);

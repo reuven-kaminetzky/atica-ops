@@ -1,5 +1,7 @@
 import { getDbHealth } from './actions';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardHome() {
   const health = await getDbHealth();
 

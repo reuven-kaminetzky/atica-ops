@@ -1,4 +1,5 @@
 import { getProducts } from '../actions';
+export const dynamic = 'force-dynamic';
 import Link from 'next/link';
 
 export default async function ProductsPage() {

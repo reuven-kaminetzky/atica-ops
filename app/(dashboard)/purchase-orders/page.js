@@ -1,4 +1,6 @@
 import { getPurchaseOrders } from '../actions';
+export const dynamic = 'force-dynamic';
+import Link from 'next/link';
 
 export default async function PurchaseOrdersPage() {
   const pos = await getPurchaseOrders();
@@ -31,6 +33,11 @@ export default async function PurchaseOrdersPage() {
             {pos.length} POs · ${totalCommitted.toLocaleString()} committed
           </p>
         </div>
+        <Link href="/purchase-orders/new" style={{
+          padding: '0.5rem 1.15rem', borderRadius: 6, border: '1px solid #714b67',
+          background: '#714b67', color: 'white', fontWeight: 600, fontSize: '0.82rem',
+          textDecoration: 'none',
+        }}>+ Create PO</Link>
       </div>
 
       {/* Stage pipeline */}
@@ -79,7 +86,7 @@ export default async function PurchaseOrdersPage() {
           <tbody>
             {pos.map(po => (
               <tr key={po.id} style={{ borderBottom: '1px solid #e5e8ed' }}>
-                <Td bold>{po.id}</Td>
+                <Td bold><Link href={`/purchase-orders/${encodeURIComponent(po.id)}`} style={{ color: '#714b67', textDecoration: 'none' }}>{po.id}</Link></Td>
                 <Td>{po.mp_name || po.mp_id || '—'}</Td>
                 <Td dim>{po.vendor_name || po.vendor_id || '—'}</Td>
                 <Td>
