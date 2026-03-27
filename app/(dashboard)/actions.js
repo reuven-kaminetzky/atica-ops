@@ -170,7 +170,7 @@ export async function getProductList() {
   try {
     const product = require('../../lib/product');
     const products = await product.getAll();
-    return products.map(p => ({ id: p.id, name: p.name, category: p.category, code: p.code }));
+    return products.map(p => ({ id: p.id, name: p.name, category: p.category, code: p.code, fob: p.fob, retail: p.retail, duty: p.duty, hts: p.hts, lead_days: p.lead_days, moq: p.moq, vendor_id: p.vendor_id }));
   } catch (e) { return []; }
 }
 

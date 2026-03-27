@@ -1,11 +1,20 @@
 'use client';
 
-import { useState, useEffect, useTransition } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useTransition, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getProductList, createPurchaseOrder } from '../../actions';
 
-export default function NewPOPage() {
+export default function NewPOPageWrapper() {
+  return (
+    <Suspense fallback={<div className="text-center py-16 text-text-secondary">Loading...</div>}>
+      <NewPOPage />
+    </Suspense>
+  );
+}
+
+function NewPOPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState(null);
   const [products, setProducts] = useState([]);
@@ -15,13 +24,19 @@ export default function NewPOPage() {
   });
 
   useEffect(() => {
-    getProductList().then(setProducts).catch(() => {});
+    getProductList().then(list => {
+      setProducts(list);
+      // Auto-select if mp= in URL
+      const preselect = searchParams.get('mp');
+      if (preselect) selectProduct(preselect, list);
+    }).catch(() => {});
   }, []);
 
   const u = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  function selectProduct(mpId) {
-    const mp = products.find(p => p.id === mpId);
+  function selectProduct(mpId, productList) {
+    const list = productList || products;
+    const mp = list.find(p => p.id === mpId);
     if (mp) {
       setForm(prev => ({
         ...prev, mpId: mp.id,
