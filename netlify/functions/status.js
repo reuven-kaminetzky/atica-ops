@@ -85,6 +85,67 @@ async function dbMigrate() {
   }
 }
 
+// ── Full Shopify Diagnostic ─────────────────────────────
+
+async function shopifyDiag() {
+  const { createClient } = require('../../lib/shopify');
+  const client = await createClient();
+  if (!client) return { error: 'No Shopify client — check env vars' };
+
+  const diag = { storeUrl: client.shop, apiVersion: client.version, tests: {} };
+
+  // Test shop endpoint
+  try {
+    const { shop } = await client._request('/shop.json');
+    diag.tests.shop = { ok: true, name: shop.name, plan: shop.plan_name };
+  } catch (e) {
+    diag.tests.shop = { ok: false, error: e.message };
+  }
+
+  // Test products count
+  try {
+    const { products } = await client.getProducts();
+    diag.tests.products = { ok: true, count: products.length, first3: products.slice(0, 3).map(p => p.title) };
+  } catch (e) {
+    diag.tests.products = { ok: false, error: e.message };
+  }
+
+  // Test orders
+  try {
+    const since = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { orders } = await client.getOrders({ created_at_min: since });
+    diag.tests.orders = { ok: true, count: orders.length };
+  } catch (e) {
+    diag.tests.orders = { ok: false, error: e.message };
+  }
+
+  // Test inventory
+  try {
+    const { locations } = await client.getLocations();
+    diag.tests.locations = { ok: true, count: locations.length, names: locations.map(l => l.name) };
+  } catch (e) {
+    diag.tests.locations = { ok: false, error: e.message };
+  }
+
+  // Test product matching
+  try {
+    const { matchAll } = require('../../lib/products');
+    const { products } = await client.getProducts();
+    const { matched, unmatched } = matchAll(products);
+    diag.tests.matching = {
+      ok: true,
+      totalProducts: products.length,
+      matchedMPs: Object.keys(matched).length,
+      unmatchedCount: unmatched.length,
+      unmatchedTitles: unmatched.map(p => p.title),
+    };
+  } catch (e) {
+    diag.tests.matching = { ok: false, error: e.message };
+  }
+
+  return diag;
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
@@ -93,6 +154,7 @@ const ROUTES = [
   { method: 'POST', path: 'cache/clear', handler: cacheClear,       noClient: true },
   { method: 'GET',  path: 'db',          handler: dbStatus,         noClient: true },
   { method: 'POST', path: 'db/migrate',  handler: dbMigrate,        noClient: true },
+  { method: 'GET',  path: 'diag',         handler: shopifyDiag,      noClient: true },
   { method: 'POST', path: 'webhooks',    handler: webhooksSetup },
 ];
 

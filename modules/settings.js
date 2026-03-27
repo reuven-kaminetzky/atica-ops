@@ -114,8 +114,14 @@ function render() {
 
     <div class="settings-section">
       <h3>Diagnostics</h3>
-      <button id="settings-test-connection" class="btn btn-secondary">Test Shopify Connection</button>
-      <div id="settings-diag" style="margin-top:0.5rem;font-size:0.82rem;font-family:var(--font-mono);white-space:pre-wrap"></div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button id="settings-test-connection" class="btn btn-secondary">Test Connection</button>
+        <button id="settings-full-diag" class="btn btn-primary">Full Shopify Diagnostic</button>
+      </div>
+      <div style="font-size:0.72rem;color:var(--text-dim);margin-top:0.35rem">
+        Full diagnostic: tests shop, products, orders, locations, and MP matching. Shows unmatched Shopify titles.
+      </div>
+      <div id="settings-diag" style="margin-top:0.5rem;font-size:0.78rem;font-family:var(--font-mono);white-space:pre-wrap;max-height:400px;overflow-y:auto;background:var(--surface-2);border:1px solid var(--border-light);border-radius:var(--radius);padding:0.75rem;display:none"></div>
     </div>
   `;
 }
@@ -162,6 +168,12 @@ function bindEvents() {
         ]);
         emit('sync:complete', { source: 'all' });
         emit('toast:show', { message: 'Full sync complete', type: 'success' });
+      } else if (btn.id === 'settings-full-diag') {
+        const diagEl = document.getElementById('settings-diag');
+        if (diagEl) { diagEl.style.display = 'block'; diagEl.textContent = 'Running full diagnostic...'; }
+        const r = await api.get('/api/status/diag');
+        if (diagEl) diagEl.textContent = JSON.stringify(r, null, 2);
+        return; // don't re-render
       } else if (btn.id === 'settings-webhooks') {
         const base = window.location.origin;
         await api.post('/api/status/webhooks', { base_url: base });
