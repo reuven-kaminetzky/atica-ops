@@ -35,13 +35,28 @@ export default function SettingsPage() {
 
       <Section title="Shopify Sync">
         <p className="text-sm text-text-secondary mb-3">
-          Pull products, inventory, and 30-day orders from Shopify. Updates
-          product matching, stock levels, velocity, and demand signals.
+          <strong>Initial setup:</strong> Run steps 1-3 once to load all data.
+          After that, webhooks handle real-time updates automatically.
+        </p>
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <Btn onClick={() => run('sync?step=products')} loading={loading === 'sync?step=products'} primary>1. Products</Btn>
+          <Btn onClick={() => run('sync?step=inventory')} loading={loading === 'sync?step=inventory'}>2. Inventory</Btn>
+          <Btn onClick={() => run('sync?step=orders')} loading={loading === 'sync?step=orders'}>3. Orders</Btn>
+        </div>
+        {results['sync?step=products'] && <Result data={results['sync?step=products']} />}
+        {results['sync?step=inventory'] && <Result data={results['sync?step=inventory']} />}
+        {results['sync?step=orders'] && <Result data={results['sync?step=orders']} />}
+      </Section>
+
+      <Section title="Webhooks">
+        <p className="text-sm text-text-secondary mb-3">
+          Register webhooks so Shopify pushes changes in real-time. No polling needed.
+          Inventory updates, new orders, and product changes arrive instantly.
         </p>
         <div className="flex gap-2 mb-4">
-          <Btn onClick={() => run('sync')} loading={loading === 'sync'} primary>Sync from Shopify</Btn>
+          <Btn onClick={() => run('webhooks/register')} loading={loading === 'webhooks/register'} primary>Register Webhooks</Btn>
         </div>
-        {results.sync && <Result data={results.sync} />}
+        {results['webhooks/register'] && <Result data={results['webhooks/register']} />}
       </Section>
 
       <Section title="Shopify Connection">

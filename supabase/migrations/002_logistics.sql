@@ -94,9 +94,12 @@ CREATE INDEX IF NOT EXISTS idx_receiving_po ON receiving_log(po_id);
 CREATE INDEX IF NOT EXISTS idx_receiving_shipment ON receiving_log(shipment_id);
 
 -- Auto-update timestamps
-CREATE TRIGGER IF NOT EXISTS tr_bin_updated BEFORE UPDATE ON bin_locations
+DROP TRIGGER IF EXISTS tr_bin_updated ON bin_locations;
+CREATE TRIGGER tr_bin_updated BEFORE UPDATE ON bin_locations
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-CREATE TRIGGER IF NOT EXISTS tr_transfer_updated BEFORE UPDATE ON transfers
+DROP TRIGGER IF EXISTS tr_transfer_updated ON transfers;
+CREATE TRIGGER tr_transfer_updated BEFORE UPDATE ON transfers
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-CREATE TRIGGER IF NOT EXISTS tr_van_updated BEFORE UPDATE ON van_routes
+DROP TRIGGER IF EXISTS tr_van_updated ON van_routes;
+CREATE TRIGGER tr_van_updated BEFORE UPDATE ON van_routes
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();

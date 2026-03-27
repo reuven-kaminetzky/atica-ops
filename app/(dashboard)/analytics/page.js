@@ -1,4 +1,5 @@
 import { getProducts, getPurchaseOrders } from '../actions';
+const { LANDED_COST_FACTOR, DEFAULT_DUTY_PCT, FREIGHT_MULTIPLIER } = require("../../../lib/constants");
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +21,7 @@ export default async function AnalyticsPage() {
   for (const po of pos) stageCounts[(po.stage || 'concept').replace(/_/g, ' ')] = (stageCounts[(po.stage || 'concept').replace(/_/g, ' ')] || 0) + 1;
 
   const avgMargin = products.filter(p => p.fob > 0 && p.retail > 0)
-    .reduce((s, p, _, a) => s + ((1 - p.fob * 1.34 / p.retail) * 100) / a.length, 0);
+    .reduce((s, p, _, a) => s + ((1 - p.fob * LANDED_COST_FACTOR / p.retail) * 100) / a.length, 0);
   const totalPOValue = pos.reduce((s, po) => s + parseFloat(po.fob_total || 0), 0);
 
   return (

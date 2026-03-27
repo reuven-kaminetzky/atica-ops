@@ -52,9 +52,19 @@ export default function StorePage() {
                       <span className="font-semibold">{tr.id}</span>
                       <span className="text-text-secondary ml-2">{tr.total_units} units · {hours}h ago</span>
                     </div>
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-                      hours >= 4 ? 'bg-danger text-white' : 'bg-warning text-white'
-                    }`}>{hours >= 4 ? 'OVERDUE' : 'Confirm'}</span>
+                    <button onClick={async () => {
+                      try {
+                        await fetch(`/api/transfers/${encodeURIComponent(tr.id)}/confirm`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ confirmedBy: store }),
+                        });
+                        load(store);
+                      } catch (e) { console.error(e); }
+                    }}
+                      className={`text-[11px] font-semibold px-3 py-1 rounded cursor-pointer ${
+                        hours >= 4 ? 'bg-danger text-white hover:bg-red-700' : 'bg-warning text-white hover:bg-yellow-700'
+                      }`}>{hours >= 4 ? 'CONFIRM (OVERDUE)' : 'Confirm Receipt'}</button>
                   </div>
                 );
               })}

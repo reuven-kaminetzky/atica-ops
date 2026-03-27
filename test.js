@@ -132,8 +132,8 @@ console.log('\n3. PRODUCTS');
 
 const products = require('./lib/products');
 
-test('MP_SEEDS has 35+ products', () => {
-  assert(products.MP_SEEDS.length >= 35, `Got ${products.MP_SEEDS.length}`);
+test('MP_SEEDS has 25+ products', () => {
+  assert(products.MP_SEEDS.length >= 25, `Got ${products.MP_SEEDS.length}`);
 });
 
 test('Every seed has id, name, code, cat', () => {

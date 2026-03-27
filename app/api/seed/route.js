@@ -6,6 +6,11 @@ export async function POST() {
     const { MP_SEEDS } = require('../../../lib/products');
     const sql = neon();
 
+    // Clean old data before reseeding
+    await sql`DELETE FROM product_stack`;
+    await sql`DELETE FROM master_products`;
+    await sql`DELETE FROM vendors`;
+
     // Extract vendors
     const vendorMap = {};
     for (const mp of MP_SEEDS) {
@@ -16,7 +21,6 @@ export async function POST() {
       }
     }
 
-    // Seed vendors first
     let vendorCount = 0;
     const vendorErrors = [];
     for (const v of Object.values(vendorMap)) {
@@ -30,7 +34,6 @@ export async function POST() {
       }
     }
 
-    // Seed master products
     let mpCount = 0;
     const mpErrors = [];
     for (const mp of MP_SEEDS) {
@@ -48,30 +51,25 @@ export async function POST() {
           ${mp.sizes || null}, ${mp.fits || []}, ${mp.features || []}, 
           ${'in_store'}
         ) ON CONFLICT (id) DO UPDATE SET 
-          name = EXCLUDED.name, fob = EXCLUDED.fob, retail = EXCLUDED.retail`;
+          name = EXCLUDED.name, fob = EXCLUDED.fob, retail = EXCLUDED.retail,
+          code = EXCLUDED.code, category = EXCLUDED.category, vendor_id = EXCLUDED.vendor_id`;
         mpCount++;
       } catch (e) {
         mpErrors.push({ id: mp.id, error: e.message.slice(0, 150) });
       }
     }
 
-    // Seed product stacks
     let stackCount = 0;
     for (const mp of MP_SEEDS) {
       try {
         await sql`INSERT INTO product_stack (mp_id) VALUES (${mp.id}) ON CONFLICT DO NOTHING`;
         stackCount++;
-      } catch (e) { /* ok to skip */ }
+      } catch (e) { /* ok */ }
     }
 
     return NextResponse.json({ 
-      seeded: true, 
-      vendors: vendorCount, 
-      products: mpCount, 
-      stacks: stackCount,
-      totalSeeds: MP_SEEDS.length,
-      vendorErrors: vendorErrors.slice(0, 5),
-      mpErrors: mpErrors.slice(0, 5),
+      seeded: true, vendors: vendorCount, products: mpCount, stacks: stackCount,
+      totalSeeds: MP_SEEDS.length, vendorErrors: vendorErrors.slice(0, 5), mpErrors: mpErrors.slice(0, 5),
     });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

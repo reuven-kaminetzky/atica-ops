@@ -1,171 +1,168 @@
 import { NextResponse } from 'next/server';
 
+export const maxDuration = 60;
+
 /**
- * POST /api/sync
- * 
- * Pulls live data from Shopify and updates Postgres:
- * 1. Products → match to MPs → update shopify_product_ids, hero_image
- * 2. Inventory → update total_inventory per MP across all locations
- * 3. Orders (30 days) → compute velocity_per_week, sell_through, signal
- * 
- * This is the heartbeat. Run it on demand or on a schedule.
+ * POST /api/sync — Shopify → Postgres sync
+ * GET /api/sync — quick connection test
  */
-export async function POST() {
+export async function GET() {
+  try {
+    const { createClient } = require('../../../lib/shopify');
+    const client = await createClient();
+    if (!client) return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
+    const shop = await client.getShop();
+    return NextResponse.json({ connected: true, shop: shop?.shop?.name || 'unknown' });
+  } catch (e) {
+    return NextResponse.json({ error: e.message, stack: e.stack?.split('\n').slice(0, 5) }, { status: 500 });
+  }
+}
+
+export async function POST(request) {
   const started = Date.now();
+  const log = [];
 
   try {
     const { createClient } = require('../../../lib/shopify');
-    const { matchProduct } = require('../../../lib/products');
-    const { classifyDemand, adjustVelocity } = require('../../../lib/products');
-    const { normalize } = require('../../../lib/locations');
+    const { matchProduct, classifyDemand, adjustVelocity } = require('../../../lib/products');
+    const { REORDER_VELOCITY_DAYS, SEASONAL_MULTIPLIERS } = require('../../../lib/constants');
     const { neon } = require('@netlify/neon');
     const sql = neon();
 
+    log.push('imports_ok');
+
+    // Check what step to run (default: all, but can do step=products to test)
+    const { searchParams } = new URL(request.url);
+    const step = searchParams.get('step') || 'all';
+
     const client = await createClient();
     if (!client) return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
+    log.push('shopify_connected');
 
-    const results = { products: 0, matched: 0, inventory: 0, velocity: 0, errors: [] };
+    // Step 1: Products
+    const resp = await client.getProducts();
+    const products = resp.products || resp || [];
+    log.push(`products:${products.length}`);
 
-    // ── 1. Products: match Shopify → MPs ──────────────────────
-
-    const { products } = await client.getProducts();
-    results.products = products.length;
-
-    const mpMatches = {};  // mpId → { shopifyIds: [], images: [] }
-
+    // Match
+    const mpMatches = {};
+    const unmatched = [];
     for (const p of products) {
-      const mpId = matchProduct(p.title, parseFloat(p.variants?.[0]?.price || 0));
+      const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
+      const mpId = matchProduct(p.title, maxPrice);
       if (mpId) {
         if (!mpMatches[mpId]) mpMatches[mpId] = { shopifyIds: [], images: [] };
         mpMatches[mpId].shopifyIds.push(p.id);
         if (p.image?.src) mpMatches[mpId].images.push(p.image.src);
-        results.matched++;
+      } else {
+        unmatched.push(p.title);
       }
     }
+    log.push(`matched:${Object.keys(mpMatches).length}`);
 
-    // Update MPs with Shopify IDs and hero images
+    // Update MPs
+    let mpUpdated = 0;
     for (const [mpId, data] of Object.entries(mpMatches)) {
       try {
-        await sql`
-          UPDATE master_products SET 
-            shopify_product_ids = ${data.shopifyIds},
-            hero_image = ${data.images[0] || null}
-          WHERE id = ${mpId}
-        `;
-      } catch (e) {
-        results.errors.push({ type: 'product_update', mpId, error: e.message.slice(0, 80) });
-      }
+        await sql`UPDATE master_products SET shopify_product_ids = ${data.shopifyIds}, hero_image = ${data.images[0] || null} WHERE id = ${mpId}`;
+        mpUpdated++;
+      } catch (e) { log.push(`mp_err:${mpId}:${e.message.slice(0, 40)}`); }
+    }
+    log.push(`mp_updated:${mpUpdated}`);
+
+    if (step === 'products') {
+      return NextResponse.json({
+        synced: true, step: 'products', elapsed: `${Date.now() - started}ms`,
+        products: products.length, matched: Object.keys(mpMatches).length,
+        unmatched, log,
+      });
     }
 
-    // ── 2. Inventory: stock per MP across all locations ────────
+    // Step 2: Inventory — use variant data already fetched (NO extra API calls)
+    let invUpdated = 0;
+    const stockByMP = {};
+    try {
+      // Products already have inventory_quantity on each variant
+      for (const p of products) {
+        const maxPrice = Math.max(...(p.variants || []).map(v => parseFloat(v.price) || 0), 0);
+        const mpId = matchProduct(p.title, maxPrice);
+        if (mpId) {
+          const totalQty = (p.variants || []).reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+          stockByMP[mpId] = (stockByMP[mpId] || 0) + totalQty;
+        }
+      }
+      log.push(`stock_mps:${Object.keys(stockByMP).length}`);
 
-    const { locations } = await client.getLocations();
-    const stockByMP = {};  // mpId → total available
+      for (const [mpId, stock] of Object.entries(stockByMP)) {
+        try {
+          await sql`UPDATE master_products SET total_inventory = ${stock} WHERE id = ${mpId}`;
+          invUpdated++;
+        } catch (e) { /* skip */ }
+      }
+      log.push(`inventory:${invUpdated}`);
+    } catch (e) { log.push(`inv_err:${e.message.slice(0, 60)}`); }
 
-    for (const loc of locations) {
-      try {
-        const { inventory_levels } = await client.getInventoryLevels(loc.id);
-        for (const level of inventory_levels) {
-          // Find which product this inventory item belongs to
-          for (const p of products) {
-            for (const v of (p.variants || [])) {
-              if (v.inventory_item_id === level.inventory_item_id) {
-                const mpId = matchProduct(p.title, parseFloat(v.price || 0));
-                if (mpId) {
-                  stockByMP[mpId] = (stockByMP[mpId] || 0) + (level.available || 0);
-                }
-              }
+    if (step === 'inventory') {
+      return NextResponse.json({
+        synced: true, step: 'inventory', elapsed: `${Date.now() - started}ms`,
+        inventory: invUpdated, log,
+      });
+    }
+
+    // Step 3: Orders + velocity
+    let velUpdated = 0;
+    try {
+      const since = new Date();
+      since.setDate(since.getDate() - REORDER_VELOCITY_DAYS);
+      const ordResp = await client.getOrders({ created_at_min: since.toISOString() });
+      const orders = ordResp.orders || ordResp || [];
+      log.push(`orders:${orders.length}`);
+
+      const salesByMP = {};
+      for (const order of orders) {
+        for (const li of (order.line_items || [])) {
+          const product = products.find(p => p.variants?.some(v => v.id === li.variant_id));
+          if (product) {
+            const maxPrice = Math.max(...(product.variants || []).map(v => parseFloat(v.price) || 0), 0);
+            const mpId = matchProduct(product.title, maxPrice);
+            if (mpId) {
+              if (!salesByMP[mpId]) salesByMP[mpId] = { units: 0, revenue: 0 };
+              salesByMP[mpId].units += li.quantity;
+              salesByMP[mpId].revenue += parseFloat(li.price || 0) * li.quantity;
             }
           }
         }
-      } catch (e) {
-        results.errors.push({ type: 'inventory', location: loc.name, error: e.message.slice(0, 80) });
       }
-    }
 
-    // Update inventory in DB
-    for (const [mpId, stock] of Object.entries(stockByMP)) {
-      try {
-        await sql`UPDATE master_products SET total_inventory = ${stock} WHERE id = ${mpId}`;
-        results.inventory++;
-      } catch (e) {
-        results.errors.push({ type: 'stock_update', mpId, error: e.message.slice(0, 80) });
+      const WEEKS = REORDER_VELOCITY_DAYS / 7;
+      const month = new Date().getMonth() + 1;
+      for (const [mpId, sales] of Object.entries(salesByMP)) {
+        const stock = stockByMP[mpId] || 0;
+        const rawVel = +(sales.units / WEEKS).toFixed(2);
+        const vel = +adjustVelocity(rawVel, month).toFixed(2);
+        const st = stock > 0 ? +((sales.units / (stock + sales.units)) * 100).toFixed(1) : 0;
+        const dos = vel > 0 ? Math.round(stock / (vel / 7)) : 999;
+        const sig = classifyDemand(st, vel);
+        try {
+          await sql`UPDATE master_products SET velocity_per_week=${vel}, sell_through=${st}, days_of_stock=${dos}, signal=${sig} WHERE id=${mpId}`;
+          velUpdated++;
+        } catch (e) { /* skip */ }
       }
-    }
-
-    // ── 3. Orders: velocity + demand signals (30 days) ────────
-
-    const { REORDER_VELOCITY_DAYS: VELOCITY_DAYS } = require('../../../lib/constants');
-    const since = new Date();
-    since.setDate(since.getDate() - VELOCITY_DAYS);
-    const { orders } = await client.getOrders({ created_at_min: since.toISOString() });
-
-    const salesByMP = {};  // mpId → { units, revenue }
-
-    for (const order of orders) {
-      for (const li of (order.line_items || [])) {
-        // Find parent product to match to MP
-        const product = products.find(p =>
-          p.variants?.some(v => v.id === li.variant_id)
-        );
-        if (product) {
-          const mpId = matchProduct(product.title, parseFloat(li.price || 0));
-          if (mpId) {
-            if (!salesByMP[mpId]) salesByMP[mpId] = { units: 0, revenue: 0 };
-            salesByMP[mpId].units += li.quantity;
-            salesByMP[mpId].revenue += parseFloat(li.price || 0) * li.quantity;
-          }
-        }
-      }
-    }
-
-    // Compute velocity and demand signals
-    const DAYS = VELOCITY_DAYS;
-    const WEEKS = DAYS / 7;
-    const currentMonth = new Date().getMonth() + 1;
-
-    for (const [mpId, sales] of Object.entries(salesByMP)) {
-      const stock = stockByMP[mpId] || 0;
-      const rawVelocity = +(sales.units / WEEKS).toFixed(2);
-      const velocity = +adjustVelocity(rawVelocity, currentMonth).toFixed(2);
-      const sellThrough = stock > 0 ? +((sales.units / (stock + sales.units)) * 100).toFixed(1) : 0;
-      const daysOfStock = velocity > 0 ? Math.round(stock / (velocity / 7)) : 999;
-      const signal = classifyDemand(sellThrough, velocity);
-
-      try {
-        await sql`
-          UPDATE master_products SET 
-            velocity_per_week = ${velocity},
-            sell_through = ${sellThrough},
-            days_of_stock = ${daysOfStock},
-            signal = ${signal}
-          WHERE id = ${mpId}
-        `;
-        results.velocity++;
-      } catch (e) {
-        results.errors.push({ type: 'velocity_update', mpId, error: e.message.slice(0, 80) });
-      }
-    }
-
-    const elapsed = Date.now() - started;
+      log.push(`velocity:${velUpdated}`);
+    } catch (e) { log.push(`ord_err:${e.message.slice(0, 60)}`); }
 
     return NextResponse.json({
-      synced: true,
-      elapsed: `${elapsed}ms`,
-      shopify: {
-        products: results.products,
-        matched: results.matched,
-        unmatched: results.products - results.matched,
-        locations: locations.length,
-        orders: orders.length,
-      },
-      updated: {
-        inventory: results.inventory,
-        velocity: results.velocity,
-      },
-      errors: results.errors.slice(0, 10),
+      synced: true, elapsed: `${Date.now() - started}ms`,
+      products: products.length, matched: Object.keys(mpMatches).length,
+      unmatched: unmatched.slice(0, 20),
+      inventory: invUpdated, velocity: velUpdated,
+      seasonal: { month: new Date().getMonth() + 1, multiplier: SEASONAL_MULTIPLIERS[new Date().getMonth() + 1] || 1.0 },
+      log,
     });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({
+      error: e.message, stack: e.stack?.split('\n').slice(0, 5),
+      log, elapsed: `${Date.now() - started}ms`,
+    }, { status: 500 });
   }
 }
