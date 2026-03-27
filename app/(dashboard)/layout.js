@@ -12,6 +12,7 @@ const NAV = [
     { href: '/purchase-orders', label: 'Purchase Orders', icon: '◫' },
     { href: '/vendors', label: 'Vendors', icon: '⊞' },
     { href: '/cash-flow', label: 'Cash Flow', icon: '◈' },
+    { href: '/warehouse', label: 'Warehouse', icon: '⊡' },
   ]},
   { section: 'INTELLIGENCE', items: [
     { href: '/analytics', label: 'Analytics', icon: '◩' },

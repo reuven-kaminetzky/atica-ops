@@ -1,17 +1,9 @@
 'use server';
 
-/**
- * Server Actions — thin data fetchers for Server Components.
- *
- * Import from DOMAIN modules, not dal.
- * Each action is one domain call or a small composition.
- */
-
-// Domain imports (lazy — modules loaded on first call)
-const product     = () => require('../../lib/product');
-const supplyChain = () => require('../../lib/supply-chain');
-const finance     = () => require('../../lib/finance');
-const dal         = () => require('../../lib/dal');  // dashboard only — no domain yet
+const dal = () => require('../../lib/dal');
+const product = () => require('../../lib/product');
+const sc = () => require('../../lib/supply-chain');
+const finance = () => require('../../lib/finance');
 
 export async function getDbHealth() {
   try { return await dal().dashboard.getHealth(); }
@@ -29,26 +21,49 @@ export async function getProduct(id) {
 }
 
 export async function getPurchaseOrders() {
-  try { return await supplyChain().po.getAll(); }
+  try { return await sc().po.getAll(); }
   catch (e) { return []; }
 }
 
 export async function getVendors() {
-  try { return await supplyChain().vendor.getAll(); }
+  try { return await sc().vendor.getAll(); }
   catch (e) { return []; }
 }
 
 export async function getCashFlowData() {
   try {
-    const sc = supplyChain();
-    const fin = finance();
+    const s = sc();
+    const f = finance();
     const [payments, activePOs, opex] = await Promise.all([
-      sc.payment.getAllWithPO(),
-      sc.po.getActive(),
-      fin.getOpex(),
+      s.payment.getAllWithPO(),
+      s.po.getActive(),
+      f.getOpex(),
     ]);
     return { payments, activePOs, opexMonthly: opex };
   } catch (e) {
     return { payments: [], activePOs: [], opexMonthly: 25000 };
+  }
+}
+
+export async function getWarehouseData() {
+  try {
+    const logistics = require('../../lib/logistics');
+    const s = sc();
+    const [dashboard, receivingQueue, pendingTransfers, unconfirmed, activeRoutes, activePOs] = await Promise.all([
+      logistics.getWarehouseDashboard(),
+      logistics.receiving.getQueue().catch(() => []),
+      logistics.transfer.getPending().catch(() => []),
+      logistics.transfer.getUnconfirmed().catch(() => []),
+      logistics.van.getActive().catch(() => []),
+      s.po.getActive().catch(() => []),
+    ]);
+    // Incoming shipments = POs that are shipped or in_transit
+    const incomingShipments = activePOs.filter(po => 
+      po.stage === 'shipped' || po.stage === 'in_transit'
+    );
+    return { dashboard, receivingQueue, pendingTransfers, unconfirmed, activeRoutes, incomingShipments };
+  } catch (e) {
+    console.error('[actions] getWarehouseData:', e.message);
+    return { dashboard: {}, receivingQueue: [], pendingTransfers: [], unconfirmed: [], activeRoutes: [], incomingShipments: [] };
   }
 }
