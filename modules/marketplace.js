@@ -45,6 +45,17 @@ export async function init(container) {
   }
 
   bindEvents();
+
+  _unsubs.push(on('sync:complete', async ({ source }) => {
+    if (!_container || source === 'marketplace') return;
+    try {
+      const data = await api.get('/api/products/masters');
+      if (!_container) return;
+      state.masters = data.masters || [];
+      renderCats();
+      render();
+    } catch (e) { /* ignore */ }
+  }));
 }
 
 function renderCats() {
@@ -84,7 +95,7 @@ function render() {
     filtered = filtered.filter(m =>
       m.name.toLowerCase().includes(q) ||
       m.code.toLowerCase().includes(q) ||
-      m.vendor.toLowerCase().includes(q) ||
+      (m.vendor || '').toLowerCase().includes(q) ||
       m.id.toLowerCase().includes(q)
     );
   }
@@ -276,13 +287,13 @@ function openMPDetail(mp) {
       const createBtn = body.querySelector('#mpd-create-po');
 
       unitsInput?.addEventListener('input', () => {
-        const units = parseInt(unitsInput.value) || 0;
+        const units = parseInt(unitsInput.value, 10) || 0;
         totalDiv.textContent = formatCurrency(units * (mp.fob || 0));
         createBtn.textContent = `Quick PO (${formatNumber(units)} units)`;
       });
 
       createBtn?.addEventListener('click', async () => {
-        const units = parseInt(unitsInput?.value) || mp.moq || 50;
+        const units = parseInt(unitsInput?.value, 10) || mp.moq || 50;
         createBtn.disabled = true;
         createBtn.textContent = 'Creating...';
         try {
@@ -293,7 +304,7 @@ function openMPDetail(mp) {
         } catch (err) {
           emit('toast:show', { message: err.message, type: 'error' });
           createBtn.disabled = false;
-          createBtn.textContent = `Quick PO (${formatNumber(parseInt(unitsInput?.value) || mp.moq || 50)} units)`;
+          createBtn.textContent = `Quick PO (${formatNumber(parseInt(unitsInput?.value, 10) || mp.moq || 50)} units)`;
         }
       });
 
@@ -339,16 +350,6 @@ function bindEvents() {
     });
   }
 }
-
-on('sync:complete', async ({ source }) => {
-  if (!_container || source === 'marketplace') return;
-  try {
-    const data = await api.get('/api/products/masters');
-    state.masters = data.masters || [];
-    renderCats();
-    render();
-  } catch (e) { /* ignore */ }
-});
 
 export function destroy() {
   _unsubs.forEach(fn => fn());

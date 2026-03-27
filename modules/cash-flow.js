@@ -30,6 +30,7 @@ let state = {
 };
 
 let _container = null;
+let _unsubs = [];
 
 export async function init(container) {
   _container = container;
@@ -67,6 +68,30 @@ export async function init(container) {
   }
 
   bindEvents();
+
+  _unsubs.push(on('po:create-from-mp', ({ mpId }) => {
+    setTimeout(() => {
+      if (!_container) return;
+      state.view = 'pos';
+      render();
+      bindPOButton();
+      openPOFormWithPrefill(mpId);
+    }, 100);
+  }));
+
+  _unsubs.push(on('sync:complete', async () => {
+    if (!_container) return;
+    try {
+      const [sales, pos] = await Promise.all([
+        api.get('/api/orders/sales', { days: 30 }),
+        api.get('/api/purchase-orders'),
+      ]);
+      if (!_container) return;
+      state.salesData = sales;
+      state.purchaseOrders = pos.purchaseOrders || [];
+      render();
+    } catch (e) { /* ignore */ }
+  }));
 }
 
 function render() {
@@ -196,42 +221,61 @@ function renderOverview(el) {
 
     <!-- 12-Week Cash Flow Projection -->
     ${(() => {
+      const PROJECTION_WEEKS = 12;
+      const SEASONAL = [0.85, 0.85, 0.85, 0.85, 1.15, 1.15, 1.15, 1.40, 1.40, 1.15, 1.60, 1.60];
+      // month index: Jan=0..Dec=11 → Spring 0.85, BTS Aug-Sep 1.40, Fall 1.15, Holiday Nov-Dec 1.60
+
       const reorder = state.reorderPlan;
       if (!reorder?.plan) return '';
       const plan = reorder.plan;
 
-      // Projected weekly revenue from velocity × retail
-      const weeklyRevenue = plan.reduce((sum, p) => {
-        const seed = state.seeds.find(s => s.id === p.mpId);
+      // Build seed lookup for O(1) access
+      const seedMap = {};
+      for (const s of state.seeds) seedMap[s.id] = s;
+
+      // Base weekly revenue/COGS from adjusted velocity
+      const baseRevPerDay = plan.reduce((sum, p) => {
+        const seed = seedMap[p.mpId];
         const retail = seed?.retail || 0;
-        return sum + (p.unitsPerDay * 7 * retail);
+        const velocity = Number(p.adjustedPerDay) || Number(p.unitsPerDay) || 0;
+        return sum + (velocity * retail);
       }, 0);
 
-      // Projected weekly COGS from velocity × landed cost
-      const weeklyCOGS = plan.reduce((sum, p) => {
-        const seed = state.seeds.find(s => s.id === p.mpId);
-        const landed = seed ? seed.fob * (1 + (seed.duty || 0) / 100) : p.fob || 0;
-        return sum + (p.unitsPerDay * 7 * landed);
+      const baseCOGSPerDay = plan.reduce((sum, p) => {
+        const seed = seedMap[p.mpId];
+        const landed = seed ? seed.fob * (1 + (seed.duty || 0) / 100) : (Number(p.fob) || 0);
+        const velocity = Number(p.adjustedPerDay) || Number(p.unitsPerDay) || 0;
+        return sum + (velocity * landed);
       }, 0);
 
-      // PO payment schedule: spread active PO costs over expected timeline
-      const weeklyPOCost = totalPOCost / 12; // spread over ~12 weeks
-
-      const weeks = Array.from({ length: 12 }, (_, i) => {
-        const wkRev = weeklyRevenue;
-        const wkCost = weeklyCOGS + weeklyPOCost;
-        const wkNet = wkRev - wkCost;
-        return { week: i + 1, revenue: +wkRev.toFixed(0), cost: +wkCost.toFixed(0), net: +wkNet.toFixed(0) };
-      });
-
-      // Running cumulative
+      // Build weekly projections with seasonal variation
+      const now = new Date();
       let cumNet = netPosition;
-      const cumWeeks = weeks.map(w => {
-        cumNet += w.net;
-        return { ...w, cumulative: +cumNet.toFixed(0) };
+      const cumWeeks = Array.from({ length: PROJECTION_WEEKS }, (_, i) => {
+        const futureDate = new Date(now.getTime() + i * 7 * 86_400_000);
+        const monthIdx = futureDate.getMonth();
+        const seasonMult = SEASONAL[monthIdx];
+        const wkRev = +(baseRevPerDay * 7 * seasonMult).toFixed(0);
+        const wkCOGS = +(baseCOGSPerDay * 7 * seasonMult).toFixed(0);
+        // PO costs: front-load into first 4 weeks (deposit/production pattern)
+        const poCost = i < 4 ? +(totalPOCost * 0.25).toFixed(0) : 0;
+        const wkCost = wkCOGS + poCost;
+        const wkNet = wkRev - wkCost;
+        cumNet += wkNet;
+        return {
+          week: i + 1,
+          month: futureDate.toLocaleDateString('en-US', { month: 'short' }),
+          revenue: wkRev,
+          cost: wkCost,
+          net: wkNet,
+          cumulative: +cumNet.toFixed(0),
+          seasonal: seasonMult,
+        };
       });
 
-      const maxVal = Math.max(...cumWeeks.map(w => Math.max(Math.abs(w.cumulative), w.revenue)), 1);
+      const weeklyRevenue = cumWeeks[0]?.revenue || 0;
+      const weeklyCOGS = baseCOGSPerDay * 7;
+      const maxVal = cumWeeks.reduce((max, w) => Math.max(max, Math.abs(w.cumulative), w.revenue), 1);
 
       return `
         <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1.5rem">
@@ -256,13 +300,15 @@ function renderOverview(el) {
           <div style="overflow-x:auto">
             <table class="data-table" style="font-size:0.78rem">
               <thead><tr>
-                <th>Wk</th><th style="text-align:right">Revenue</th><th style="text-align:right">COGS</th>
-                <th style="text-align:right">Net</th><th style="text-align:right">Cumulative</th><th style="width:120px"></th>
+                <th>Wk</th><th>Mo</th><th style="text-align:right">Season</th><th style="text-align:right">Revenue</th><th style="text-align:right">COGS+PO</th>
+                <th style="text-align:right">Net</th><th style="text-align:right">Cumulative</th><th style="width:100px"></th>
               </tr></thead>
               <tbody>
                 ${cumWeeks.map(w => `
                   <tr>
                     <td style="color:var(--text-dim)">${w.week}</td>
+                    <td style="font-size:0.75rem;color:var(--text-dim)">${w.month}</td>
+                    <td style="text-align:right;font-size:0.72rem;color:var(--text-dim)">${w.seasonal}x</td>
                     <td style="text-align:right;font-family:var(--font-mono);color:var(--success)">${formatCurrency(w.revenue)}</td>
                     <td style="text-align:right;font-family:var(--font-mono);color:var(--danger)">${formatCurrency(w.cost)}</td>
                     <td style="text-align:right;font-family:var(--font-mono);font-weight:600;color:${w.net >= 0 ? 'var(--success)' : 'var(--danger)'}">${w.net >= 0 ? '+' : ''}${formatCurrency(w.net)}</td>
@@ -282,20 +328,21 @@ function renderOverview(el) {
     })()}
 
     <!-- Daily Revenue Chart -->
-    ${s?.dailySales?.length ? `
+    ${(() => {
+      if (!s?.dailySales?.length) return '';
+      const maxRev = s.dailySales.reduce((max, d) => Math.max(max, d.revenue || 0), 1);
+      return `
       <div style="background:var(--surface);border:1px solid var(--border-light);border-radius:var(--radius-lg);padding:1rem;margin-bottom:1.5rem">
         <h3 style="margin-bottom:0.5rem">Daily Revenue — Last 30 Days</h3>
         <div class="daily-chart">
-          ${s.dailySales.map(d => {
-            const maxRev = Math.max(...s.dailySales.map(x => x.revenue || 0), 1);
-            return `
+          ${s.dailySales.map(d => `
               <div class="daily-bar" title="${d.date}: ${formatCurrency(d.revenue || 0)}">
                 <div class="bar-fill" style="height:${Math.max(2, ((d.revenue || 0) / maxRev) * 100)}%"></div>
               </div>
-            `;
-          }).join('')}
+          `).join('')}
         </div>
-      </div>
+      </div>`;
+    })()
     ` : ''}
 
     <!-- Active PO List -->
@@ -632,7 +679,7 @@ function openPODetail(po) {
       const totalDiv = body.querySelector('#pod-total');
       function updateTotal() {
         const f = parseFloat(fobInput?.value) || 0;
-        const u = parseInt(unitsInput?.value) || 0;
+        const u = parseInt(unitsInput?.value, 10) || 0;
         if (totalDiv) totalDiv.textContent = formatCurrency(f * u);
       }
       fobInput?.addEventListener('input', updateTotal);
@@ -646,7 +693,7 @@ function openPODetail(po) {
         try {
           const updates = {
             vendor: body.querySelector('#pod-vendor')?.value || '',
-            units: parseInt(body.querySelector('#pod-units')?.value) || 0,
+            units: parseInt(body.querySelector('#pod-units', 10)?.value) || 0,
             fob: parseFloat(body.querySelector('#pod-fob')?.value) || 0,
             notes: body.querySelector('#pod-notes')?.value || '',
             container: body.querySelector('#pod-container')?.value || null,
@@ -971,7 +1018,7 @@ function openPOForm() {
 
       function updateTotal() {
         const fob = parseFloat(fobInput.value) || 0;
-        const units = parseInt(unitsInput.value) || 0;
+        const units = parseInt(unitsInput.value, 10) || 0;
         const total = fob * units;
         totalDiv.textContent = total > 0 ? `FOB Total: ${formatCurrency(total)}` : '';
       }
@@ -1004,7 +1051,7 @@ function openPOForm() {
       body.querySelector('#po-submit').addEventListener('click', async () => {
         const mpId = mpSelect.value || null;
         const vendor = vendorInput.value.trim();
-        const units = parseInt(unitsInput.value) || 0;
+        const units = parseInt(unitsInput.value, 10) || 0;
         const fob = parseFloat(fobInput.value) || 0;
 
         if (!mpId && !vendor) {
@@ -1041,31 +1088,9 @@ function openPOForm() {
   });
 }
 
-// Listen for PO creation triggered from marketplace detail view
-on('po:create-from-mp', ({ mpId }) => {
-  // Wait a tick for cash-flow module to init after nav:change
-  setTimeout(() => {
-    state.view = 'pos';
-    render();
-    bindPOButton();
-    openPOFormWithPrefill(mpId);
-  }, 100);
-});
-
-on('sync:complete', async () => {
-  if (!_container) return;
-  try {
-    const [sales, pos] = await Promise.all([
-      api.get('/api/orders/sales', { days: 30 }),
-      api.get('/api/purchase-orders'),
-    ]);
-    state.salesData = sales;
-    state.purchaseOrders = pos.purchaseOrders || [];
-    render();
-  } catch (e) { /* ignore */ }
-});
-
 export function destroy() {
+  _unsubs.forEach(fn => fn());
+  _unsubs = [];
   _container = null;
   state = { loaded: false, salesData: null, reorderPlan: null, purchaseOrders: [], stages: [], seeds: [], ledger: [], view: 'overview', selectedPOs: new Set() };
 }

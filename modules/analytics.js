@@ -534,7 +534,7 @@ function bindTabs() {
     tab.addEventListener('click', () => {
       _container.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       tab.classList.add('active');
-      loadData(parseInt(tab.dataset.days));
+      loadData(parseInt(tab.dataset.days, 10));
     });
   });
 }

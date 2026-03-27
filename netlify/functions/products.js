@@ -493,15 +493,25 @@ async function updatePlmStage(_, { pathParams, body }) {
   const stageDef = PLM_STAGES.find(s => s.name === stageName || s.id === Number(stageName));
   if (!stageDef) throw new RouteError(400, `Invalid PLM stage: ${stageName}. Valid: ${PLM_STAGES.map(s => s.name).join(', ')}`);
 
+  // Sequential enforcement — only allow advancing one stage at a time (or specify force=true to skip)
+  const existing = await store.plm.get(mpId) || {};
+  const currentStageId = existing.plmStageId || 1;
+  if (!body.force && stageDef.id !== currentStageId + 1 && stageDef.id !== currentStageId) {
+    const currentName = PLM_STAGES.find(s => s.id === currentStageId)?.name || 'Concept';
+    throw new RouteError(400,
+      `Cannot jump from "${currentName}" (${currentStageId}) to "${stageDef.name}" (${stageDef.id}). ` +
+      `Must advance one stage at a time. Pass force:true to override.`
+    );
+  }
+
   // Gate enforcement — reviewer identity required for gated stages
-  const reviewer = String(body.checkedBy || body.updatedBy || '').trim();
+  const reviewer = String(body.checkedBy || '').trim();
   if (stageDef.gate && !reviewer) {
     throw new RouteError(400, `Stage "${stageDef.name}" requires checkedBy (gate: ${stageDef.gate})`);
   }
-
-  const existing = await store.plm.get(mpId) || {};
   const now = new Date().toISOString();
-  const prevHistory = Array.isArray(existing.history) ? existing.history : [];
+  const MAX_HISTORY = 100;
+  const prevHistory = Array.isArray(existing.history) ? existing.history.slice(-MAX_HISTORY + 1) : [];
 
   const record = {
     ...existing,

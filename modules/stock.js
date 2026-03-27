@@ -15,6 +15,8 @@
 import { on, emit } from './event-bus.js';
 import { api, formatNumber, formatCurrency, skeleton } from './core.js';
 
+const LOW_STOCK_THRESHOLD = 20;
+
 let state = {
   loaded: false,
   masters: [],
@@ -24,6 +26,7 @@ let state = {
   filter: '',
 };
 let _container = null;
+let _unsubs = [];
 
 export async function init(container) {
   _container = container;
@@ -60,6 +63,31 @@ export async function init(container) {
   }
 
   bindEvents();
+
+  _unsubs.push(on('sync:complete', async () => {
+    if (!_container) return;
+    try {
+      const [masters, inv] = await Promise.all([
+        api.get('/api/products/masters'),
+        api.get('/api/inventory'),
+      ]);
+      if (!_container) return;
+      state.masters = masters.masters || [];
+      state.locations = inv.locations || [];
+      render();
+      emit('stock:updated', { locations: state.locations });
+    } catch (e) { /* ignore */ }
+  }));
+
+  _unsubs.push(on('po:received', async () => {
+    if (!_container) return;
+    try {
+      const inv = await api.get('/api/inventory');
+      if (!_container) return;
+      state.locations = inv.locations || [];
+      render();
+    } catch (e) { /* ignore */ }
+  }));
 }
 
 function render() {
@@ -326,7 +354,7 @@ function renderTransfer(el) {
     const fromId = fromSelect.value;
     const row = rows.find(r => r.mpId === mpId);
     const fromLoc = locs.find(l => String(l.locationId) === fromId);
-    const qty = parseInt(qtyInput.value) || 0;
+    const qty = parseInt(qtyInput.value, 10) || 0;
 
     if (row && fromLoc) {
       const fromName = fromLoc.locationName;
@@ -358,7 +386,7 @@ function renderTransfer(el) {
     // We need an inventory_item_id. Since we don't have direct mapping here,
     // we use the masters data which has shopifyProductIds, then resolve variants.
     // For now, emit a modal to confirm and use the inventory API.
-    const qty = parseInt(qtyInput.value) || 0;
+    const qty = parseInt(qtyInput.value, 10) || 0;
     const fromId = fromSelect.value;
     const toId = toSelect.value;
     const fromName = locs.find(l => String(l.locationId) === fromId)?.locationName || fromId;
@@ -383,8 +411,8 @@ function renderTransfer(el) {
       // Use the first available item as a starting point.
       await api.post('/api/inventory/transfer', {
         inventoryItemId: itemIds[0],
-        fromLocationId: parseInt(fromId),
-        toLocationId: parseInt(toId),
+        fromLocationId: parseInt(fromId, 10),
+        toLocationId: parseInt(toId, 10),
         quantity: qty,
       });
 
@@ -424,30 +452,9 @@ function bindEvents() {
   }
 }
 
-on('sync:complete', async () => {
-  if (!_container) return;
-  try {
-    const [masters, inv] = await Promise.all([
-      api.get('/api/products/masters'),
-      api.get('/api/inventory'),
-    ]);
-    state.masters = masters.masters || [];
-    state.locations = inv.locations || [];
-    render();
-    emit('stock:updated', { locations: state.locations });
-  } catch (e) { /* ignore */ }
-});
-
-on('po:received', async () => {
-  if (!_container) return;
-  try {
-    const inv = await api.get('/api/inventory');
-    state.locations = inv.locations || [];
-    render();
-  } catch (e) { /* ignore */ }
-});
-
 export function destroy() {
+  _unsubs.forEach(fn => fn());
+  _unsubs = [];
   _container = null;
   state = { loaded: false, masters: [], locations: [], stockMatrix: null, view: 'by-mp', filter: '' };
 }
