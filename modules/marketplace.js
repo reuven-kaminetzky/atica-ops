@@ -11,7 +11,7 @@
  */
 
 import { on, emit } from './event-bus.js';
-import { api, formatCurrency, formatNumber, skeleton } from './core.js';
+import { api, formatCurrency, formatNumber, skeleton, esc } from './core.js';
 
 let _unsubs = [];
 let state = { loaded: false, masters: [], unmatched: [], categories: [], filter: '', activeCat: null };
@@ -107,15 +107,15 @@ function render() {
           <div style="position:relative">
             ${mp.images && mp.images[0]
               ? `<img src="${mp.images[0]}&width=300" class="product-img" style="height:180px" loading="lazy" />`
-              : `<div class="product-img-placeholder" style="height:180px;font-size:1.5rem;font-weight:700">${mp.code}</div>`}
+              : `<div class="product-img-placeholder" style="height:180px;font-size:1.5rem;font-weight:700">${esc(mp.code)}</div>`}
             ${stockLabel ? `<div style="position:absolute;top:8px;left:8px;font-size:0.65rem;font-weight:700;padding:2px 6px;border-radius:3px;background:${stockColor};color:white">${stockLabel}</div>` : ''}
             ${mp.margin ? `<div style="position:absolute;top:8px;right:8px;font-size:0.65rem;font-weight:600;padding:2px 6px;border-radius:3px;background:rgba(0,0,0,0.6);color:white">${mp.margin}%</div>` : ''}
           </div>
           <div class="product-info" style="padding:0.85rem">
             <div style="display:flex;justify-content:space-between;align-items:flex-start">
-              <div class="product-title">${mp.name}</div>
+              <div class="product-title">${esc(mp.name)}</div>
             </div>
-            <div class="product-meta">${mp.vendor || '—'} · ${mp.cat}</div>
+            <div class="product-meta">${esc(mp.vendor) || '\u2014'} · ${esc(mp.cat)}</div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-top:0.5rem">
               <div class="product-price">${formatCurrency(mp.liveRetail || mp.retail)}</div>
               <div style="font-size:0.75rem;color:${stockColor};font-weight:600">${formatNumber(mp.totalInventory)} units</div>
@@ -161,7 +161,7 @@ function buildSizeGrid(mp) {
             <div class="size-grid-style">
               <div class="size-grid-style-header">
                 <span class="size-grid-color-dot" style="background:${style.color}"></span>
-                ${style.name}
+                ${esc(style.name)}
                 <span style="font-weight:400;font-size:0.78rem;color:var(--text-dim);margin-left:auto">${formatNumber(style.qty)} units</span>
               </div>
             </div>`;
@@ -195,7 +195,7 @@ function buildSizeGrid(mp) {
                   const fitSizes = fit.sizes || [];
                   return `
                     <tr>
-                      <td>${fit.name}</td>
+                      <td>${esc(fit.name)}</td>
                       ${allSizes.map(sz => {
                         const available = fitSizes.includes(sz);
                         return `<td class="${available ? 'sz-ok' : 'sz-zero'}">${available ? '\u2713' : '\u2014'}</td>`;
@@ -221,10 +221,10 @@ function openMPDetail(mp) {
       <div class="mp-detail-top">
         ${mp.images?.[0]
           ? `<img src="${mp.images[0]}&width=260" class="mp-detail-img" />`
-          : `<div class="mp-detail-placeholder">${mp.code}</div>`}
+          : `<div class="mp-detail-placeholder">${esc(mp.code)}</div>`}
         <div class="mp-detail-info">
-          <div class="mp-detail-meta">${mp.cat} · ${mp.code}</div>
-          <div class="mp-detail-vendor">${mp.vendor || 'No vendor'}</div>
+          <div class="mp-detail-meta">${esc(mp.cat)} · ${esc(mp.code)}</div>
+          <div class="mp-detail-vendor">${esc(mp.vendor) || 'No vendor'}</div>
           <div class="mp-detail-metrics">
             <div><span class="mp-detail-metric-label">Retail:</span> ${formatCurrency(mp.liveRetail || mp.retail)}</div>
             <div><span class="mp-detail-metric-label">FOB:</span> ${formatCurrency(mp.fob)}</div>

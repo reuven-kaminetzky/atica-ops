@@ -16,14 +16,15 @@
  */
 
 import { on, emit } from './event-bus.js';
-import { api, formatCurrency, formatNumber, skeleton } from './core.js';
+import { api, formatCurrency, formatNumber, skeleton, esc } from './core.js';
 
 const CAT_COLORS = ['#714b67', '#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ec4899', '#64748b'];
 
-const SIGNAL_ICONS = { hot: '🔥', rising: '📈', steady: '→', slow: '📉', stockout: '⚠' };
+const VALID_SIGNALS = new Set(['hot', 'rising', 'steady', 'slow', 'stockout']);
+
 function signalBadge(signal) {
-  if (!signal || signal === 'steady') return '';
-  return `<span class="signal-badge signal-${signal}">${signal}</span>`;
+  if (!signal || signal === 'steady' || !VALID_SIGNALS.has(signal)) return '';
+  return `<span class="signal-badge signal-${esc(signal)}">${esc(signal)}</span>`;
 }
 
 let state = { loaded: false, velocity: null, sales: null, days: 30, sortCol: 'revenue', sortDir: 'desc' };
@@ -71,12 +72,14 @@ async function loadData(days) {
       api.get('/api/orders/mp-velocity', { days }),
       api.get('/api/orders/sales', { days }),
     ]);
+    if (!_container) return;
     state.velocity = vel;
     state.sales = sales;
     state.loaded = true;
     render();
   } catch (err) {
-    el.innerHTML = `<div class="empty-state">Failed to load analytics: ${err.message}</div>`;
+    if (!_container) return;
+    el.innerHTML = `<div class="empty-state">Failed to load analytics: ${esc(err.message)}</div>`;
   }
 }
 
@@ -430,8 +433,8 @@ function render() {
             return `
             <tr>
               <td><span class="mp-rank ${i < 3 ? 'top3' : ''}">${i + 1}</span></td>
-              <td style="font-weight:600">${mp.name}</td>
-              <td style="font-size:0.78rem;color:var(--text-dim)">${mp.cat}</td>
+              <td style="font-weight:600">${esc(mp.name)}</td>
+              <td style="font-size:0.78rem;color:var(--text-dim)">${esc(mp.cat)}</td>
               <td>${miniSparkline(mp, days)}</td>
               <td style="text-align:right;font-family:var(--font-mono)">${formatNumber(mp.units)}</td>
               <td style="text-align:right;font-family:var(--font-mono);font-weight:600">${formatCurrency(mp.revenue)}</td>

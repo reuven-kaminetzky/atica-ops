@@ -151,6 +151,16 @@ export function timeAgo(dateStr) {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+// ── Security ───────────────────────────────────────────────
+
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+/** Escape HTML entities to prevent XSS from user-supplied strings. */
+export function esc(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/[&<>"']/g, c => ESC_MAP[c]);
+}
+
 // ── DOM Helpers ─────────────────────────────────────────────
 
 export function $(selector, parent = document) {

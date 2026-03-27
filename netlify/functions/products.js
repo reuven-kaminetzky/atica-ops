@@ -483,23 +483,25 @@ async function getPlmStages() {
 }
 
 async function updatePlmStage(_, { pathParams, body }) {
-  const mpId = decodeURIComponent(pathParams.id);
+  const mpId = decodeURIComponent(pathParams.id).trim();
   const seed = MP_BY_ID[mpId];
   if (!seed) throw new RouteError(404, `MP not found: ${mpId}`);
 
-  const stageName = body.stage || body.plmStage;
+  const stageName = String(body.stage || body.plmStage || '').trim();
   if (!stageName) throw new RouteError(400, 'Missing required field: stage or plmStage');
 
-  const stageDef = PLM_STAGES.find(s => s.name === stageName || s.id === stageName);
-  if (!stageDef) throw new RouteError(400, `Invalid PLM stage: ${stageName}`);
+  const stageDef = PLM_STAGES.find(s => s.name === stageName || s.id === Number(stageName));
+  if (!stageDef) throw new RouteError(400, `Invalid PLM stage: ${stageName}. Valid: ${PLM_STAGES.map(s => s.name).join(', ')}`);
 
-  // Gate enforcement
-  if (stageDef.gate && !body.checkedBy && !body.updatedBy) {
+  // Gate enforcement — reviewer identity required for gated stages
+  const reviewer = String(body.checkedBy || body.updatedBy || '').trim();
+  if (stageDef.gate && !reviewer) {
     throw new RouteError(400, `Stage "${stageDef.name}" requires checkedBy (gate: ${stageDef.gate})`);
   }
 
   const existing = await store.plm.get(mpId) || {};
   const now = new Date().toISOString();
+  const prevHistory = Array.isArray(existing.history) ? existing.history : [];
 
   const record = {
     ...existing,
@@ -508,15 +510,15 @@ async function updatePlmStage(_, { pathParams, body }) {
     plmStageId: stageDef.id,
     previousStage: existing.plmStage || 'Concept',
     updatedAt: now,
-    updatedBy: body.checkedBy || body.updatedBy || null,
-    notes: body.notes || null,
+    updatedBy: reviewer || null,
+    notes: body.notes ? String(body.notes).trim() : null,
     history: [
-      ...(existing.history || []),
+      ...prevHistory,
       {
         from: existing.plmStage || 'Concept',
         to: stageDef.name,
-        by: body.checkedBy || body.updatedBy || null,
-        notes: body.notes || null,
+        by: reviewer || null,
+        notes: body.notes ? String(body.notes).trim() : null,
         at: now,
       },
     ],
