@@ -45,6 +45,7 @@ Do NOT create Next.js routes under app/api/sync/ — they will never run.**
 5. Test webhook handling for real-time updates
 6. Review unmatched titles — add matchers for real products missed
 7. Expand product matcher coverage past 597/1108
+8. VARIANT DATA SYNC — Read docs/ANALYTICS_DESIGN.md. Analytics needs Fit, Size, Length from Shopify variant options. Extract during sync. Coordinate schema with Almond.
 
 ### Danny (Frontend)
 ```
@@ -63,15 +64,17 @@ DO NOT TOUCH: lib/products.js, netlify/functions/, lib/dal/, supabase/
 - Pattern: List view (table) → click row → Detail view → click section → Sub-detail.
 - Each page starts clean. Data appears when you navigate TO it, not when it's thrown at you.
 - Functional, not pretty. Clean, not busy. This is a TOOL, not a dashboard.
+- **ANALYTICS = the power tool.** Read docs/ANALYTICS_DESIGN.md. Reference: aticm.com + Lightspeed R.
 
 **Danny's tasks (in order):**
-1. Rebuild landing page: REMOVE KPI cards and data dump. Clean nav entry points + action alerts only.
-2. Products: clean table (name, category, stock, velocity). Click row → detail.
-3. Product detail: header with key numbers, collapsible sections (Styles, POs, Stack).
-4. PO list: table. Click row → PO detail with stage track and payments.
-5. Settings: verify sync polling UI works with Blob-based status.
-6. Cash flow: table of weekly outflow from real po_payments + sales. Not charts.
-7. Mobile: test all pages on phone, fix layouts.
+1. Rebuild landing page: clean nav entry points + action alerts only.
+2. Products: clean table. Click row → detail.
+3. Product detail: header, collapsible sections (Styles, POs, Stack).
+4. PO list: table. Click row → PO detail.
+5. Settings: verify sync polling UI works.
+6. Cash flow: table of weekly outflow from real data.
+7. **ANALYTICS PAGE (big build):** Read docs/ANALYTICS_DESIGN.md. Flexible data breakdown: Group By pills (Category/Vendor/Product/Color/Fit/Size/Length/Location), stackable THEN BY chain, collapsible tree table, configurable columns, date range filters. Start flat, add tree nesting, then column picker.
+8. Mobile: test all pages on phone, fix layouts.
 
 **Danny calls data through:**
 Server actions (actions.js) → domain modules (lib/product/) → DAL (lib/dal/).
@@ -101,8 +104,9 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/products.js, lib/shopify.js,
 4. CI pipeline: GitHub Action for tests on push
 5. Structured logging across all routes
 6. Verification endpoint refinement
-7. Add DAL methods Danny or Bonney request
+7. **ANALYTICS DAL:** Read docs/ANALYTICS_DESIGN.md. Build lib/dal/analytics.js with getBreakdown(groupBy, thenBy, filters). Dynamic GROUP BY queries — the most complex DAL method. Design before coding.
 8. Cash flow DAL: real po_payments + sales queries
+9. Add DAL methods Danny or Bonney request
 
 ---
 
