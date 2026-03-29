@@ -69,6 +69,11 @@
   status = 200
 
 [[redirects]]
+  from   = "/api/sync/*"
+  to     = "/.netlify/functions/sync/:splat"
+  status = 200
+
+[[redirects]]
   from   = "/api/webhooks/shopify"
   to     = "/.netlify/functions/webhooks-shopify"
   status = 200
