@@ -4,24 +4,19 @@ import { NextResponse } from 'next/server';
  * POST /api/sync/trigger
  * 
  * Triggers the sync background function.
- * Returns immediately. UI polls /api/sync/status for progress.
+ * Sets initial status in Blob store. Returns immediately.
  */
 export async function POST() {
   try {
-    const { sql } = require('../../../../lib/dal/db');
-    const db = sql();
-
-    // Set initial status
-    const value = JSON.stringify({
+    // Set initial status in Blob
+    const { getStore } = require('@netlify/blobs');
+    const store = getStore('sync');
+    await store.setJSON('sync-status', {
       status: 'starting',
       startedAt: new Date().toISOString(),
       triggeredBy: 'manual',
       updatedAt: new Date().toISOString(),
     });
-    await db`
-      INSERT INTO app_settings (key, value) VALUES ('sync_status', ${value})
-      ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = NOW()
-    `;
 
     // Trigger background function
     const siteUrl = process.env.URL || 'https://atica-ops-v3.netlify.app';

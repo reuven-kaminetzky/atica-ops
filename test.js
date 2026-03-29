@@ -418,6 +418,116 @@ test('authenticate allows when SKIP_AUTH=true', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
+// PRODUCT MATCHING — the foundation of the system
+// ═══════════════════════════════════════════════════════════
+
+console.log('\n--- Product Matching (critical) ---');
+
+const { matchProduct } = require('./lib/products');
+
+test('matches Lorenzo/Alexander HC suit to hc-suit MP', () => {
+  // Lorenzo and Alexander are FITS, not separate MPs
+  // They all match to hc-suit (or italian-hc by price)
+  assert(matchProduct('Atica Man Half Canvas Suit Lorenzo 6 Drop | Navy') === 'hc-suit');
+  assert(matchProduct('Atica Man Half Canvas Suit | Charcoal') === 'hc-suit');
+});
+
+test('matches Italian HC suit correctly', () => {
+  assert(matchProduct('Atica Man Italian Fabric Half Canvas Suit | Charcoal') === 'italian-hc');
+  assert(matchProduct('Atica Man Italian Fabric Half Canvas Suit | Navy') === 'italian-hc');
+});
+
+test('matches HC suit vs Italian HC by title keywords', () => {
+  assert(matchProduct('Atica Man Half Canvas Suit | Navy', 360) === 'hc-suit');
+  assert(matchProduct('Atica Man Italian Fabric Half Canvas Suit | Charcoal', 480) === 'italian-hc');
+});
+
+test('matches Londoner shirt correctly', () => {
+  assert(matchProduct('Atica Man Londoner Shirt | Light Blue') === 'londoner');
+});
+
+test('matches white dress shirt correctly', () => {
+  const id = matchProduct('Atica Man Milano Shirt | White');
+  assert(id === 'white-dress');
+});
+
+test('matches colored dress shirt correctly', () => {
+  const id = matchProduct('Atica Man Bengal Stripe Shirt | Blue');
+  assert(id === 'colored-dress');
+});
+
+test('matches ties correctly', () => {
+  const id = matchProduct('Atica Man Tie | Navy Dots');
+  assert(id === 'ties');
+});
+
+test('does not match gift cards', () => {
+  assert(matchProduct('Gift Card') === null || matchProduct('Gift Card') === undefined);
+});
+
+test('does not match shipping items', () => {
+  assert(matchProduct('Shipping') === null || matchProduct('Shipping') === undefined);
+});
+
+// ═══════════════════════════════════════════════════════════
+// DOMAIN MODULE EXPORTS
+// ═══════════════════════════════════════════════════════════
+
+console.log('\n--- Domain Module Exports ---');
+
+test('product module exports all required methods', () => {
+  const product = require('./lib/product');
+  const required = ['matchProduct', 'classifyDemand', 'adjustVelocity', 
+    'updateShopifyData', 'upsertStyle', 'updateTotalInventory', 'updateVelocity', 'getAll'];
+  for (const m of required) {
+    assert(typeof product[m] === 'function', `Missing: product.${m}`);
+  }
+});
+
+test('supply-chain module exports PO and vendor operations', () => {
+  const sc = require('./lib/supply-chain');
+  assert(typeof sc.po.getAll === 'function');
+  assert(typeof sc.po.create === 'function');
+  assert(typeof sc.vendor.getAll === 'function');
+  assert(typeof sc.payment.getAllWithPO === 'function');
+});
+
+test('finance module exports cash flow functions', () => {
+  const finance = require('./lib/finance');
+  assert(typeof finance.getOpex === 'function');
+});
+
+test('logger exports structured log methods', () => {
+  const log = require('./lib/logger');
+  assert(typeof log.info === 'function');
+  assert(typeof log.warn === 'function');
+  assert(typeof log.error === 'function');
+});
+
+// ═══════════════════════════════════════════════════════════
+// CONSTANTS INTEGRITY
+// ═══════════════════════════════════════════════════════════
+
+console.log('\n--- Constants Integrity ---');
+
+const constants = require('./lib/constants');
+
+test('seasonal multipliers cover all 12 months', () => {
+  for (let m = 1; m <= 12; m++) {
+    const mult = constants.SEASONAL_MULTIPLIERS[m];
+    assert(typeof mult === 'number' && mult > 0 && mult < 3, `Month ${m}: ${mult}`);
+  }
+});
+
+test('reorder velocity days is reasonable', () => {
+  assert(constants.REORDER_VELOCITY_DAYS >= 14 && constants.REORDER_VELOCITY_DAYS <= 90);
+});
+
+test('projection weeks is set', () => {
+  assert(constants.PROJECTION_WEEKS > 0 && constants.PROJECTION_WEEKS <= 52);
+});
+
+// ═══════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(50)}`);
 console.log(`RESULTS: ${passed} passed, ${failed} failed`);
 console.log(`${'═'.repeat(50)}\n`);
