@@ -192,3 +192,18 @@ export async function getOperationalSummary() {
     return summary;
   } catch (e) { return { error: e.message }; }
 }
+
+// ── Analytics ──────────────────────────────────────────────
+export async function getDataBreakdown(opts = {}) {
+  'use server';
+  try {
+    return await dal().analytics.getBreakdown(opts);
+  } catch (e) { return { error: e.message, rows: [], totals: {} }; }
+}
+
+export async function getAnalyticsDimensions() {
+  'use server';
+  try {
+    return dal().analytics.getDimensions();
+  } catch (e) { return []; }
+}

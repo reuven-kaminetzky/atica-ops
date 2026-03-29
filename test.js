@@ -504,6 +504,33 @@ test('logger exports structured log methods', () => {
   assert(typeof log.error === 'function');
 });
 
+test('analytics DAL exports getBreakdown and getDimensions', () => {
+  const analytics = require('./lib/dal/analytics');
+  assert(typeof analytics.getBreakdown === 'function');
+  assert(typeof analytics.getDimensions === 'function');
+  assert(typeof analytics.getColumns === 'function');
+});
+
+test('analytics dimensions include required set', () => {
+  const analytics = require('./lib/dal/analytics');
+  const dims = analytics.getDimensions().map(d => d.id);
+  assert(dims.includes('category'));
+  assert(dims.includes('vendor'));
+  assert(dims.includes('mp'));
+  assert(dims.includes('style'));
+  assert(dims.includes('location'));
+});
+
+test('analytics columns include required metrics', () => {
+  const analytics = require('./lib/dal/analytics');
+  const cols = analytics.getColumns().map(c => c.id);
+  assert(cols.includes('stock'));
+  assert(cols.includes('sales'));
+  assert(cols.includes('velocity'));
+  assert(cols.includes('x_rate'));
+  assert(cols.includes('incoming'));
+});
+
 // ═══════════════════════════════════════════════════════════
 // CONSTANTS INTEGRITY
 // ═══════════════════════════════════════════════════════════
