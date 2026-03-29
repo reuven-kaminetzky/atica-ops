@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atica OPS — Remediation Sprint Plan</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Instrument+Serif:ital@0;1&display=swap');
+  :root {
+    --bg:#0a0a0c;--s1:#111114;--s2:#18181c;--brd:#2a2a30;
+    --t:#e8e6e3;--td:#8a8a95;--acc:#c4a35a;--ad:#8a7640;
+    --g:#4ade80;--b:#60a5fa;--r:#f87171;--p:#c084fc;--o:#fb923c;--cy:#22d3ee;
+    --mono:'JetBrains Mono',monospace;--serif:'Instrument Serif',Georgia,serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:var(--bg);color:var(--t);font-family:var(--mono);font-size:13px;line-height:1.7;-webkit-font-smoothing:antialiased;}
+  .c{max-width:1100px;margin:0 auto;padding:40px 24px 120px;}
+  .hdr{border-bottom:1px solid var(--brd);padding-bottom:32px;margin-bottom:48px;}
+  .hdr-lbl{font-size:10px;letter-spacing:4px;text-transform:uppercase;color:var(--acc);margin-bottom:10px;}
+  .hdr h1{font-family:var(--serif);font-size:clamp(32px,5vw,48px);font-weight:400;line-height:1.1;margin-bottom:12px;}
+  .hdr h1 em{color:var(--acc);font-style:italic;}
+  .hdr-sub{color:var(--td);font-size:13px;max-width:700px;}
+
+  .constraint{background:var(--s1);border:1px solid var(--brd);border-left:3px solid var(--o);border-radius:0 8px 8px 0;padding:20px 24px;margin-bottom:48px;}
+  .constraint-t{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--o);margin-bottom:6px;}
+
+  .sprint{margin-bottom:56px;}
+  .sprint-hdr{display:flex;align-items:baseline;gap:16px;margin-bottom:6px;flex-wrap:wrap;}
+  .sprint-num{font-family:var(--serif);font-size:28px;font-weight:400;}
+  .sprint-name{font-size:14px;color:var(--acc);font-weight:500;}
+  .sprint-when{font-size:11px;color:var(--td);margin-left:auto;}
+  .sprint-goal{color:var(--td);margin-bottom:24px;font-size:12px;max-width:700px;}
+
+  .task{background:var(--s1);border:1px solid var(--brd);border-radius:8px;margin-bottom:12px;overflow:hidden;transition:border-color .2s;}
+  .task:hover{border-color:var(--ad);}
+  .task-top{padding:16px 20px;cursor:pointer;display:flex;align-items:center;gap:12px;}
+  .task-sev{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .sev-crit{background:var(--r);}
+  .sev-high{background:var(--o);}
+  .sev-med{background:var(--b);}
+  .sev-low{background:var(--p);}
+  .task-title{font-size:13px;font-weight:500;flex:1;}
+  .task-owner{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--td);background:var(--s2);padding:2px 8px;border-radius:4px;flex-shrink:0;}
+  .task-effort{font-size:10px;color:var(--td);flex-shrink:0;}
+  .task-arrow{color:var(--td);font-size:14px;transition:transform .2s;flex-shrink:0;}
+  .task.open .task-arrow{transform:rotate(90deg);}
+  .task-body{display:none;padding:0 20px 20px 40px;font-size:12px;color:var(--td);line-height:1.8;}
+  .task.open .task-body{display:block;}
+  .task-body p{margin-bottom:12px;}
+  .task-body strong{color:var(--t);}
+  .task-body code{background:var(--s2);padding:1px 6px;border-radius:3px;font-size:11px;color:var(--cy);}
+
+  .code-sm{background:var(--s2);border:1px solid var(--brd);border-radius:6px;padding:16px;margin:12px 0;overflow-x:auto;}
+  .code-sm pre{font-family:var(--mono);font-size:11px;line-height:1.7;color:var(--t);white-space:pre;}
+
+  .deps{margin-top:8px;font-size:11px;}
+  .deps span{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:3px;font-size:10px;}
+  .dep-blocks{background:rgba(248,113,113,.12);color:var(--r);}
+  .dep-needs{background:rgba(96,165,250,.12);color:var(--b);}
+  .dep-enables{background:rgba(74,222,128,.12);color:var(--g);}
+
+  .summary{background:var(--s1);border:1px solid var(--brd);border-radius:8px;padding:24px;margin-top:56px;}
+  .summary h3{font-family:var(--serif);font-size:22px;margin-bottom:16px;}
+  .summary-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;}
+  .summary-item{text-align:center;}
+  .summary-num{font-size:28px;font-family:var(--serif);color:var(--acc);}
+  .summary-label{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--td);}
+
+  .note{background:var(--s1);border-left:3px solid var(--acc);padding:16px 20px;margin:20px 0;border-radius:0 6px 6px 0;font-size:12px;color:var(--td);}
+  .note strong{color:var(--acc);}
+
+  @media(max-width:768px){
+    .c{padding:24px 16px 80px;}
+    .sprint-hdr{flex-direction:column;gap:4px;}
+    .sprint-when{margin-left:0;}
+    .task-owner{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="c">
+
+<div class="hdr">
+  <div class="hdr-lbl">Remediation Sprint Plan</div>
+  <h1>Atica OPS — <em>What to Fix, When</em></h1>
+  <div class="hdr-sub">
+    22 tasks across 6 sprints. Ordered by blast radius and dependency chain.
+    Constraint: Shopify remains source of truth for now. All fixes work within the current Next.js + Neon + Netlify stack.
+  </div>
+</div>
+
+<div class="constraint">
+  <div class="constraint-t">Operating Constraint</div>
+  <p style="color:var(--t);font-size:13px;margin-bottom:8px;"><strong>Shopify stays as source of truth.</strong> The sync-from-Shopify architecture remains. All fixes below are designed to work with the current data flow direction (Shopify → Sync → Postgres). Flipping to ERP-as-source-of-truth is a Phase 2 project for Q3/Q4 2026.</p>
+  <p style="font-size:12px;">This means: we improve how we receive, store, and use Shopify data — but we don't try to push products TO Shopify yet. Webhooks supplement the sync. The SKU table derives from Shopify variants. Inventory events layer on top of Shopify's inventory data.</p>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 0 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 0</span>
+    <span class="sprint-name">Stop the Bleeding</span>
+    <span class="sprint-when">Week 1 — 2-3 days</span>
+  </div>
+  <p class="sprint-goal">Zero-effort, high-impact safety fixes. Nothing here changes architecture — it just prevents catastrophic data loss and security breaches that could happen tomorrow.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-crit"></div>
+      <div class="task-title">Kill the destructive endpoints</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">1 hr</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> <code>POST /api/seed</code> deletes ALL data. <code>POST /api/migrate</code> runs raw SQL. Both accessible to anyone with the site password (which is in the audit doc).</p>
+      <p><strong>Fix:</strong> Remove both routes from production entirely. If you need them for dev, gate behind <code>ADMIN_SECRET</code> env var that's only set in local dev. Add a <code>?confirm=DELETE_ALL_DATA</code> parameter requirement as a second gate.</p>
+      <p><strong>Effort:</strong> Delete two route files or add 5-line guard. Deploy in minutes.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-crit"></div>
+      <div class="task-title">Add webhook deduplication</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">2 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> Shopify can send the same webhook multiple times. No idempotency check exists. Duplicate <code>orders/create</code> webhooks will double-count sales data.</p>
+      <p><strong>Fix:</strong> Create a <code>webhook_events</code> table. Log every incoming webhook with the <code>X-Shopify-Event-Id</code> header. Add a unique index on <code>(source, external_id)</code>. If INSERT fails with unique violation, return 200 and skip processing.</p>
+      <div class="code-sm"><pre>-- Migration 012
+CREATE TABLE webhook_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source TEXT NOT NULL DEFAULT 'shopify',
+  topic TEXT NOT NULL,
+  external_id TEXT,
+  payload JSONB,
+  status TEXT DEFAULT 'pending',
+  error_message TEXT,
+  processed_at TIMESTAMPTZ,
+  received_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE UNIQUE INDEX idx_webhook_dedup
+  ON webhook_events(source, external_id)
+  WHERE external_id IS NOT NULL;</pre></div>
+      <p>Then in <code>webhooks-shopify.js</code>, insert before processing. If 23505 error → skip.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Convert remaining ENUMs to TEXT</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">1 hr</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> <code>payment_status</code>, <code>mp_phase</code>, <code>demand_signal</code> are still Postgres ENUMs. You can't remove values without dropping and recreating the type. You already hit this with <code>po_stage</code>.</p>
+      <p><strong>Fix:</strong> Migration 012: ALTER COLUMN to TEXT, add CHECK constraints.</p>
+      <div class="code-sm"><pre>ALTER TABLE po_payments
+  ALTER COLUMN status TYPE TEXT;
+ALTER TABLE po_payments
+  ADD CONSTRAINT chk_payment_status
+  CHECK (status IN ('pending','paid','overdue','cancelled'));
+
+-- Repeat for mp_phase, demand_signal</pre></div>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Set up staging environment</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">2 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> Every push to <code>main</code> auto-deploys to production. Already caused cascading failures (March 25 incident).</p>
+      <p><strong>Fix:</strong> Create a <code>staging</code> branch in GitHub. Configure Netlify branch deploys for <code>staging</code>. Create a Neon database branch for staging (Neon supports this natively — it's a copy-on-write branch that costs nothing until data diverges). Set the staging branch's <code>DATABASE_URL</code> to the Neon branch. All sessions push to <code>staging</code> first, merge to <code>main</code> after verification.</p>
+      <div class="deps"><span class="dep-enables">Enables</span> safe parallel development by all 4 sessions</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 1 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 1</span>
+    <span class="sprint-name">The SKU Table</span>
+    <span class="sprint-when">Week 2-3 — 5-7 days</span>
+  </div>
+  <p class="sprint-goal">Fix the single biggest data model gap. Until Fit/Size/Length exist as queryable columns, you can't do store-level inventory, analytics by size, or velocity per SKU. Everything downstream depends on this.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-crit"></div>
+      <div class="task-title">Create the SKUs table with variant decomposition</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> The hierarchy stops at Style (Shopify product level). Fit, Size, Length are "extracted during sync but not stored in a queryable format." You can't answer "how many Lorenzo 42R do we have at Monsey."</p>
+      <p><strong>Fix:</strong> Migration 013 — create <code>skus</code> table.</p>
+      <div class="code-sm"><pre>CREATE TABLE skus (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  style_id UUID NOT NULL REFERENCES styles(id) ON DELETE CASCADE,
+  fit TEXT,               -- 'Lorenzo', 'Alexander', 'Slim', NULL
+  size TEXT NOT NULL,     -- '38', '40', '15.5', 'M'
+  length TEXT,            -- 'S', 'R', 'L', NULL for shirts
+  sku_code TEXT UNIQUE,   -- computed: style_number + fit + size + length
+  barcode TEXT,
+  shopify_variant_id BIGINT UNIQUE,
+  shopify_inventory_item_id BIGINT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(style_id, fit, size, COALESCE(length, ''))
+);
+CREATE INDEX idx_skus_style ON skus(style_id);
+CREATE INDEX idx_skus_shopify_variant ON skus(shopify_variant_id);</pre></div>
+      <div class="deps">
+        <span class="dep-enables">Enables</span> inventory by SKU, analytics by fit/size, store-level stock queries
+      </div>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-crit"></div>
+      <div class="task-title">Modify sync to populate SKUs from Shopify variants</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">6 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> The sync already extracts Fit/Size/Length from Shopify variant options (Step 4) but throws the data away. It needs to INSERT into the new <code>skus</code> table.</p>
+      <p><strong>Fix:</strong> In <code>sync-background.js</code>, after upserting a style, loop through the Shopify product's variants. For each variant, parse the option values (Option1=Fit, Option2=Size, Option3=Length — but verify this mapping per product type). Upsert into <code>skus</code> with <code>shopify_variant_id</code>.</p>
+      <p><strong>Critical detail:</strong> The option-to-dimension mapping varies by product type. Suits have Fit/Size/Length. Shirts have Fit/Size (no length). Ties have just Size. The sync needs a per-product-type mapping config, not a hardcoded assumption.</p>
+      <div class="deps">
+        <span class="dep-needs">Needs</span> SKUs table from previous task
+      </div>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Link sales to SKUs (not just master_products)</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> The <code>sales</code> table references <code>master_products</code> directly. You know that 5 HC Suits sold, but not which sizes or fits. This makes velocity-per-SKU impossible and reorder decisions are guesses.</p>
+      <p><strong>Fix:</strong> Add <code>sku_id UUID REFERENCES skus(id)</code> to the sales table. During sync Step 6, resolve the Shopify <code>variant_id</code> on each line item to the matching SKU. Old sales rows get backfilled by matching on <code>variant_id</code> or on the existing <code>sku</code> text field.</p>
+      <div class="deps">
+        <span class="dep-needs">Needs</span> SKUs populated by sync
+        <span class="dep-enables">Enables</span> velocity by fit/size, reorder intelligence
+      </div>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Update analytics DAL for SKU-level dimensions</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> The analytics DAL supports 6 dimensions (product_type, master_product, store, channel, week, month). It can't group by Fit, Size, or Length.</p>
+      <p><strong>Fix:</strong> Add <code>fit</code>, <code>size</code>, <code>length</code> to the dimension whitelist in <code>analytics.js</code>. Add the JOIN to <code>skus</code> table when these dimensions are selected. The existing dynamic query builder architecture supports this — it's adding entries to the whitelist and a conditional JOIN.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 2 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 2</span>
+    <span class="sprint-name">Event-Sourced Inventory</span>
+    <span class="sprint-when">Week 3-4 — 5-7 days</span>
+  </div>
+  <p class="sprint-goal">Replace the empty store_inventory table with an event-sourced model. Every inventory change becomes an auditable event. Current stock = SUM of events. This is the foundation for transfers, receiving, and multi-store visibility.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-crit"></div>
+      <div class="task-title">Create inventory_events table + materialized view</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>The core table:</strong></p>
+      <div class="code-sm"><pre>CREATE TABLE inventory_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sku_id UUID NOT NULL REFERENCES skus(id),
+  location_id UUID NOT NULL REFERENCES locations(id),
+  event_type TEXT NOT NULL,
+  quantity INT NOT NULL,  -- positive=add, negative=remove
+  reference_type TEXT,    -- 'shopify_sync','sale','po_receipt',
+                          -- 'transfer','adjustment','return'
+  reference_id UUID,
+  notes TEXT,
+  created_by TEXT DEFAULT 'system',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_inv_events_sku ON inventory_events(sku_id);
+CREATE INDEX idx_inv_events_loc ON inventory_events(sku_id, location_id);
+
+-- Current stock = SUM of all events
+CREATE MATERIALIZED VIEW inventory_levels AS
+SELECT sku_id, location_id,
+  SUM(quantity) AS on_hand,
+  MAX(created_at) AS last_movement
+FROM inventory_events
+GROUP BY sku_id, location_id
+HAVING SUM(quantity) != 0;
+
+CREATE UNIQUE INDEX idx_inv_levels
+  ON inventory_levels(sku_id, location_id);</pre></div>
+      <p><strong>Why materialized view:</strong> <code>REFRESH MATERIALIZED VIEW CONCURRENTLY</code> gives you instant reads without computing SUM on every query. Refresh after sync runs and after webhook batches. Between refreshes, use a <code>get_stock(sku_id, location_id)</code> function for real-time reads.</p>
+      <div class="deps">
+        <span class="dep-needs">Needs</span> SKUs table + locations table
+        <span class="dep-enables">Enables</span> transfers, receiving, store stock views
+      </div>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-crit"></div>
+      <div class="task-title">Create locations table with Shopify location mapping</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">1 hr</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>You need a <code>locations</code> table to map Shopify location IDs to your physical stores. Seed it with your 6 locations (Lakewood, Flatbush, Crown Heights, Monsey, Reserve/Warehouse, Online). Each row carries the <code>shopify_location_id</code> so webhooks can resolve which location an event belongs to.</p>
+      <div class="code-sm"><pre>CREATE TABLE locations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL, -- 'LKW','FLT','CRH','MNS','WH','ONL'
+  type TEXT NOT NULL,        -- 'store','warehouse'
+  manager TEXT,
+  shopify_location_id BIGINT UNIQUE,
+  is_active BOOLEAN DEFAULT TRUE
+);</pre></div>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Seed inventory from Shopify inventory levels API</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> The inventory_events table starts empty. You need a baseline.</p>
+      <p><strong>Fix:</strong> One-time seeding script. Pull current inventory from Shopify's <code>inventory_levels</code> endpoint for each location. For each SKU×location with quantity > 0, INSERT an <code>inventory_event</code> with <code>event_type = 'initial_seed'</code> and <code>reference_type = 'shopify_sync'</code>. This gives you a clean starting point from which all future changes are tracked as events.</p>
+      <p><strong>After seed:</strong> Modify the daily sync to compare Shopify inventory levels against the materialized view. If they differ, insert a reconciliation event to bring them in line. This handles any drift between webhooks.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Wire webhook inventory handler to event model</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Current state:</strong> The <code>inventory_levels/update</code> webhook exists but writes to the old <code>store_inventory</code> table (which is empty anyway).</p>
+      <p><strong>Fix:</strong> Rewrite the handler to: (1) resolve <code>inventory_item_id</code> → SKU via <code>shopify_inventory_item_id</code>, (2) resolve <code>location_id</code> → location via <code>shopify_location_id</code>, (3) compute the delta between current <code>on_hand</code> and the new level, (4) INSERT an <code>inventory_event</code> with the delta. This way Shopify inventory changes flow into the event log in real time.</p>
+      <p><strong>Loop prevention:</strong> When the ERP pushes inventory TO Shopify (future), tag the event as <code>reference_type = 'erp_push'</code>. When the webhook fires back, check if the last event for that SKU×location was an <code>erp_push</code> within the last 30 seconds. If so, skip.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 3 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 3</span>
+    <span class="sprint-name">Orders & Transactions</span>
+    <span class="sprint-when">Week 5-6 — 5-7 days</span>
+  </div>
+  <p class="sprint-goal">Sales data currently lives as flat line items linked to master_products. Create a proper orders table so you can compute AOV, items-per-transaction, and connect sales to inventory events.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Create orders table + refactor sales as order_lines</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> No <code>orders</code> table. Can't compute average order value, items per transaction, or link a sale to a customer. The <code>sales</code> table is really <code>order_lines</code>.</p>
+      <p><strong>Fix:</strong> Create <code>orders</code> table with <code>shopify_order_id</code>, <code>channel</code>, <code>location_id</code>, <code>customer_id</code>, <code>subtotal</code>, <code>tax</code>, <code>total</code>. Add <code>order_id</code> FK to the existing <code>sales</code> table (don't rename it yet — too much code references it). Backfill orders from existing sales data by grouping on <code>order_shopify_id</code>.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Wire orders/create webhook to create orders + inventory events</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>The full handler chain:</strong> orders/create webhook → (1) log in webhook_events with dedup check → (2) find/create customer → (3) resolve location → (4) INSERT order → (5) for each line item: resolve variant → SKU, INSERT order_line, INSERT inventory_event (negative qty). All within a transaction if supported, or with manual rollback logic if not.</p>
+      <p><strong>This replaces</strong> the sync-based sales ingestion as the primary source for new orders. The daily sync becomes the reconciliation backup.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Add transaction boundaries for PO creation</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> PO creation writes to 3 tables without a transaction. Partial writes leave orphaned records.</p>
+      <p><strong>Fix:</strong> Test <code>@neondatabase/serverless</code> transaction support. If <code>BEGIN/COMMIT/ROLLBACK</code> works reliably (test with intentional failures), wrap PO creation in a transaction. If it doesn't, use a saga pattern: create PO with <code>status = 'initializing'</code>, create payments, create stage history, then update PO to <code>status = 'draft'</code>. A cleanup job deletes any PO stuck in 'initializing' for more than 5 minutes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 4 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 4</span>
+    <span class="sprint-name">Reliability & Reconciliation</span>
+    <span class="sprint-when">Week 7-8 — 5 days</span>
+  </div>
+  <p class="sprint-goal">Make the webhook + sync pipeline trustworthy. Add reconciliation checks, migration tooling, and real tests.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Build sync reconciliation checker</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>After each daily sync, compare: (1) Shopify order count for last 48 hours vs your orders table count, (2) Shopify inventory levels vs your materialized view. If divergence > 2%, log an alert to the <code>alerts</code> table. Eventually notify via Slack/email. This catches any webhooks that Shopify sent but your endpoint missed.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-med"></div>
+      <div class="task-title">Adopt dbmate for migrations</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> 11+ sequential SQL migration files run by a custom endpoint. Two sessions creating migrations simultaneously will conflict.</p>
+      <p><strong>Fix:</strong> Install <code>dbmate</code>. Convert existing migrations to dbmate format (timestamped filenames). Add <code>schema_migrations</code> table tracking. Remove the <code>POST /api/migrate</code> endpoint. Run migrations via CLI during deploy.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-med"></div>
+      <div class="task-title">Write real integration tests</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">6 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> 85 tests check exports and signatures, not behavior. Zero tests hit the database.</p>
+      <p><strong>Fix:</strong> Using the Neon staging branch, write 10 critical integration tests: (1) create PO → verify 3 tables written, (2) advance PO stage → verify optimistic locking, (3) insert inventory event → verify materialized view after refresh, (4) webhook dedup → second insert returns skip, (5) sales→SKU resolution works. Use <code>vitest</code> with a test database connection. These 10 tests catch more bugs than the existing 85.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-med"></div>
+      <div class="task-title">Move product matchers from hardcoded JS to database</div>
+      <div class="task-owner">Bonney</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p><strong>Problem:</strong> 41 regex matchers in <code>lib/products.js</code> where order matters. Adding product #42 means editing code and redeploying. 46% of products are unmatched.</p>
+      <p><strong>Fix:</strong> Create a <code>product_matchers</code> table with <code>master_product_id</code>, <code>pattern</code> (regex string), <code>priority</code> (INT, higher = checked first). Seed from current JS matchers. The sync function loads matchers from DB instead of importing the JS module. Now Reuven can add/edit matchers from the UI without a code deploy.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 5 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 5</span>
+    <span class="sprint-name">Operations Features</span>
+    <span class="sprint-when">Week 9-10 — 7 days</span>
+  </div>
+  <p class="sprint-goal">With the data model solid, build the features the stores actually need: transfers, receiving, and the store stock lookup screen.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Build inter-store transfer flow on event model</div>
+      <div class="task-owner">Almond + Danny</div>
+      <div class="task-effort">6 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>Transfer = two inventory events: <code>-qty @ source</code> + <code>+qty @ destination</code>. The transfers table already exists but isn't wired to inventory. Connect them: creating a transfer inserts the negative event immediately (removing from source). Confirming receipt inserts the positive event (adding to destination). Between those two events, the units are "in transit" — visible in neither location's on_hand.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Build PO receiving flow on event model</div>
+      <div class="task-owner">Almond + Danny</div>
+      <div class="task-effort">6 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>When a PO advances to 'received': for each <code>po_line</code>, INSERT inventory_event with <code>+quantity_received</code> at the warehouse location. Record any variance (ordered 50, received 48 → 2 short) as a note on the event. This is the <code>PATCH /api/pos/:id/receive</code> endpoint — it takes actual counts per line item and generates the inventory events.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-med"></div>
+      <div class="task-title">Build store stock lookup screen</div>
+      <div class="task-owner">Danny</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>The screen every store manager needs: select a product → see the full size/color/fit matrix with on_hand per location. Uses the "money query" from the architecture blueprint — joins skus → styles → master_products → inventory_levels → locations. This is the single most-used screen in any retail ERP.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-med"></div>
+      <div class="task-title">Connect the customers table</div>
+      <div class="task-owner">Almond + Bonney</div>
+      <div class="task-effort">3 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>The customers table exists but is dead code. Wire the <code>orders/create</code> webhook to find-or-create a customer record from the Shopify customer object. Link orders to customers via <code>customer_id</code>. This enables purchase history lookup for store staff and eventually CRM features. Don't build a customer UI yet — just get the data flowing.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SPRINT 6 ═══════════════════════════════ -->
+<div class="sprint">
+  <div class="sprint-hdr">
+    <span class="sprint-num">Sprint 6</span>
+    <span class="sprint-name">Auth + Cash Flow Accuracy</span>
+    <span class="sprint-when">Week 11-12 — 7 days</span>
+  </div>
+  <p class="sprint-goal">Get real user accounts so store staff can use the system, and fix cash flow projections so PO Impact Simulation works with real numbers.</p>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-high"></div>
+      <div class="task-title">Integrate Clerk or Supabase Auth</div>
+      <div class="task-owner">Almond + Danny</div>
+      <div class="task-effort">8 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>Replace the site password with real user accounts. The <code>users</code> table already has <code>role</code> and <code>stores[]</code>. Clerk's free tier (10K MAU) is more than enough. Map Clerk user metadata to the users table. Add middleware to server actions that checks role before executing. Store staff see only their store's inventory. Warehouse sees receiving + transfers. Finance sees cash flow + PO costs.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-med"></div>
+      <div class="task-title">Calibrate cash flow with real data</div>
+      <div class="task-owner">Almond</div>
+      <div class="task-effort">4 hrs</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>Remove the static $14,400/week fallback. Inflow projection should use a rolling 8-week average from real sales data only. If sales data is insufficient (< 4 weeks), show a warning instead of using fake numbers. Validate seasonal multipliers against the last 12 months of actual Shopify order data. Flag any week where projected vs actual diverges by more than 20%.</p>
+    </div>
+  </div>
+
+  <div class="task" onclick="this.classList.toggle('open')">
+    <div class="task-top">
+      <div class="task-sev sev-low"></div>
+      <div class="task-title">Consolidate AI sessions from 4 to 2</div>
+      <div class="task-owner">Reuven</div>
+      <div class="task-effort">Ongoing</div>
+      <div class="task-arrow">›</div>
+    </div>
+    <div class="task-body">
+      <p>After Sprint 6, the codebase will be ~12,000+ lines. Merge Peter+Almond into one "Backend/Architecture" session and Bonney+Danny into one "Frontend/Pipeline" session. Fewer sessions = fewer integration boundaries = fewer incidents like March 25. Each session gets read access to the full codebase. Update COORDINATION.md to reflect the new lanes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ SUMMARY ═══════════════════════════════ -->
+<div class="summary">
+  <h3>Plan Summary</h3>
+  <div class="summary-grid">
+    <div class="summary-item">
+      <div class="summary-num">22</div>
+      <div class="summary-label">Tasks</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-num">6</div>
+      <div class="summary-label">Sprints</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-num">~12</div>
+      <div class="summary-label">Weeks Total</div>
+    </div>
+    <div class="summary-item">
+      <div class="summary-num">~95</div>
+      <div class="summary-label">Hours Effort</div>
+    </div>
+  </div>
+</div>
+
+<div class="note" style="margin-top:32px;">
+  <strong>What's NOT in this plan:</strong> Flipping Shopify from source-of-truth to channel (Q3/Q4 2026). QuickBooks integration (after cash flow is accurate). Wholesale channel (after auth + inventory are solid). File storage for documents table (use R2 when needed). These are real features but they depend on the foundation this plan builds.
+</div>
+
+<div class="note">
+  <strong>Each sprint is independently valuable.</strong> If you stop after Sprint 1, you have SKU-level data. Stop after Sprint 2, you have event-sourced inventory. Stop after Sprint 3, you have proper orders. The plan doesn't require all 6 sprints to deliver value — but each sprint makes the next one possible.
+</div>
+
+</div>
+<script>
+// Auto-expand first task in each sprint on load
+document.querySelectorAll('.sprint').forEach(s => {
+  const first = s.querySelector('.task');
+  if (first) first.classList.add('open');
+});
+</script>
+</body>
+</html>

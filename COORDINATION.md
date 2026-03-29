@@ -118,21 +118,19 @@ OWNS:     netlify/functions/sync-background.js  (15 min background sync)
 DO NOT TOUCH: app/(dashboard)/ pages, lib/dal/, supabase/migrations/
 ```
 
-**Bonney's tasks:**
-1. Verify sync-background.js works end-to-end
-2. Confirm 597+ styles created in styles table
-3. Confirm sales stored from 30-day order pull
-4. Register webhooks (orders/create, inventory/update, products/update)
-5. Test webhook handling for real-time updates
-6. Review unmatched titles — add matchers for real products missed
-7. Expand product matcher coverage past 597/1108
-8. VARIANT DATA — Extract Fit/Size/Length from Shopify variant options during sync (for analytics). Coordinate schema with Almond. See docs/ANALYTICS_DESIGN.md.
-
-**NEXT PHASE — Bonney:**
-9. **SYNC/WEBHOOK RACE:** Sync and webhooks both write to master_products. Add timestamp guard or sync lock to prevent sync from overwriting newer webhook data. See docs/ARCHITECTURE_AUDIT.md.
-10. **DELETE 11 LEGACY FUNCTIONS:** netlify/functions/{customers,finance,inventory,ledger,orders,pos,products,purchase-orders,shipments,status,workflow}.js — 2,753 lines serving nothing. Remove functions + their redirects from netlify.toml. Keep only: sync.js, sync-background.js, daily-sync.mjs, webhooks-shopify.js.
-11. **DELETE OLD SYNC ROUTE:** app/api/sync/route.js (11K lines, never executes due to netlify.toml redirect).
-12. **PO RECEIVED WEBHOOK:** When PO hits stage 11 (received), update inventory on master_products. See docs/PO_WORKFLOW_ENGINE.md.
+**Bonney's tasks (sprint-aligned):**
+1. ~~Verify sync end-to-end~~ DONE
+2. ~~Variant options extraction~~ DONE
+3. ~~Sync/webhook race guard~~ DONE
+4. **SPRINT 0: Webhook dedup** — Add X-Shopify-Event-Id logging to webhook_events table. Skip duplicate webhooks. See docs/SPRINT_PLAN.html.
+5. Register webhooks (orders/create, inventory/update, products/update)
+6. **SPRINT 1: Populate SKUs from Shopify variants** — During sync, loop through each product's variants. Parse option values (Fit/Size/Length). Upsert into skus table. Map option-to-dimension per product type (suits have 3 options, shirts have 2, ties have 1).
+7. **SPRINT 1: Link sales to SKUs** — Resolve variant_id on each line item to the matching SKU. Backfill old sales.
+8. **SPRINT 2: Seed inventory from Shopify levels API** — One-time seed into inventory_events. Then daily reconciliation.
+9. **SPRINT 2: Wire webhook inventory handler to event model** — inventory_levels/update → resolve SKU + location → INSERT inventory_event.
+10. Expand matcher coverage past 597/1108
+11. ~~Delete 11 legacy functions~~ DONE
+12. ~~Delete old sync route~~ DONE
 
 ### Danny — Frontend
 ```
@@ -161,13 +159,15 @@ DO NOT TOUCH: lib/products.js, netlify/functions/, lib/dal/, supabase/
 7. **ANALYTICS PAGE:** Read docs/ANALYTICS_DESIGN.md. Group By pills, THEN BY chain, tree table, column picker, filters. Server action: `getDataBreakdown({ groupBy: 'category' })`.
 8. Mobile: test all pages, fix layouts.
 
-**NEXT PHASE — Danny (read design docs BEFORE building):**
-9. ~~PO WORKFLOW~~ DONE (stage-specific panels, deadlines, cash flow)
-10. **STACK BUILDER:** Read docs/PRODUCT_STACK_BUILDER.md. Rebuild stack editor with 10 structured sections, per-section completeness, required field markers. Show stack gate status on PO detail.
-11. ~~UNIFIED DATA EXPLORER~~ DONE (DataExplorer component with presets)
-12. **CASH FLOW:** Read docs/CASH_FLOW_PROJECTION.md. Rebuild with INFLOW (revenue) + outflow + running cash position. Currently only shows outflow.
-13. **ALERTS ON LANDING PAGE:** Read docs/ARCHITECTURAL_ENVELOPE.md pattern 5. Query alerts table, show badge + list on landing page. "3 payments overdue. 2 products low stock."
-14. **PO IMPACT SIMULATION:** Read docs/STRATEGIC_DESIGN.md section 1. On PO creation, show cash position impact before committing. "This PO pushes cash negative in Week 8."
+**NEXT PHASE — Danny (sprint-aligned):**
+9. ~~PO WORKFLOW~~ DONE
+10. **STACK BUILDER:** Read docs/PRODUCT_STACK_BUILDER.md. Section tabs, completeness, required fields.
+11. ~~UNIFIED DATA EXPLORER~~ DONE
+12. ~~CASH FLOW~~ DONE (inflow + outflow + running position)
+13. **SPRINT 5: Store stock lookup screen** — The most-used screen in retail ERP. Select product → see full size/color/fit matrix with on_hand per location. Needs SKUs + inventory_levels materialized view.
+14. **SPRINT 5: Transfer flow UI** — Create transfer, confirm receipt. Two inventory events per transfer.
+15. **SPRINT 5: PO receiving UI** — On PO stage 11, enter actual counts per line item. Variance tracking.
+16. **SPRINT 6: Role-based page rendering** — Disable controls based on user role (after Clerk auth).
 
 **Danny calls data through:**
 `actions.js` → domain modules → DAL → Postgres. **Danny NEVER writes SQL.**
@@ -187,25 +187,23 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/products.js, lib/shopify.js,
               netlify/functions/sync-background.js
 ```
 
-**Almond's tasks:**
-1. Run migration 007 (drops 8 premature tables)
-2. Verify DAL queries work after cleanup
-3. Auth tokens on API routes (SKIP_AUTH=true is not acceptable)
-4. CI pipeline: GitHub Action for tests (needs PAT with workflow scope)
-5. Structured logging across all routes
-6. Verification endpoint refinement
-7. **ANALYTICS DAL:** lib/dal/analytics.js is BUILT. Review it. getBreakdown() supports 6 dimensions + 9 metrics. See docs/ANALYTICS_DESIGN.md.
-8. Cash flow DAL: real po_payments + sales queries
-9. **Run migration 010** (sales unique constraint — prevents duplicate sales on re-sync)
-10. Add DAL methods Danny or Bonney request
+**Almond's tasks (sprint-aligned):**
+1. ~~Migration 007 (drops premature tables)~~ DONE
+2. ~~Auth tokens~~ DONE
+3. ~~Protect destructive endpoints~~ DONE
+4. ~~Analytics DAL~~ DONE
+5. **SPRINT 0: Run migration 012** — webhook_events, ENUMs→TEXT, locations, skus, inventory_events, orders tables. See docs/SPRINT_PLAN.html.
+6. **SPRINT 0: Set up staging** — Neon database branch for staging. Netlify branch deploy for staging branch. 
+7. **SPRINT 1: SKU DAL** — lib/dal/skus.js with getByStyle, upsert, getByVariantId. Add fit/size/length dimensions to analytics.js whitelist.
+8. **SPRINT 2: Inventory events DAL** — lib/dal/inventory.js with addEvent, getStock, refreshMaterializedView. Replace old store_inventory queries.
+9. **SPRINT 3: Orders DAL** — lib/dal/orders.js with create, getById, getByCustomer. Wire PO creation in a transaction (test BEGIN/COMMIT with @netlify/neon first).
+10. **SPRINT 4: dbmate** — Replace POST /api/migrate with proper migration tooling.
+11. **SPRINT 4: Integration tests** — 10 real tests hitting the staging database. vitest.
 
-**NEXT PHASE — Almond (read design docs BEFORE building):**
-11. **ENVELOPE MIGRATION 011:** Read docs/ARCHITECTURAL_ENVELOPE.md. Run migration 011 — creates documents, users, alerts, collections, returns tables. Converts PO stage ENUM→TEXT. Adds channel/wholesale columns. This is foundation — no feature code needed.
-12. **EVENTS:** Add audit_log insert to EVERY DAL write method. One line per method. This enables notifications, activity feed, undo later.
-13. **PO SCHEMA:** Read docs/PO_WORKFLOW_ENGINE.md. Migration adding 20+ columns to purchase_orders. Update PO DAL with stage-specific validation.
-14. **STACK COMPLETENESS:** Read docs/PRODUCT_STACK_BUILDER.md. Add sections JSONB to product_stack. Write completeness calculation in lib/product/. Wire gate check into advanceStage.
-15. **PROTECT DESTRUCTIVE ENDPOINTS:** POST /api/seed and POST /api/migrate can wipe the database. Add admin token check.
-16. **PO TRANSACTIONS:** Wrap PO creation in BEGIN/COMMIT/ROLLBACK.
+**NEXT PHASE — Almond:**
+12. **SPRINT 4: Move matchers to DB** — product_matchers table. Sync loads matchers from DB instead of JS module.
+13. Stack completeness logic (per PRODUCT_STACK_BUILDER.md)
+14. PO stage-specific validation (per PO_WORKFLOW_ENGINE.md)
 
 ---
 
@@ -226,6 +224,7 @@ Check `git log` before editing shared files. If someone pushed in the last 2 hou
 
 | Document | What | Who Needs It |
 |----------|------|-------------|
+| docs/SPRINT_PLAN.html | 22 tasks, 6 sprints, 12 weeks — from senior developer audit. THE ROADMAP. | ALL — read this first |
 | docs/ARCHITECTURAL_ENVELOPE.md | 6 patterns for $17M scale — events, documents, users, channels, alerts, workflows | All |
 | docs/STRATEGIC_DESIGN.md | PO impact simulation, collections, returns, markdowns, scaling | All |
 | docs/PO_WORKFLOW_ENGINE.md | 12-stage PO lifecycle, requirements, deadlines, cash flow | Danny, Almond, Bonney |
@@ -262,12 +261,35 @@ Check `git log` before editing shared files. If someone pushed in the last 2 hou
 - Velocity from real data
 - Webhook registration
 
-**Missing:**
-- FOB/retail on ~12 new MPs (zegna, loro-piana etc. = $0)
-- API auth (SKIP_AUTH=true)
-- CI pipeline
-- Per-store inventory
-- Variant data (fit/size/length) for analytics
+**Missing (addressed by Sprint Plan):**
+- SKU-level data (fit/size/length as queryable rows) — Sprint 1
+- Event-sourced inventory (replaces empty store_inventory) — Sprint 2
+- Proper orders table (AOV, customer link) — Sprint 3
+- Webhook deduplication — Sprint 0
+- Remaining ENUMs (payment_status etc.) — Sprint 0
+- Staging environment — Sprint 0
+- Integration tests — Sprint 4
+- Real auth (Clerk) — Sprint 6
+
+---
+
+## 7.5 SPRINT PLAN (from senior developer audit)
+
+**Read docs/SPRINT_PLAN.html for full details. 22 tasks, 6 sprints, ~12 weeks.**
+
+| Sprint | Name | When | Key Deliverables |
+|--------|------|------|-----------------|
+| 0 | Stop the Bleeding | Week 1 | ~~Kill endpoints~~ DONE. Webhook dedup. ~~ENUMs→TEXT~~ partially. Staging. |
+| 1 | The SKU Table | Week 2-3 | skus table. Sync populates SKUs from variants. Sales linked to SKUs. Analytics by fit/size. |
+| 2 | Event-Sourced Inventory | Week 3-4 | inventory_events table + materialized view. Locations table. Webhook→events. |
+| 3 | Orders & Transactions | Week 5-6 | orders table. Webhook creates orders + inventory events. PO transactions. |
+| 4 | Reliability | Week 7-8 | Sync reconciliation. dbmate migrations. Integration tests. DB-stored matchers. |
+| 5 | Operations Features | Week 9-10 | Transfers on events. PO receiving on events. Store stock lookup screen. |
+| 6 | Auth + Cash Flow | Week 11-12 | Clerk auth. Cash flow calibration. Session consolidation. |
+
+**Constraint:** Shopify stays as source of truth. ERP-as-source is Phase 2 (Q3/Q4 2026).
+
+**Migration 012 creates foundation:** webhook_events, locations, skus, inventory_events, orders tables. All ENUMs→TEXT.
 
 ---
 
