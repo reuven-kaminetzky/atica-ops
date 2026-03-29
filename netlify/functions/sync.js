@@ -19,14 +19,16 @@ const { neon } = require('@netlify/neon');
 
 async function getAppSetting(sql, key) {
   const [row] = await sql`SELECT value FROM app_settings WHERE key = ${key}`;
-  return row ? JSON.parse(row.value) : null;
+  if (!row) return null;
+  // JSONB column — Neon returns already-parsed objects
+  return typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
 }
 
 async function setAppSetting(sql, key, obj) {
-  const value = JSON.stringify(obj);
+  // JSONB column — pass object directly, Neon serializes it
   await sql`
-    INSERT INTO app_settings (key, value) VALUES (${key}, ${value})
-    ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = NOW()
+    INSERT INTO app_settings (key, value) VALUES (${key}, ${JSON.stringify(obj)}::jsonb)
+    ON CONFLICT (key) DO UPDATE SET value = ${JSON.stringify(obj)}::jsonb, updated_at = NOW()
   `;
 }
 
