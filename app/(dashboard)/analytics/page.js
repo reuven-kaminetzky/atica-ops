@@ -1,9 +1,10 @@
-import { getProducts } from '../actions';
+import { getDataBreakdown } from '../actions';
 import AnalyticsClient from './client';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AnalyticsPage() {
-  const products = await getProducts();
-  return <AnalyticsClient products={products} />;
+  // Initial load: category breakdown. Client re-fetches when user changes groupBy.
+  const initial = await getDataBreakdown({ groupBy: 'category', columns: ['stock', 'sales', 'velocity', 'days', 'incoming'] });
+  return <AnalyticsClient initial={initial} />;
 }
