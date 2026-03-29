@@ -298,8 +298,10 @@ exports.handler = async function(event) {
     } catch (e) { log('sync.blob_skip', { reason: e.message.slice(0, 60) }); }
 
     // Also store unmatched in database for the /api/sync/unmatched route
+    // Filter out non-product noise (gift cards, shipping, internal codes)
     try {
-      const unmatchedVal = JSON.stringify({ updatedAt: completedAt, count: unmatched.length, titles: unmatched.slice(0, 100) });
+      const realUnmatched = unmatched.filter(t => !/gift card|IB-AR|IBASTOM|shipping|ship\b|shatnez|tailoring|no shiping|Kupat|New Combo|^Suit$|^SuitC$|^SuitD$|^ship$|test|sample|placeholder/i.test(t));
+      const unmatchedVal = JSON.stringify({ updatedAt: completedAt, count: realUnmatched.length, totalRaw: unmatched.length, titles: realUnmatched.slice(0, 200) });
       await sql`INSERT INTO app_settings (key, value) VALUES ('unmatched_titles', ${unmatchedVal}::jsonb) ON CONFLICT (key) DO UPDATE SET value = ${unmatchedVal}::jsonb, updated_at = NOW()`;
     } catch (e) { /* skip */ }
 
