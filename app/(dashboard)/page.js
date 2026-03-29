@@ -41,16 +41,6 @@ export default async function DashboardHome() {
         </div>
       ) : null}
 
-      {/* KPI bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <KPI label="Total Units" value={fmt(inv.total_units)} />
-        <KPI label="Inventory (Cost)" value={`$${fmt(inv.inventory_cost_value)}`} />
-        <KPI label="Inventory (Retail)" value={`$${fmt(inv.inventory_retail_value)}`} />
-        <KPI label="Linked MPs" value={`${inv.linked_mps || 0}/${inv.total_mps || 0}`} />
-        <KPI label="Out of Stock" value={inv.out_of_stock || 0} color={inv.out_of_stock > 0 ? 'text-danger' : null} />
-        <KPI label="Hot Products" value={inv.hot_products || 0} color={inv.hot_products > 0 ? 'text-success' : null} />
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         {/* Top velocity */}
         <Card title="Top Selling Products" link="/analytics">
@@ -182,15 +172,6 @@ const TILES = [
   { href: '/store', label: 'Store', desc: 'Store operations', icon: '⊟', accent: '#457b9d' },
   { href: '/settings', label: 'Settings', desc: 'Sync & config', icon: '⚙', accent: '#495057' },
 ];
-
-function KPI({ label, value, color }) {
-  return (
-    <div className="bg-surface rounded-[--radius-sm] border border-border p-3 shadow-[--shadow-subtle]">
-      <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider mb-0.5">{label}</div>
-      <div className={`text-lg font-bold tracking-tight ${color || 'text-text'}`}>{value ?? '—'}</div>
-    </div>
-  );
-}
 
 function Card({ title, link, children }) {
   return (
