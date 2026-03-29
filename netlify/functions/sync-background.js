@@ -263,13 +263,31 @@ exports.handler = async function(event) {
         }
 
         try {
+          // Try with sku_id if we have one (requires migration 012)
+          if (skuId) {
+            try {
+              await sql`
+                INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name, sku_id)
+                VALUES (${order.name || String(order.id)}, ${order.id}, ${order.created_at}, ${channel}, ${mpId},
+                  ${li.sku || null}, ${li.title || null}, ${li.quantity || 1},
+                  ${parseFloat(li.price) || 0}, ${(parseFloat(li.price) || 0) * (li.quantity || 1)},
+                  ${order.customer?.first_name ? `${order.customer.first_name} ${order.customer.last_name || ''}`.trim() : null},
+                  ${skuId})
+                ON CONFLICT DO NOTHING
+              `;
+              salesStored++;
+              continue;
+            } catch (e2) {
+              if (!e2.message?.includes('sku_id')) throw e2; // re-throw if not column-missing
+              // Fall through to insert without sku_id
+            }
+          }
           await sql`
-            INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name, sku_id)
+            INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name)
             VALUES (${order.name || String(order.id)}, ${order.id}, ${order.created_at}, ${channel}, ${mpId},
               ${li.sku || null}, ${li.title || null}, ${li.quantity || 1},
               ${parseFloat(li.price) || 0}, ${(parseFloat(li.price) || 0) * (li.quantity || 1)},
-              ${order.customer?.first_name ? `${order.customer.first_name} ${order.customer.last_name || ''}`.trim() : null},
-              ${skuId})
+              ${order.customer?.first_name ? `${order.customer.first_name} ${order.customer.last_name || ''}`.trim() : null})
             ON CONFLICT DO NOTHING
           `;
           salesStored++;
