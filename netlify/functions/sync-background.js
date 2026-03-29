@@ -60,7 +60,8 @@ exports.handler = async function(event) {
         products: products.map(p => ({
           id: p.id, title: p.title, handle: p.handle, status: p.status,
           image: p.image?.src || null,
-          variants: (p.variants || []).map(v => ({ id: v.id, price: v.price, inventory_quantity: v.inventory_quantity, sku: v.sku })),
+          variants: (p.variants || []).map(v => ({ id: v.id, price: v.price, inventory_quantity: v.inventory_quantity, sku: v.sku, option1: v.option1, option2: v.option2, option3: v.option3 })),
+          options: (p.options || []).map(o => ({ name: o.name, position: o.position, values: o.values })),
           tags: p.tags,
         })),
       });
@@ -148,6 +149,58 @@ exports.handler = async function(event) {
     results.stylesCreated = stylesCreated;
     results.styleErrors = styleErrors;
     log('sync.styles.done', { created: stylesCreated, errors: styleErrors });
+
+    // ── Step 4b: Extract variant options (Fit/Size/Length) ───
+    // Analytics needs variant-level dimensions. Extract from Shopify
+    // option1/option2/option3 and store in app_settings until Almond
+    // creates a proper variants table.
+    const variantSummary = {};
+    for (const [mpId, data] of Object.entries(mpMatches)) {
+      for (const p of data.products) {
+        const optionNames = (p.options || []).map(o => o.name);
+        for (const v of (p.variants || [])) {
+          const key = `${p.id}:${v.id}`;
+          variantSummary[key] = {
+            styleId: String(p.id),
+            mpId,
+            variantId: v.id,
+            sku: v.sku,
+            price: v.price,
+            inventory: v.inventory_quantity || 0,
+            option1: v.option1 || null,
+            option2: v.option2 || null,
+            option3: v.option3 || null,
+            optionNames,
+          };
+        }
+      }
+    }
+    const variantCount = Object.keys(variantSummary).length;
+    results.variantsExtracted = variantCount;
+    log('sync.variants.extracted', { count: variantCount });
+
+    // Store in app_settings as interim (Almond will create proper table)
+    try {
+      // Store summary stats, not full data (too large for JSONB)
+      const fitSet = new Set();
+      const sizeSet = new Set();
+      const lengthSet = new Set();
+      for (const v of Object.values(variantSummary)) {
+        if (v.option1) fitSet.add(v.option1);
+        if (v.option2) sizeSet.add(v.option2);
+        if (v.option3) lengthSet.add(v.option3);
+      }
+      const variantMeta = JSON.stringify({
+        updatedAt: new Date().toISOString(),
+        totalVariants: variantCount,
+        uniqueFits: [...fitSet].sort(),
+        uniqueSizes: [...sizeSet].sort(),
+        uniqueLengths: [...lengthSet].sort(),
+        sampleOptionNames: Object.values(variantSummary).slice(0, 3).map(v => v.optionNames),
+      });
+      await sql`INSERT INTO app_settings (key, value) VALUES ('variant_options', ${variantMeta}::jsonb) ON CONFLICT (key) DO UPDATE SET value = ${variantMeta}::jsonb, updated_at = NOW()`;
+      log('sync.variants.stored_meta');
+    } catch (e) { log('sync.variants.store_skip', { reason: e.message.slice(0, 60) }); }
 
     // ── Step 5: Fetch orders (30 days) ──────────────────
     await setStatus(sql, { status: 'running', step: 'fetching_orders' });
@@ -245,8 +298,10 @@ exports.handler = async function(event) {
     } catch (e) { log('sync.blob_skip', { reason: e.message.slice(0, 60) }); }
 
     // Also store unmatched in database for the /api/sync/unmatched route
+    // Filter out non-product noise (gift cards, shipping, internal codes)
     try {
-      const unmatchedVal = JSON.stringify({ updatedAt: completedAt, count: unmatched.length, titles: unmatched.slice(0, 100) });
+      const realUnmatched = unmatched.filter(t => !/gift card|IB-AR|IBASTOM|shipping|ship\b|shatnez|tailoring|no shiping|Kupat|New Combo|^Suit$|^SuitC$|^SuitD$|^ship$|test|sample|placeholder/i.test(t));
+      const unmatchedVal = JSON.stringify({ updatedAt: completedAt, count: realUnmatched.length, totalRaw: unmatched.length, titles: realUnmatched.slice(0, 200) });
       await sql`INSERT INTO app_settings (key, value) VALUES ('unmatched_titles', ${unmatchedVal}::jsonb) ON CONFLICT (key) DO UPDATE SET value = ${unmatchedVal}::jsonb, updated_at = NOW()`;
     } catch (e) { /* skip */ }
 

@@ -88,12 +88,20 @@ async function unmatchedTitles() {
   return { count: 0, titles: [], message: 'No unmatched data. Run a sync first.' };
 }
 
+async function variantOptions() {
+  const sql = neon();
+  const data = await getAppSetting(sql, 'variant_options');
+  if (data) return data;
+  return { totalVariants: 0, message: 'No variant data. Run a sync first.' };
+}
+
 // ── Routes ──────────────────────────────────────────────────
 
 const ROUTES = [
   { method: 'POST', path: 'trigger',   handler: triggerSync,    noClient: true },
   { method: 'GET',  path: 'status',    handler: syncStatus,     noClient: true },
   { method: 'GET',  path: 'unmatched', handler: unmatchedTitles, noClient: true },
+  { method: 'GET',  path: 'variants',  handler: variantOptions,  noClient: true },
 ];
 
 exports.handler = createHandler(ROUTES, 'sync');
