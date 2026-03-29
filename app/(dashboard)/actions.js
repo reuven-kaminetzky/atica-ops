@@ -187,24 +187,8 @@ export async function getOperationalSummary() {
   try {
     const summary = await dal().dashboard.getOperationalSummary();
 
-    // If DAL found no lastSync in app_settings, check Blobs
-    // (Bonney's sync writes status to Blobs, not app_settings)
-    if (!summary.lastSync) {
-      try {
-        const { getStore } = require('@netlify/blobs');
-        const store = getStore('sync');
-        const blobStatus = await store.get('sync-status', { type: 'json' });
-        if (blobStatus?.status === 'done' && blobStatus?.completedAt) {
-          summary.lastSync = {
-            time: blobStatus.completedAt,
-            matched: blobStatus.results?.matched ?? null,
-            stylesCreated: blobStatus.results?.stylesCreated ?? null,
-            orders: blobStatus.results?.orders ?? null,
-          };
-        }
-      } catch { /* Blobs unavailable locally — no lastSync shown */ }
-    }
-
+    // lastSync comes from app_settings table only
+    // (Blobs are not available in Next.js server routes — only in netlify/functions/)
     return summary;
   } catch (e) { return { error: e.message }; }
 }
