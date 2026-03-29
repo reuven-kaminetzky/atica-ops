@@ -393,46 +393,6 @@ h3 { font-size: 0.92rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--t
   flex-wrap: wrap;
 }
 
-/* ── Sync Progress ────────────────────────────────────────── */
-
-.sync-status-bar {
-  background: var(--surface);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-lg);
-  padding: 0.85rem 1.15rem;
-  box-shadow: var(--shadow-sm);
-}
-.sync-status-bar.running { border-color: var(--primary, #3b82f6); }
-.sync-status-bar.done    { border-color: var(--success, #22c55e); }
-.sync-status-bar.failed  { border-color: var(--danger, #ef4444); }
-
-.sync-progress-track {
-  width: 100%;
-  height: 6px;
-  background: var(--border-light, #e5e7eb);
-  border-radius: 3px;
-  overflow: hidden;
-}
-.sync-progress-fill {
-  height: 100%;
-  background: var(--primary, #3b82f6);
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-.sync-spinner {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border-light, #e5e7eb);
-  border-top-color: var(--primary, #3b82f6);
-  border-radius: 50%;
-  animation: sync-spin 0.8s linear infinite;
-}
-@keyframes sync-spin {
-  to { transform: rotate(360deg); }
-}
-
 /* ── Modal ─────────────────────────────────────────────── */
 
 .modal-overlay {
