@@ -34,14 +34,17 @@ export async function getCashFlowData() {
   try {
     const s = sc();
     const f = finance();
-    const [payments, activePOs, opex] = await Promise.all([
+    const salesDal = require('../../lib/dal/sales');
+    const [payments, activePOs, opex, weeklyRevenue, salesSummary] = await Promise.all([
       s.payment.getAllWithPO(),
       s.po.getActive(),
       f.getOpex(),
+      salesDal.getWeeklyRevenue(12).catch(() => []),
+      salesDal.getSummary(30).catch(() => null),
     ]);
-    return { payments, activePOs, opexMonthly: opex };
+    return { payments, activePOs, opexMonthly: opex, weeklyRevenue, salesSummary };
   } catch (e) {
-    return { payments: [], activePOs: [], opexMonthly: 25000 };
+    return { payments: [], activePOs: [], opexMonthly: 25000, weeklyRevenue: [], salesSummary: null };
   }
 }
 
