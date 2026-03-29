@@ -7,72 +7,16 @@
   directory = "netlify/functions"
   included_files = ["lib/**"]
 
-# ── Legacy API routes (Netlify Functions — used by v1/v2) ─────────
-[[redirects]]
-  from   = "/api/shopify/*"
-  to     = "/.netlify/functions/shopify/:splat"
-  status = 200
+# ── Active Netlify Functions ──────────────────────────────
+# Only 4 functions remain. Everything else is Next.js.
 
-[[redirects]]
-  from   = "/api/products/*"
-  to     = "/.netlify/functions/products/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/orders/*"
-  to     = "/.netlify/functions/orders/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/inventory/*"
-  to     = "/.netlify/functions/inventory/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/pos/*"
-  to     = "/.netlify/functions/pos/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/ledger/*"
-  to     = "/.netlify/functions/ledger/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/status/*"
-  to     = "/.netlify/functions/status/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/workflow/*"
-  to     = "/.netlify/functions/workflow/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/finance/*"
-  to     = "/.netlify/functions/finance/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/purchase-orders/*"
-  to     = "/.netlify/functions/purchase-orders/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/customers/*"
-  to     = "/.netlify/functions/customers/:splat"
-  status = 200
-
-[[redirects]]
-  from   = "/api/shipments/*"
-  to     = "/.netlify/functions/shipments/:splat"
-  status = 200
-
+# Sync API (Bonney owns)
 [[redirects]]
   from   = "/api/sync/*"
   to     = "/.netlify/functions/sync/:splat"
   status = 200
 
+# Webhook receiver (Bonney owns)
 [[redirects]]
   from   = "/api/webhooks/shopify"
   to     = "/.netlify/functions/webhooks-shopify"
