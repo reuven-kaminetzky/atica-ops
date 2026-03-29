@@ -68,6 +68,9 @@ export async function POST(request) {
 
     await pool.end();
 
+    const log = require('../../../lib/logger');
+    log.info('migrate.complete', { files: files.length, executed: totalExecuted, errors: allErrors.length, tables: tables.length });
+
     return NextResponse.json({
       migrated: true,
       files: files,

@@ -78,7 +78,10 @@ export async function POST(request) {
       } catch (e) { /* ok */ }
     }
 
-    return NextResponse.json({ 
+    const log = require('../../../lib/logger');
+    log.info('seed.complete', { vendors: vendorCount, products: mpCount, stacks: stackCount });
+
+    return NextResponse.json({
       seeded: true, vendors: vendorCount, products: mpCount, stacks: stackCount,
       totalSeeds: MP_SEEDS.length, vendorErrors: vendorErrors.slice(0, 5), mpErrors: mpErrors.slice(0, 5),
     });
