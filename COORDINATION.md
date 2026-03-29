@@ -1,5 +1,7 @@
 # Atica Man OPS — Team Coordination
 
+**THERE IS NO LEGACY APP. The monolith (atica_app.html, modules/*.js, atica_v2.html) has been DELETED from the repo. The only app is Next.js in app/. If you see references to modules/ or atica_app.html anywhere — ignore them. Those files do not exist.**
+
 ## Team
 
 | Session | Role | Scope |
