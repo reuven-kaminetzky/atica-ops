@@ -1,96 +1,129 @@
 import { getCashFlowData } from '../actions';
-const { PROJECTION_WEEKS, WEEKS_PER_MONTH } = require("../../../lib/constants");
+import Link from 'next/link';
+const { PROJECTION_WEEKS, WEEKS_PER_MONTH } = require('../../../lib/constants');
 
 export const dynamic = 'force-dynamic';
 
 export default async function CashFlowPage() {
   const { payments, activePOs, opexMonthly } = await getCashFlowData();
 
-  const weeks = [];
   const now = new Date();
-  for (let w = 0; w < PROJECTION_WEEKS; w++) {
+  const weeks = Array.from({ length: PROJECTION_WEEKS }, (_, w) => {
     const start = new Date(now); start.setDate(now.getDate() + w * 7);
-    const end = new Date(start); end.setDate(start.getDate() + 6);
+    const end   = new Date(start); end.setDate(start.getDate() + 6);
     const wkPayments = payments.filter(p => {
       if (!p.due_date) return false;
       const d = new Date(p.due_date);
       return d >= start && d <= end;
     });
-    const outflow = wkPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0);
-    weeks.push({ week: w + 1, label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), outflow: Math.round(outflow), opex: Math.round(opexMonthly / WEEKS_PER_MONTH), payments: wkPayments });
-  }
-  weeks.forEach(w => w.total = w.outflow + w.opex);
+    const outflow = Math.round(wkPayments.reduce((s, p) => s + parseFloat(p.amount || 0), 0));
+    const opex    = Math.round(opexMonthly / WEEKS_PER_MONTH);
+    return { w: w + 1, label: start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), outflow, opex, total: outflow + opex, payments: wkPayments };
+  });
 
-  const totalProjected = weeks.reduce((s, w) => s + w.total, 0);
-  const totalPOValue = activePOs.reduce((s, po) => s + parseFloat(po.fob_total || 0), 0);
-  const overdue = payments.filter(p => p.status === 'overdue').length;
+  const overdue = payments.filter(p => p.status === 'overdue');
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold tracking-tight mb-6">Cash Flow</h1>
+    <div className="max-w-3xl">
+      <h1 className="text-2xl font-bold tracking-tight mb-1">Cash Flow</h1>
+      <p className="text-sm text-text-tertiary mb-6">
+        {PROJECTION_WEEKS}-week rolling projection · {activePOs.length} active POs
+        {overdue.length > 0 && <span className="text-danger font-semibold ml-2">· {overdue.length} overdue</span>}
+      </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
-        <Stat label="Active POs" value={activePOs.length} />
-        <Stat label="Committed" value={`$${totalPOValue.toLocaleString()}`} />
-        <Stat label="Projected Outflow" value={`$${totalProjected.toLocaleString()}`} />
-        <Stat label="Monthly OpEx" value={`$${opexMonthly.toLocaleString()}`} />
-        <Stat label="Overdue" value={overdue} color={overdue > 0 ? 'text-danger' : 'text-success'} />
-        <Stat label="Payments" value={payments.length} />
-      </div>
+      {/* Overdue alert */}
+      {overdue.length > 0 && (
+        <div className="border border-danger/20 bg-danger/5 rounded-[--radius-sm] px-4 py-3 mb-5 text-sm">
+          <span className="font-semibold text-danger">{overdue.length} overdue payment{overdue.length > 1 ? 's' : ''}</span>
+          <span className="text-text-secondary ml-2">
+            {overdue.map(p => `${p.po_id} $${parseFloat(p.amount).toLocaleString()}`).join(' · ')}
+          </span>
+        </div>
+      )}
 
-      <div className="bg-surface rounded-[--radius-md] border border-border p-4 shadow-[--shadow-subtle] mb-4 overflow-auto">
-        <h2 className="text-sm font-semibold mb-3">Rolling Projection</h2>
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-border">
-              <Th>Week</Th><Th right>PO Payments</Th><Th right>OpEx</Th><Th right>Total Outflow</Th>
+      {/* Weekly projection */}
+      <h2 className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary mb-2">Weekly Outflow</h2>
+      <table className="w-full text-sm border-collapse mb-8">
+        <thead>
+          <tr className="border-b border-border text-left text-[11px] text-text-tertiary uppercase tracking-wider">
+            <th className="pb-2 pr-4 font-medium">Week</th>
+            <th className="pb-2 pr-4 font-medium text-right">PO Payments</th>
+            <th className="pb-2 pr-4 font-medium text-right">OpEx</th>
+            <th className="pb-2 font-medium text-right">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map(w => (
+            <tr key={w.w} className="border-b border-border/50">
+              <td className="py-2.5 pr-4">
+                <span className="font-medium">W{w.w}</span>
+                <span className="text-text-tertiary text-[12px] ml-2">{w.label}</span>
+              </td>
+              <td className={`py-2.5 pr-4 text-right font-mono text-[12px] ${w.outflow > 0 ? 'text-danger' : 'text-text-tertiary'}`}>
+                {w.outflow > 0 ? `-$${w.outflow.toLocaleString()}` : '—'}
+              </td>
+              <td className="py-2.5 pr-4 text-right font-mono text-[12px] text-text-secondary">
+                -${w.opex.toLocaleString()}
+              </td>
+              <td className="py-2.5 text-right font-mono text-[12px] font-semibold">
+                -${w.total.toLocaleString()}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {weeks.map(w => (
-              <tr key={w.week} className="border-b border-border/30">
-                <td className="py-2 px-3"><span className="font-semibold">W{w.week}</span> <span className="text-text-tertiary text-xs">{w.label}</span></td>
-                <td className={`py-2 px-3 text-right ${w.outflow > 0 ? 'text-danger' : 'text-text-tertiary'}`}>{w.outflow > 0 ? `-$${w.outflow.toLocaleString()}` : '—'}</td>
-                <td className="py-2 px-3 text-right text-text-secondary">-${w.opex.toLocaleString()}</td>
-                <td className="py-2 px-3 text-right font-semibold">-${w.total.toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-border font-semibold text-[12px]">
+            <td className="pt-2.5 pr-4 text-text-secondary">Total</td>
+            <td className="pt-2.5 pr-4 text-right font-mono text-danger">
+              -${weeks.reduce((s, w) => s + w.outflow, 0).toLocaleString()}
+            </td>
+            <td className="pt-2.5 pr-4 text-right font-mono text-text-secondary">
+              -${weeks.reduce((s, w) => s + w.opex, 0).toLocaleString()}
+            </td>
+            <td className="pt-2.5 text-right font-mono">
+              -${weeks.reduce((s, w) => s + w.total, 0).toLocaleString()}
+            </td>
+          </tr>
+        </tfoot>
+      </table>
 
+      {/* Active POs */}
       {activePOs.length > 0 && (
-        <div className="bg-surface rounded-[--radius-md] border border-border p-4 shadow-[--shadow-subtle] overflow-auto">
-          <h2 className="text-sm font-semibold mb-3">Active Purchase Orders ({activePOs.length})</h2>
+        <>
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary mb-2">Active Purchase Orders</h2>
           <table className="w-full text-sm border-collapse">
-            <thead><tr className="border-b border-border"><Th>PO</Th><Th>Product</Th><Th>Stage</Th><Th right>Value</Th><Th>ETA</Th></tr></thead>
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] text-text-tertiary uppercase tracking-wider">
+                <th className="pb-2 pr-4 font-medium">PO</th>
+                <th className="pb-2 pr-4 font-medium">Product</th>
+                <th className="pb-2 pr-4 font-medium">Stage</th>
+                <th className="pb-2 pr-4 font-medium text-right">Value</th>
+                <th className="pb-2 font-medium">ETA</th>
+              </tr>
+            </thead>
             <tbody>
               {activePOs.map(po => (
-                <tr key={po.id} className="border-b border-border/30">
-                  <td className="py-2 px-3 font-semibold">{po.id}</td>
-                  <td className="py-2 px-3">{po.mp_name || '—'}</td>
-                  <td className="py-2 px-3"><span className="text-[11px] px-2 py-0.5 rounded bg-surface-sunken text-text-secondary font-semibold">{(po.stage || '').replace(/_/g, ' ')}</span></td>
-                  <td className="py-2 px-3 text-right font-semibold">${parseFloat(po.fob_total || 0).toLocaleString()}</td>
-                  <td className="py-2 px-3 text-text-secondary">{po.eta ? new Date(po.eta).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}</td>
+                <tr key={po.id} className="border-b border-border/50">
+                  <td className="py-2.5 pr-4">
+                    <Link href={`/purchase-orders/${encodeURIComponent(po.id)}`}
+                      className="text-brand no-underline hover:underline font-mono text-[12px]">
+                      {po.id}
+                    </Link>
+                  </td>
+                  <td className="py-2.5 pr-4">{po.mp_name || '—'}</td>
+                  <td className="py-2.5 pr-4 text-text-secondary">{(po.stage || '').replace(/_/g, ' ')}</td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-[12px]">
+                    ${parseFloat(po.fob_total || 0).toLocaleString()}
+                  </td>
+                  <td className="py-2.5 text-text-secondary">
+                    {po.eta ? new Date(po.eta).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </>
       )}
     </div>
   );
-}
-
-function Stat({ label, value, color }) {
-  return (
-    <div className="bg-surface rounded-[--radius-sm] border border-border p-3">
-      <div className="text-[10px] font-semibold text-text-tertiary uppercase tracking-wider mb-0.5">{label}</div>
-      <div className={`text-xl font-bold tracking-tight ${color || ''}`}>{value}</div>
-    </div>
-  );
-}
-
-function Th({ children, right }) {
-  return <th className={`py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary border-b border-border ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
 }
