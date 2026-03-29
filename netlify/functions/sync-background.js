@@ -96,17 +96,31 @@ exports.handler = async function(event) {
     log('sync.matched', { matched: totalMatched, unmatched: unmatched.length, mps: Object.keys(mpMatches).length });
 
     // ── Step 3: Update master_products ──────────────────
+    // Race guard: only update total_inventory if the row hasn't been
+    // modified since sync started (e.g., by a webhook). external_ids
+    // and hero_image are always safe to overwrite.
     await setStatus(sql, { status: 'running', step: 'updating_mps', matched: totalMatched });
+    const syncStartedAt = new Date(started).toISOString();
     let mpsUpdated = 0;
+    let mpsSkippedRace = 0;
     for (const [mpId, data] of Object.entries(mpMatches)) {
       try {
-        await sql`UPDATE master_products SET external_ids = ${data.ids}, hero_image = ${data.img}, total_inventory = ${data.inv} WHERE id = ${mpId}`;
-        mpsUpdated++;
+        // Always update Shopify linkage (external_ids, hero_image)
+        await sql`UPDATE master_products SET external_ids = ${data.ids}, hero_image = ${data.img} WHERE id = ${mpId}`;
+        // Only update inventory if no webhook touched this MP since sync started
+        const [result] = await sql`UPDATE master_products SET total_inventory = ${data.inv} WHERE id = ${mpId} AND updated_at <= ${syncStartedAt}::timestamptz RETURNING id`;
+        if (result) {
+          mpsUpdated++;
+        } else {
+          mpsSkippedRace++;
+          log('sync.mp.race_skip', { mpId, reason: 'updated_at newer than sync start' });
+        }
       } catch (e) {
         log('sync.mp.error', { mpId, error: e.message.slice(0, 80) });
       }
     }
     results.mpsUpdated = mpsUpdated;
+    results.mpsSkippedRace = mpsSkippedRace;
     log('sync.mps.updated', { count: mpsUpdated });
 
     // ── Step 4: Upsert styles (batch) ───────────────────

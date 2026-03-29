@@ -3,7 +3,7 @@
 
 export default async (req) => {
   const { next_run } = await req.json();
-  const siteUrl = Netlify.env.get('URL') || 'https://atica-ops-v3.netlify.app';
+  const siteUrl = Netlify.env.get('URL') || Netlify.env.get('DEPLOY_PRIME_URL') || 'https://atica-ops.netlify.app';
 
   console.log(JSON.stringify({
     event: 'daily-sync.triggered',
