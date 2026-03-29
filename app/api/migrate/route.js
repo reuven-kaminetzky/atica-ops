@@ -2,8 +2,11 @@ import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 
-export async function POST() {
+export async function POST(request) {
   try {
+    const { requireAuth } = require('../../../lib/auth');
+    await requireAuth(request, 'admin');
+
     const { Pool } = require('@neondatabase/serverless');
     const pool = new Pool({ connectionString: process.env.NETLIFY_DATABASE_URL });
 
@@ -65,6 +68,9 @@ export async function POST() {
 
     await pool.end();
 
+    const log = require('../../../lib/logger');
+    log.info('migrate.complete', { files: files.length, executed: totalExecuted, errors: allErrors.length, tables: tables.length });
+
     return NextResponse.json({
       migrated: true,
       files: files,
@@ -73,6 +79,7 @@ export async function POST() {
       tables: tables.map(t => t.table_name),
     });
   } catch (e) {
+    if (e instanceof Response) return e;
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

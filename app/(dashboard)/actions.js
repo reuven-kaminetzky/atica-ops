@@ -45,6 +45,37 @@ export async function getCashFlowData() {
   }
 }
 
+export async function getCashFlowProjection(weeks = 12) {
+  try {
+    const f = finance();
+    const [outflow, inflow, apSummary, upcoming, opex] = await Promise.all([
+      f.getOutflowByWeek(weeks),
+      f.getRevenueByWeek(weeks),
+      f.getAPSummary(),
+      f.getUpcomingPayments(30),
+      f.getOpex(),
+    ]);
+    return { outflow, inflow, apSummary, upcoming, opexMonthly: opex };
+  } catch (e) {
+    return { outflow: [], inflow: [], apSummary: {}, upcoming: [], opexMonthly: 25000 };
+  }
+}
+
+export async function getRevenueDashboard(days = 30) {
+  try {
+    const f = finance();
+    const [summary, byStore, byMP, daily] = await Promise.all([
+      f.getRevenueSummary(days),
+      f.getRevenueByStore(days),
+      f.getRevenueByMP(days),
+      f.getDailyRevenue(days),
+    ]);
+    return { summary, byStore, byMP, daily };
+  } catch (e) {
+    return { summary: {}, byStore: [], byMP: [], daily: [] };
+  }
+}
+
 export async function getWarehouseData() {
   try {
     const logistics = require('../../lib/logistics');

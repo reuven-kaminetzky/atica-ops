@@ -2,15 +2,19 @@ import { NextResponse } from 'next/server';
 
 /**
  * GET /api/verify
- * 
+ *
  * Automated health check on data integrity.
  * Run after sync to confirm the data is trustworthy.
  * Reuven should never have to manually verify sync results.
  *
  * Returns: { verified: true/false, score: 0-100, issues: [], stats: {} }
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const { requireAuth } = require('../../../lib/auth');
+    await requireAuth(request, 'read');
+
+    const log = require('../../../lib/logger');
     const { sql } = require('../../../lib/dal/db');
     const db = sql();
 
@@ -54,7 +58,6 @@ export async function GET() {
       stats.styles = styleCount.n;
       if (linkedCount.n > 0 && styleCount.n === 0) issues.push({ severity: 'warning', message: 'Styles table empty. Run Sync → 1. Products (after running migration).' });
 
-      // Check for styles without images
       const [noImage] = await db`SELECT COUNT(*)::int AS n FROM styles WHERE hero_image IS NULL AND status = 'active'`;
       stats.stylesWithoutImage = noImage.n;
     } catch (e) {
@@ -83,11 +86,42 @@ export async function GET() {
     const [vendorCount] = await db`SELECT COUNT(*)::int AS n FROM vendors`;
     stats.vendors = vendorCount.n;
 
-    // 10. Spot check — sample 5 linked MPs, verify data quality
+    // 10. Overdue payments
+    try {
+      const [overdueCount] = await db`
+        SELECT COUNT(*)::int AS n FROM po_payments
+        WHERE status = 'overdue' OR (status IN ('planned', 'upcoming', 'due') AND due_date < NOW())
+      `;
+      stats.overduePayments = overdueCount.n;
+      if (overdueCount.n > 0) {
+        issues.push({ severity: 'warning', message: `${overdueCount.n} overdue PO payment(s). Check accounts payable.` });
+      }
+    } catch (e) {
+      stats.overduePayments = 0;
+    }
+
+    // 11. Auth infrastructure
+    try {
+      const [tokenCount] = await db`SELECT COUNT(*)::int AS n FROM api_tokens WHERE revoked_at IS NULL`;
+      stats.activeApiTokens = tokenCount.n;
+    } catch (e) {
+      stats.activeApiTokens = 'table_missing';
+      issues.push({ severity: 'info', message: 'API tokens table not created. Run Migration.' });
+    }
+
+    // 12. Store inventory table
+    try {
+      const [siCount] = await db`SELECT COUNT(*)::int AS n FROM store_inventory`;
+      stats.storeInventoryRecords = siCount.n;
+    } catch (e) {
+      stats.storeInventoryRecords = 'table_missing';
+    }
+
+    // 13. Spot check — sample 5 linked MPs, verify data quality
     const spotChecks = [];
     const samples = await db`
       SELECT id, name, total_inventory, velocity_per_week, hero_image, signal, external_ids
-      FROM master_products 
+      FROM master_products
       WHERE external_ids IS NOT NULL AND array_length(external_ids, 1) > 0
       ORDER BY RANDOM() LIMIT 5
     `;
@@ -98,7 +132,7 @@ export async function GET() {
       check.hasImage = !!mp.hero_image;
       check.hasSignal = !!mp.signal;
       check.shopifyCount = (mp.external_ids || []).length;
-      check.pass = check.hasInventory || check.hasImage; // at minimum one of these
+      check.pass = check.hasInventory || check.hasImage;
       spotChecks.push(check);
     }
     stats.spotChecks = spotChecks;
@@ -119,15 +153,19 @@ export async function GET() {
     const hasCritical = issues.some(i => i.severity === 'critical');
     const verified = score >= 65 && !hasCritical;
 
-    return NextResponse.json({
+    const result = {
       verified,
       score,
       grade: score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 50 ? 'C' : score >= 25 ? 'D' : 'F',
       issues,
       stats,
       checkedAt: new Date().toISOString(),
-    });
+    };
+
+    log.info('verify.complete', { score, grade: result.grade, verified, issues: issues.length });
+    return NextResponse.json(result);
   } catch (e) {
+    if (e instanceof Response) return e;
     return NextResponse.json({
       verified: false, score: 0, grade: 'F',
       issues: [{ severity: 'critical', message: `Verification failed: ${e.message}` }],

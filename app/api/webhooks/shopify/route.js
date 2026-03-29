@@ -22,9 +22,12 @@ export async function POST(request) {
       }
     }
 
+    const log = require('../../../../lib/logger');
     const payload = JSON.parse(body);
     const product = require('../../../../lib/product');
     const { emit, Events } = require('../../../../lib/events');
+
+    log.info('webhook.received', { topic, shopifyId: payload.id || payload.inventory_item_id });
 
     let result = { topic, received: true };
 
@@ -67,8 +70,11 @@ export async function POST(request) {
       }
     }
 
+    log.info('webhook.processed', { topic, result });
     return NextResponse.json(result);
   } catch (e) {
+    const log = require('../../../../lib/logger');
+    log.error('webhook.error', { error: e.message });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

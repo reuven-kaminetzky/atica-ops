@@ -1,25 +1,16 @@
 import { NextResponse } from 'next/server';
 // DB connection via dal
 
-export async function POST() {
+export async function POST(request) {
   try {
+    const { requireAuth } = require('../../../lib/auth');
+    await requireAuth(request, 'admin');
+
     const { MP_SEEDS } = require('../../../lib/products');
     const { sql } = require('../../../lib/dal/db');
     const db = sql();
 
-    // Clean old data before reseeding — delete in FK dependency order
-    await db`DELETE FROM po_payments`;
-    await db`DELETE FROM po_stage_history`;
-    await db`DELETE FROM shipments`;
-    await db`DELETE FROM styles`;
-    await db`DELETE FROM store_inventory`;
-    await db`DELETE FROM sales`;
-    await db`DELETE FROM product_stack`;
-    await db`DELETE FROM purchase_orders`;
-    await db`DELETE FROM master_products`;
-    await db`DELETE FROM vendors`;
-
-    // Extract vendors
+    // Extract vendors from seeds
     const vendorMap = {};
     for (const mp of MP_SEEDS) {
       if (mp.vendor) {
@@ -29,44 +20,50 @@ export async function POST() {
       }
     }
 
+    // Upsert vendors
     let vendorCount = 0;
     const vendorErrors = [];
     for (const v of Object.values(vendorMap)) {
       try {
-        await db`INSERT INTO vendors (id, name, country, categories) 
-          VALUES (${v.id}, ${v.name}, ${v.country}, ${v.categories}) 
-          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, categories = EXCLUDED.categories`;
+        await db`INSERT INTO vendors (id, name, country, categories)
+          VALUES (${v.id}, ${v.name}, ${v.country}, ${v.categories})
+          ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, country = EXCLUDED.country, categories = EXCLUDED.categories`;
         vendorCount++;
       } catch (e) {
         vendorErrors.push({ id: v.id, error: e.message.slice(0, 150) });
       }
     }
 
+    // Upsert master products — preserves synced data (external_ids, images, inventory, velocity)
     let mpCount = 0;
     const mpErrors = [];
     for (const mp of MP_SEEDS) {
       const vid = mp.vendor ? mp.vendor.toLowerCase().replace(/\s+/g, '-') : null;
       try {
         await db`INSERT INTO master_products (
-          id, name, code, category, vendor_id, 
-          fob, retail, duty, hts, 
-          lead_days, moq, country, 
+          id, name, code, category, vendor_id,
+          fob, retail, duty, hts,
+          lead_days, moq, country,
           sizes, fits, features, phase
         ) VALUES (
-          ${mp.id}, ${mp.name}, ${mp.code}, ${mp.cat}, ${vid}, 
-          ${mp.fob || 0}, ${mp.retail || 0}, ${mp.duty || 0}, ${mp.hts || null}, 
-          ${mp.lead || 0}, ${mp.moq || 0}, ${mp.country || null}, 
-          ${mp.sizes || null}, ${mp.fits || []}, ${mp.features || []}, 
+          ${mp.id}, ${mp.name}, ${mp.code}, ${mp.cat}, ${vid},
+          ${mp.fob || 0}, ${mp.retail || 0}, ${mp.duty || 0}, ${mp.hts || null},
+          ${mp.lead || 0}, ${mp.moq || 0}, ${mp.country || null},
+          ${mp.sizes || null}, ${mp.fits || []}, ${mp.features || []},
           ${'in_store'}
-        ) ON CONFLICT (id) DO UPDATE SET 
-          name = EXCLUDED.name, fob = EXCLUDED.fob, retail = EXCLUDED.retail,
-          code = EXCLUDED.code, category = EXCLUDED.category, vendor_id = EXCLUDED.vendor_id`;
+        ) ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name, code = EXCLUDED.code, category = EXCLUDED.category,
+          vendor_id = EXCLUDED.vendor_id, fob = EXCLUDED.fob, retail = EXCLUDED.retail,
+          duty = EXCLUDED.duty, hts = EXCLUDED.hts, lead_days = EXCLUDED.lead_days,
+          moq = EXCLUDED.moq, country = EXCLUDED.country, sizes = EXCLUDED.sizes,
+          fits = EXCLUDED.fits, features = EXCLUDED.features`;
         mpCount++;
       } catch (e) {
         mpErrors.push({ id: mp.id, error: e.message.slice(0, 150) });
       }
     }
 
+    // Upsert product stacks
     let stackCount = 0;
     for (const mp of MP_SEEDS) {
       try {
@@ -75,11 +72,15 @@ export async function POST() {
       } catch (e) { /* ok */ }
     }
 
-    return NextResponse.json({ 
+    const log = require('../../../lib/logger');
+    log.info('seed.complete', { vendors: vendorCount, products: mpCount, stacks: stackCount });
+
+    return NextResponse.json({
       seeded: true, vendors: vendorCount, products: mpCount, stacks: stackCount,
       totalSeeds: MP_SEEDS.length, vendorErrors: vendorErrors.slice(0, 5), mpErrors: mpErrors.slice(0, 5),
     });
   } catch (e) {
+    if (e instanceof Response) return e;
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

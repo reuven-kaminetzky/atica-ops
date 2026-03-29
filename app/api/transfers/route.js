@@ -21,6 +21,9 @@ export async function GET(request) {
 
 export async function POST(request) {
   try {
+    const { requireAuth } = require('../../../lib/auth');
+    await requireAuth(request, 'write');
+
     const logistics = require('../../../lib/logistics');
     const { emit, Events } = require('../../../lib/events');
     const { str, int } = require('../../../lib/validate');
@@ -48,6 +51,7 @@ export async function POST(request) {
 
     return NextResponse.json({ created: true, transfer });
   } catch (e) {
+    if (e instanceof Response) return e;
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
