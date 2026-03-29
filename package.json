@@ -7,9 +7,7 @@
     "test": "node test.js",
     "dev": "netlify dev",
     "dev:next": "next dev",
-    "build:next": "next build",
-    "test:shopify": "node scripts/test-shopify.js",
-    "test:endpoints": "node scripts/test-endpoints.js"
+    "build:next": "next build"
   },
   "engines": {
     "node": ">=18"

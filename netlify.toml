@@ -78,21 +78,5 @@
   to     = "/.netlify/functions/webhooks-shopify"
   status = 200
 
-# ── Legacy HTML shells ────────────────────────────────────────
-[[redirects]]
-  from   = "/v2"
-  to     = "/atica_v2.html"
-  status = 200
-
-[[redirects]]
-  from   = "/v2/*"
-  to     = "/atica_v2.html"
-  status = 200
-
-[[redirects]]
-  from   = "/v1"
-  to     = "/atica_app.html"
-  status = 200
-
 [context.production.environment]
   NODE_VERSION = "20"
