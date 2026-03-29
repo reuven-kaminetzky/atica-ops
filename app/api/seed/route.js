@@ -7,8 +7,15 @@ export async function POST() {
     const { sql } = require('../../../lib/dal/db');
     const db = sql();
 
-    // Clean old data before reseeding
+    // Clean old data before reseeding — delete in FK dependency order
+    await db`DELETE FROM po_payments`;
+    await db`DELETE FROM po_stage_history`;
+    await db`DELETE FROM shipments`;
+    await db`DELETE FROM styles`;
+    await db`DELETE FROM store_inventory`;
+    await db`DELETE FROM sales`;
     await db`DELETE FROM product_stack`;
+    await db`DELETE FROM purchase_orders`;
     await db`DELETE FROM master_products`;
     await db`DELETE FROM vendors`;
 

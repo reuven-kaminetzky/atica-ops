@@ -16,8 +16,8 @@ const { neon } = require('@netlify/neon');
 async function setStatus(sql, status) {
   const value = JSON.stringify({ ...status, updatedAt: new Date().toISOString() });
   await sql`
-    INSERT INTO app_settings (key, value) VALUES ('sync_status', ${value})
-    ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = NOW()
+    INSERT INTO app_settings (key, value) VALUES ('sync_status', ${value}::jsonb)
+    ON CONFLICT (key) DO UPDATE SET value = ${value}::jsonb, updated_at = NOW()
   `;
 }
 
@@ -247,7 +247,7 @@ exports.handler = async function(event) {
     // Also store unmatched in database for the /api/sync/unmatched route
     try {
       const unmatchedVal = JSON.stringify({ updatedAt: completedAt, count: unmatched.length, titles: unmatched.slice(0, 100) });
-      await sql`INSERT INTO app_settings (key, value) VALUES ('unmatched_titles', ${unmatchedVal}) ON CONFLICT (key) DO UPDATE SET value = ${unmatchedVal}, updated_at = NOW()`;
+      await sql`INSERT INTO app_settings (key, value) VALUES ('unmatched_titles', ${unmatchedVal}::jsonb) ON CONFLICT (key) DO UPDATE SET value = ${unmatchedVal}::jsonb, updated_at = NOW()`;
     } catch (e) { /* skip */ }
 
     log('sync.complete', results);
