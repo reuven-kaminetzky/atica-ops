@@ -24,14 +24,18 @@ DOES NOT: Write application code, push commits to app/ or lib/
 
 ### Bonney (Data Pipeline)
 ```
-OWNS:     netlify/functions/sync-background.js
-          netlify/functions/daily-sync.mjs
-          app/api/sync/*  (trigger, status, unmatched)
+OWNS:     netlify/functions/sync-background.js  (15 min background sync)
+          netlify/functions/sync.js  (trigger/status/unmatched API)
+          netlify/functions/daily-sync.mjs  (scheduled trigger)
+          app/api/sync/route.js  (legacy step-based, to be removed)
           app/api/webhooks/*  (shopify receiver, register)
           lib/shopify.js
           lib/products.js  (MP seeds, title matchers, demand logic)
 DO NOT TOUCH: app/(dashboard)/ pages, lib/dal/, supabase/migrations/
 ```
+
+**IMPORTANT: /api/sync/* routes go through netlify.toml redirect to netlify/functions/sync.js.
+Do NOT create Next.js routes under app/api/sync/ — they will never run.**
 
 **Bonney's tasks (in order):**
 1. Verify sync-background.js works end-to-end on deployed site
@@ -122,3 +126,15 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/products.js, lib/shopify.js,
 4. **Never edit files outside your zone** without coordination
 5. **Reuven's domain corrections override everything**
 6. **No new npm dependencies** without asking Peter
+
+---
+
+## GOTCHAS — These Caused Production Crashes
+
+- **JSONB**: `app_settings.value` is JSONB. Neon returns **parsed objects**, not strings. Do NOT call `JSON.parse()` on it. Use: `typeof row.value === 'string' ? JSON.parse(row.value) : row.value`
+- **JSONB INSERT**: Cast with `::jsonb`: `INSERT INTO app_settings (key, value) VALUES ($1, $2::jsonb)`
+- **FK DELETE ORDER**: Delete children before parents: po_payments → po_stage_history → shipments → styles → store_inventory → sales → product_stack → purchase_orders → master_products → vendors
+- **BLOBS**: `getStore()` crashes in Next.js server routes. Only use Blobs inside `netlify/functions/*.js` files.
+- **REDIRECT INTERCEPTION**: `netlify.toml` redirects `/api/sync/*`, `/api/products/*`, etc. to Netlify Functions. Next.js routes at those paths are **dead code** that never runs.
+- **BACKGROUND NAMING**: Filename must end with `-background` for 15 min timeout. `sync-background.js` = 15 min. `sync.js` = 26 seconds.
+- **UX**: No KPI cards, no dashboards. Drill-down navigation. Data appears when you navigate TO it.
