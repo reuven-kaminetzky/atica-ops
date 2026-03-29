@@ -554,7 +554,35 @@ test('projection weeks is set', () => {
   assert(constants.PROJECTION_WEEKS > 0 && constants.PROJECTION_WEEKS <= 52);
 });
 
-// ═══════════════════════════════════════════════════════════
+
+test('skus DAL exports required methods', () => {
+  const skus = require('./lib/dal/skus');
+  assert(typeof skus.getByStyle === 'function');
+  assert(typeof skus.getByMP === 'function');
+  assert(typeof skus.getByVariantId === 'function');
+  assert(typeof skus.upsert === 'function');
+  assert(typeof skus.getFitSizeMatrix === 'function');
+});
+
+test('inventory DAL exports event-sourced methods', () => {
+  const inv = require('./lib/dal/inventory');
+  assert(typeof inv.addEvent === 'function');
+  assert(typeof inv.getStock === 'function');
+  assert(typeof inv.getStockAllLocations === 'function');
+  assert(typeof inv.getStockByMP === 'function');
+  assert(typeof inv.getStockByLocation === 'function');
+  assert(typeof inv.refreshMaterializedView === 'function');
+});
+
+test('analytics dimensions include fit/size/length', () => {
+  const analytics = require('./lib/dal/analytics');
+  const dims = analytics.getDimensions().map(d => d.id);
+  assert(dims.includes('fit'), 'Missing fit dimension');
+  assert(dims.includes('size'), 'Missing size dimension');
+  assert(dims.includes('length'), 'Missing length dimension');
+});
+
+// ══════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(50)}`);
 console.log(`RESULTS: ${passed} passed, ${failed} failed`);
 console.log(`${'═'.repeat(50)}\n`);
