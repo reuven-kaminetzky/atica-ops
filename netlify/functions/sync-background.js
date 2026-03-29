@@ -252,13 +252,24 @@ exports.handler = async function(event) {
           salesByMP[mpId].units += li.quantity;
           salesByMP[mpId].revenue += (parseFloat(li.price) || 0) * li.quantity;
         }
+
+        // Resolve variant_id to sku_id (if skus table exists)
+        let skuId = null;
+        if (li.variant_id) {
+          try {
+            const [skuRow] = await sql`SELECT id FROM skus WHERE shopify_variant_id = ${li.variant_id} LIMIT 1`;
+            if (skuRow) skuId = skuRow.id;
+          } catch { /* skus table may not exist */ }
+        }
+
         try {
           await sql`
-            INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name)
+            INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name, sku_id)
             VALUES (${order.name || String(order.id)}, ${order.id}, ${order.created_at}, ${channel}, ${mpId},
               ${li.sku || null}, ${li.title || null}, ${li.quantity || 1},
               ${parseFloat(li.price) || 0}, ${(parseFloat(li.price) || 0) * (li.quantity || 1)},
-              ${order.customer?.first_name ? `${order.customer.first_name} ${order.customer.last_name || ''}`.trim() : null})
+              ${order.customer?.first_name ? `${order.customer.first_name} ${order.customer.last_name || ''}`.trim() : null},
+              ${skuId})
             ON CONFLICT DO NOTHING
           `;
           salesStored++;
