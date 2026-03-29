@@ -19,7 +19,13 @@ export default async function DashboardHome() {
         {ops?.lastSync?.time && (
           <div className="text-xs text-text-tertiary">
             Last sync: {new Date(ops.lastSync.time).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-            <span className="ml-1 text-text-secondary">({ops.lastSync.matched} matched)</span>
+            <span className="ml-1 text-text-secondary">
+              ({[
+                ops.lastSync.matched != null && `${ops.lastSync.matched} matched`,
+                ops.lastSync.stylesCreated != null && `${ops.lastSync.stylesCreated} styles`,
+                ops.lastSync.orders != null && `${ops.lastSync.orders} orders`,
+              ].filter(Boolean).join(' · ')})
+            </span>
           </div>
         )}
       </div>
