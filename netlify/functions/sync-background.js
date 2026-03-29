@@ -3,19 +3,22 @@
  * 
  * Background function (15 minute timeout).
  * Runs the full Shopify → Postgres sync.
- * Uses Netlify Blobs for status tracking (fast) and Shopify data caching.
- * Business data writes go to Postgres.
+ * Status stored in app_settings (database) so Next.js routes can read it.
+ * Shopify data cached in Netlify Blobs.
  * 
  * Triggered by: POST /.netlify/functions/sync-background
  * Returns: 202 immediately (background function contract)
  */
 
 const { neon } = require('@netlify/neon');
-const { getStore } = require('@netlify/blobs');
 
-// ── Status helper — writes to Blob (fast, no SQL) ────────
-async function setStatus(store, status) {
-  await store.setJSON('sync-status', { ...status, updatedAt: new Date().toISOString() });
+// ── Status helper — writes to database (readable by Next.js routes) ──
+async function setStatus(sql, status) {
+  const value = JSON.stringify({ ...status, updatedAt: new Date().toISOString() });
+  await sql`
+    INSERT INTO app_settings (key, value) VALUES ('sync_status', ${value})
+    ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = NOW()
+  `;
 }
 
 function log(event, data = {}) {
@@ -25,44 +28,47 @@ function log(event, data = {}) {
 // ── Main sync logic ──────────────────────────────────────
 exports.handler = async function(event) {
   const sql = neon();
-  const store = getStore('sync');
   const started = Date.now();
   const results = {};
 
   try {
-    await setStatus(store, { status: 'running', step: 'connecting', startedAt: new Date().toISOString() });
+    await setStatus(sql, { status: 'running', step: 'connecting', startedAt: new Date().toISOString() });
     log('sync.started');
 
     // ── Connect to Shopify ─────────────────────────────
     const { createClient } = require('../../lib/shopify');
     const client = await createClient();
     if (!client) {
-      await setStatus(store, { status: 'failed', error: 'Shopify not configured' });
+      await setStatus(sql, { status: 'failed', error: 'Shopify not configured' });
       log('sync.failed', { error: 'no client' });
       return;
     }
 
     // ── Step 1: Fetch all products ─────────────────────
-    await setStatus(store, { status: 'running', step: 'fetching_products' });
+    await setStatus(sql, { status: 'running', step: 'fetching_products' });
     const resp = await client.getProducts();
     const products = resp.products || resp || [];
     log('sync.products.fetched', { count: products.length });
 
-    // Cache the Shopify data in a blob for other functions to use
-    await store.setJSON('shopify-products', {
-      fetchedAt: new Date().toISOString(),
-      count: products.length,
-      products: products.map(p => ({
-        id: p.id, title: p.title, handle: p.handle, status: p.status,
-        image: p.image?.src || null,
-        variants: (p.variants || []).map(v => ({ id: v.id, price: v.price, inventory_quantity: v.inventory_quantity, sku: v.sku })),
-        tags: p.tags,
-      })),
-    });
-    log('sync.products.cached');
+    // Cache the Shopify data in a blob (optional — Blobs may not be configured)
+    try {
+      const { getStore } = require('@netlify/blobs');
+      const blobStore = getStore('sync');
+      await blobStore.setJSON('shopify-products', {
+        fetchedAt: new Date().toISOString(),
+        count: products.length,
+        products: products.map(p => ({
+          id: p.id, title: p.title, handle: p.handle, status: p.status,
+          image: p.image?.src || null,
+          variants: (p.variants || []).map(v => ({ id: v.id, price: v.price, inventory_quantity: v.inventory_quantity, sku: v.sku })),
+          tags: p.tags,
+        })),
+      });
+      log('sync.products.cached');
+    } catch (e) { log('sync.products.cache_skip', { reason: e.message.slice(0, 60) }); }
 
     // ── Step 2: Match to MPs ───────────────────────────
-    await setStatus(store, { status: 'running', step: 'matching', products: products.length });
+    await setStatus(sql, { status: 'running', step: 'matching', products: products.length });
     const { matchProduct, classifyDemand, adjustVelocity } = require('../../lib/products');
 
     const mpMatches = {};
@@ -89,7 +95,7 @@ exports.handler = async function(event) {
     log('sync.matched', { matched: totalMatched, unmatched: unmatched.length, mps: Object.keys(mpMatches).length });
 
     // ── Step 3: Update master_products ──────────────────
-    await setStatus(store, { status: 'running', step: 'updating_mps', matched: totalMatched });
+    await setStatus(sql, { status: 'running', step: 'updating_mps', matched: totalMatched });
     let mpsUpdated = 0;
     for (const [mpId, data] of Object.entries(mpMatches)) {
       try {
@@ -103,7 +109,7 @@ exports.handler = async function(event) {
     log('sync.mps.updated', { count: mpsUpdated });
 
     // ── Step 4: Upsert styles (batch) ───────────────────
-    await setStatus(store, { status: 'running', step: 'creating_styles', matched: totalMatched });
+    await setStatus(sql, { status: 'running', step: 'creating_styles', matched: totalMatched });
     let stylesCreated = 0;
     let styleErrors = 0;
 
@@ -136,7 +142,7 @@ exports.handler = async function(event) {
 
       // Update status every 100 styles
       if (stylesCreated % 100 === 0 && stylesCreated > 0) {
-        await setStatus(store, { status: 'running', step: 'creating_styles', progress: `${stylesCreated} styles` });
+        await setStatus(sql, { status: 'running', step: 'creating_styles', progress: `${stylesCreated} styles` });
       }
     }
     results.stylesCreated = stylesCreated;
@@ -144,7 +150,7 @@ exports.handler = async function(event) {
     log('sync.styles.done', { created: stylesCreated, errors: styleErrors });
 
     // ── Step 5: Fetch orders (30 days) ──────────────────
-    await setStatus(store, { status: 'running', step: 'fetching_orders' });
+    await setStatus(sql, { status: 'running', step: 'fetching_orders' });
     const { REORDER_VELOCITY_DAYS, SEASONAL_MULTIPLIERS } = require('../../lib/constants');
     const since = new Date();
     since.setDate(since.getDate() - REORDER_VELOCITY_DAYS);
@@ -160,7 +166,7 @@ exports.handler = async function(event) {
     log('sync.orders.fetched', { count: orders.length });
 
     // ── Step 6: Store sales + compute velocity ──────────
-    await setStatus(store, { status: 'running', step: 'computing_velocity', orders: orders.length });
+    await setStatus(sql, { status: 'running', step: 'computing_velocity', orders: orders.length });
     let salesStored = 0;
     const salesByMP = {};
 
@@ -220,31 +226,35 @@ exports.handler = async function(event) {
     results.elapsed = `${Math.round(elapsed / 1000)}s`;
 
     const completedAt = new Date().toISOString();
-    await setStatus(store, {
+    await setStatus(sql, {
       status: 'done',
       completedAt,
       elapsed: results.elapsed,
       results,
     });
 
-    // Store in sync history (keyed by date for audit trail)
-    const historyKey = `sync-history/${completedAt.slice(0, 10)}/${completedAt.slice(11, 19).replace(/:/g, '')}`;
-    await store.setJSON(historyKey, { completedAt, results });
+    // Store history and unmatched in Blobs (optional)
+    try {
+      const { getStore } = require('@netlify/blobs');
+      const blobStore = getStore('sync');
+      const historyKey = `sync-history/${completedAt.slice(0, 10)}/${completedAt.slice(11, 19).replace(/:/g, '')}`;
+      await blobStore.setJSON(historyKey, { completedAt, results });
+      if (unmatched.length > 0) {
+        await blobStore.setJSON('unmatched-titles', { updatedAt: completedAt, count: unmatched.length, titles: unmatched });
+      }
+    } catch (e) { log('sync.blob_skip', { reason: e.message.slice(0, 60) }); }
 
-    // Store unmatched titles for review
-    if (unmatched.length > 0) {
-      await store.setJSON('unmatched-titles', {
-        updatedAt: completedAt,
-        count: unmatched.length,
-        titles: unmatched,
-      });
-    }
+    // Also store unmatched in database for the /api/sync/unmatched route
+    try {
+      const unmatchedVal = JSON.stringify({ updatedAt: completedAt, count: unmatched.length, titles: unmatched.slice(0, 100) });
+      await sql`INSERT INTO app_settings (key, value) VALUES ('unmatched_titles', ${unmatchedVal}) ON CONFLICT (key) DO UPDATE SET value = ${unmatchedVal}, updated_at = NOW()`;
+    } catch (e) { /* skip */ }
 
     log('sync.complete', results);
 
   } catch (e) {
     const elapsed = Date.now() - started;
-    await setStatus(store, {
+    await setStatus(sql, {
       status: 'failed',
       error: e.message,
       elapsed: `${Math.round(elapsed / 1000)}s`,

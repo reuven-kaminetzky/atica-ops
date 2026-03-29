@@ -2,17 +2,15 @@ import { NextResponse } from 'next/server';
 
 /**
  * GET /api/sync/unmatched
- * 
- * Returns the list of Shopify products that didn't match any MP.
- * Stored in Blob by the sync background function.
+ * Returns unmatched Shopify product titles from last sync.
  */
 export async function GET() {
   try {
-    const { getStore } = require('@netlify/blobs');
-    const store = getStore('sync');
-    const data = await store.get('unmatched-titles', { type: 'json' });
-    if (!data) return NextResponse.json({ count: 0, titles: [], message: 'Run sync first.' });
-    return NextResponse.json(data);
+    const { sql } = require('../../../../lib/dal/db');
+    const db = sql();
+    const [row] = await db`SELECT value FROM app_settings WHERE key = 'unmatched_titles'`;
+    if (!row) return NextResponse.json({ count: 0, titles: [], message: 'Run sync first.' });
+    return NextResponse.json(JSON.parse(row.value));
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
