@@ -128,6 +128,12 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/dal/, supabase/migrations/
 7. Expand product matcher coverage past 597/1108
 8. VARIANT DATA — Extract Fit/Size/Length from Shopify variant options during sync (for analytics). Coordinate schema with Almond. See docs/ANALYTICS_DESIGN.md.
 
+**NEXT PHASE — Bonney:**
+9. **SYNC/WEBHOOK RACE:** Sync and webhooks both write to master_products. Add timestamp guard or sync lock to prevent sync from overwriting newer webhook data. See docs/ARCHITECTURE_AUDIT.md.
+10. **DELETE 11 LEGACY FUNCTIONS:** netlify/functions/{customers,finance,inventory,ledger,orders,pos,products,purchase-orders,shipments,status,workflow}.js — 2,753 lines serving nothing. Remove functions + their redirects from netlify.toml. Keep only: sync.js, sync-background.js, daily-sync.mjs, webhooks-shopify.js.
+11. **DELETE OLD SYNC ROUTE:** app/api/sync/route.js (11K lines, never executes due to netlify.toml redirect).
+12. **PO RECEIVED WEBHOOK:** When PO hits stage 11 (received), update inventory on master_products. See docs/PO_WORKFLOW_ENGINE.md.
+
 ### Danny — Frontend
 ```
 OWNS:     app/(dashboard)/*.js  (all pages)
@@ -154,6 +160,11 @@ DO NOT TOUCH: lib/products.js, netlify/functions/, lib/dal/, supabase/
 6. Cash flow: table of weekly outflow from real data.
 7. **ANALYTICS PAGE:** Read docs/ANALYTICS_DESIGN.md. Group By pills, THEN BY chain, tree table, column picker, filters. Server action: `getDataBreakdown({ groupBy: 'category' })`.
 8. Mobile: test all pages, fix layouts.
+
+**NEXT PHASE — Danny (read design docs BEFORE building):**
+9. **PO WORKFLOW:** Read docs/PO_WORKFLOW_ENGINE.md. Rebuild PO detail as stage-specific workflow. Each stage shows ONLY the fields for that stage. Advance button disabled until requirements met. Deadline tracking. Cash flow impact panel.
+10. **STACK BUILDER:** Read docs/PRODUCT_STACK_BUILDER.md. Rebuild stack editor with 10 structured sections, per-section completeness, required field markers. Show stack gate status on PO detail.
+11. **UNIFIED DATA EXPLORER:** Read docs/NAVIGATION_ARCHITECTURE.md. Products/Stock/Vendors/Analytics become ONE component with different default presets.
 
 **Danny calls data through:**
 `actions.js` → domain modules → DAL → Postgres. **Danny NEVER writes SQL.**
@@ -182,7 +193,14 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/products.js, lib/shopify.js,
 6. Verification endpoint refinement
 7. **ANALYTICS DAL:** lib/dal/analytics.js is BUILT. Review it. getBreakdown() supports 6 dimensions + 9 metrics. See docs/ANALYTICS_DESIGN.md.
 8. Cash flow DAL: real po_payments + sales queries
-9. Add DAL methods Danny or Bonney request
+9. **Run migration 010** (sales unique constraint — prevents duplicate sales on re-sync)
+10. Add DAL methods Danny or Bonney request
+
+**NEXT PHASE — Almond (read design docs BEFORE building):**
+11. **PO SCHEMA:** Read docs/PO_WORKFLOW_ENGINE.md. Migration adding 20+ columns to purchase_orders (stage-specific data: sample_images, qc_report, margin_pct, received_quantity, etc.). Update PO DAL with stage-specific validation — each stage checks its required fields before allowing advancement.
+12. **STACK COMPLETENESS:** Read docs/PRODUCT_STACK_BUILDER.md. Add sections JSONB to product_stack. Write completeness calculation in lib/product/ (per-section scoring, weighted overall). Wire gate check into advanceStage — PO can't advance past Design without Construction+Fit at 100%.
+13. **PROTECT DESTRUCTIVE ENDPOINTS:** POST /api/seed and POST /api/migrate can wipe the database. Add admin token check. See docs/ARCHITECTURE_AUDIT.md.
+14. **PO TRANSACTIONS:** Wrap PO creation (purchase_orders + po_payments + po_stage_history) in BEGIN/COMMIT/ROLLBACK.
 
 ---
 
@@ -196,6 +214,23 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/products.js, lib/shopify.js,
 | COORDINATION.md | Peter | Read-only |
 
 Check `git log` before editing shared files. If someone pushed in the last 2 hours, coordinate with Reuven.
+
+---
+
+## 6.5 DESIGN DOCS (read before building)
+
+| Document | What | Who Needs It |
+|----------|------|-------------|
+| docs/ANALYTICS_DESIGN.md | Flexible Group By + THEN BY tree (ATCM/Lightspeed R model) | Danny, Almond |
+| docs/PO_WORKFLOW_ENGINE.md | 12-stage PO lifecycle, stage-specific requirements, deadlines, cash flow | Danny, Almond, Bonney |
+| docs/PRODUCT_STACK_BUILDER.md | 10 structured sections, completeness scoring, PO gates | Danny, Almond |
+| docs/NAVIGATION_ARCHITECTURE.md | Products/Stock/Vendors/Analytics = one flexible view | Danny |
+| docs/ARCHITECTURE_AUDIT.md | 9 issues ranked by risk — what will break | All |
+| docs/FOUNDATION.md | What the system is, truth chain, schema tiers | All |
+| docs/ENGINEERING_PRACTICES.md | How we build: design first, one commit | All |
+| docs/SYNC_DESIGN.md | Background function architecture | Bonney |
+
+**Rule: READ the design doc BEFORE building the feature. No exceptions.**
 
 ---
 
