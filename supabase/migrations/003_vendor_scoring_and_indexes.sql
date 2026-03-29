@@ -1,3 +1,16 @@
+-- Atica Ops — Vendor Scoring + Terms
+-- Run after 002_logistics.sql
+
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS preferred_terms TEXT DEFAULT 'standard';
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS on_time_pct NUMERIC(5,2);
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS avg_lead_days INTEGER;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS quality_score NUMERIC(3,2);
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS total_pos INTEGER DEFAULT 0;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS total_units INTEGER DEFAULT 0;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS total_committed NUMERIC(12,2) DEFAULT 0;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS last_po_date TIMESTAMPTZ;
+ALTER TABLE vendors ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT '';
+
 -- Atica Ops — Performance Indexes
 -- Run after 001 + 002
 

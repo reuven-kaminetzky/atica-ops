@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
-import { neon } from '@netlify/neon';
+// DB connection via dal
 
 export async function POST() {
   try {
     const { MP_SEEDS } = require('../../../lib/products');
-    const sql = neon();
+    const { sql } = require('../../../lib/dal/db');
+    const db = sql();
 
     // Clean old data before reseeding
-    await sql`DELETE FROM product_stack`;
-    await sql`DELETE FROM master_products`;
-    await sql`DELETE FROM vendors`;
+    await db`DELETE FROM product_stack`;
+    await db`DELETE FROM master_products`;
+    await db`DELETE FROM vendors`;
 
     // Extract vendors
     const vendorMap = {};
@@ -25,7 +26,7 @@ export async function POST() {
     const vendorErrors = [];
     for (const v of Object.values(vendorMap)) {
       try {
-        await sql`INSERT INTO vendors (id, name, country, categories) 
+        await db`INSERT INTO vendors (id, name, country, categories) 
           VALUES (${v.id}, ${v.name}, ${v.country}, ${v.categories}) 
           ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, categories = EXCLUDED.categories`;
         vendorCount++;
@@ -39,7 +40,7 @@ export async function POST() {
     for (const mp of MP_SEEDS) {
       const vid = mp.vendor ? mp.vendor.toLowerCase().replace(/\s+/g, '-') : null;
       try {
-        await sql`INSERT INTO master_products (
+        await db`INSERT INTO master_products (
           id, name, code, category, vendor_id, 
           fob, retail, duty, hts, 
           lead_days, moq, country, 
@@ -62,7 +63,7 @@ export async function POST() {
     let stackCount = 0;
     for (const mp of MP_SEEDS) {
       try {
-        await sql`INSERT INTO product_stack (mp_id) VALUES (${mp.id}) ON CONFLICT DO NOTHING`;
+        await db`INSERT INTO product_stack (mp_id) VALUES (${mp.id}) ON CONFLICT DO NOTHING`;
         stackCount++;
       } catch (e) { /* ok */ }
     }
