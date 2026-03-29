@@ -198,7 +198,7 @@ export async function POST(request) {
       const salesByMP = {};
 
       for (const order of orders) {
-        const store = order.source_name === 'pos' ? 'POS' : 'Online';
+        const channel = order.source_name === 'pos' ? 'POS' : 'Online';
         for (const li of (order.line_items || [])) {
           const mpId = li.title ? matchProduct(li.title) : null;
           if (mpId) {
@@ -210,7 +210,7 @@ export async function POST(request) {
           try {
             await db`
               INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name)
-              VALUES (${order.name || String(order.id)}, ${order.id}, ${order.created_at}, ${store}, ${mpId},
+              VALUES (${order.name || String(order.id)}, ${order.id}, ${order.created_at}, ${channel}, ${mpId},
                 ${li.sku || null}, ${li.title || null}, ${li.quantity || 1},
                 ${parseFloat(li.price) || 0}, ${(parseFloat(li.price) || 0) * (li.quantity || 1)},
                 ${order.customer?.first_name ? `${order.customer.first_name} ${order.customer.last_name || ''}`.trim() : null})

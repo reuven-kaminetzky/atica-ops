@@ -8,9 +8,20 @@ import { NextResponse } from 'next/server';
  */
 export async function POST() {
   try {
-    // Set initial status in Blob
     const { getStore } = require('@netlify/blobs');
     const store = getStore('sync');
+
+    // Guard: don't trigger if already running
+    const current = await store.get('sync-status', { type: 'json' }).catch(() => null);
+    if (current && current.status === 'running') {
+      return NextResponse.json({
+        triggered: false,
+        message: 'Sync already running',
+        step: current.step,
+      });
+    }
+
+    // Set initial status in Blob
     await store.setJSON('sync-status', {
       status: 'starting',
       startedAt: new Date().toISOString(),
@@ -19,7 +30,7 @@ export async function POST() {
     });
 
     // Trigger background function
-    const siteUrl = process.env.URL || 'https://atica-ops-v3.netlify.app';
+    const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://atica-ops.netlify.app';
     const bgRes = await fetch(`${siteUrl}/.netlify/functions/sync-background`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
