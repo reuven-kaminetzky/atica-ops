@@ -21,6 +21,7 @@ const fs = require('fs');
 
 let passed = 0;
 let failed = 0;
+let skipped = 0;
 
 function test(name, fn) {
   try {
@@ -30,6 +31,25 @@ function test(name, fn) {
   } catch (err) {
     failed++;
     console.error(`  ✗ ${name}: ${err.message}`);
+  }
+}
+
+/** Skip test if a Netlify-only module is missing. */
+function testNetlify(name, fn) {
+  try {
+    fn();
+    passed++;
+    console.log(`  ✓ ${name}`);
+  } catch (err) {
+    if (err.message.includes('Cannot find module') && (
+      err.message.includes('@netlify/blobs') || err.message.includes('@netlify/neon')
+    )) {
+      skipped++;
+      console.log(`  ⊘ ${name} (skipped — Netlify runtime only)`);
+    } else {
+      failed++;
+      console.error(`  ✗ ${name}: ${err.message}`);
+    }
   }
 }
 
@@ -44,8 +64,11 @@ console.log('\n1. LIB IMPORTS');
 const libs = ['domain', 'workflow', 'effects', 'products', 'shopify', 'handler',
               'cache', 'store', 'auth', 'locations', 'inventory'];
 
+const netlifyLibs = new Set(['store', 'inventory']);
+
 for (const lib of libs) {
-  test(`require('./lib/${lib}')`, () => {
+  const fn = netlifyLibs.has(lib) ? testNetlify : test;
+  fn(`require('./lib/${lib}')`, () => {
     require(`./lib/${lib}`);
   });
 }
@@ -475,7 +498,7 @@ test('does not match shipping items', () => {
 
 console.log('\n--- Domain Module Exports ---');
 
-test('product module exports all required methods', () => {
+testNetlify('product module exports all required methods', () => {
   const product = require('./lib/product');
   const required = ['matchProduct', 'classifyDemand', 'adjustVelocity', 
     'updateShopifyData', 'upsertStyle', 'updateTotalInventory', 'updateVelocity', 'getAll'];
@@ -484,7 +507,7 @@ test('product module exports all required methods', () => {
   }
 });
 
-test('supply-chain module exports PO and vendor operations', () => {
+testNetlify('supply-chain module exports PO and vendor operations', () => {
   const sc = require('./lib/supply-chain');
   assert(typeof sc.po.getAll === 'function');
   assert(typeof sc.po.create === 'function');
@@ -492,7 +515,7 @@ test('supply-chain module exports PO and vendor operations', () => {
   assert(typeof sc.payment.getAllWithPO === 'function');
 });
 
-test('finance module exports cash flow functions', () => {
+testNetlify('finance module exports cash flow functions', () => {
   const finance = require('./lib/finance');
   assert(typeof finance.getOpex === 'function');
 });
@@ -528,8 +551,56 @@ test('projection weeks is set', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
+console.log('\n12. SALES DAL');
+// ═══════════════════════════════════════════════════════════
+
+testNetlify('sales DAL exports all query methods', () => {
+  const sales = require('./lib/dal/sales');
+  assert(typeof sales.getWeeklyRevenue === 'function', 'missing getWeeklyRevenue');
+  assert(typeof sales.getDailyRevenue === 'function', 'missing getDailyRevenue');
+  assert(typeof sales.getByStore === 'function', 'missing getByStore');
+  assert(typeof sales.getTopMPs === 'function', 'missing getTopMPs');
+  assert(typeof sales.getSummary === 'function', 'missing getSummary');
+});
+
+// ═══════════════════════════════════════════════════════════
+console.log('\n13. AUTH MIDDLEWARE');
+// ═══════════════════════════════════════════════════════════
+
+test('middleware.js exists and exports middleware function', () => {
+  const fs = require('fs');
+  assert(fs.existsSync('./middleware.js'), 'middleware.js not found');
+  // Can't require() ESM middleware directly, just verify file exists
+});
+
+test('middleware.js has matcher config', () => {
+  const content = fs.readFileSync('./middleware.js', 'utf8');
+  assert(content.includes('export const config'), 'missing config export');
+  assert(content.includes('matcher'), 'missing matcher');
+});
+
+test('middleware.js excludes webhook routes from auth', () => {
+  const content = fs.readFileSync('./middleware.js', 'utf8');
+  assert(content.includes('/api/webhooks'), 'webhooks should be excluded from auth');
+});
+
+// ═══════════════════════════════════════════════════════════
+console.log('\n14. CI PIPELINE');
+// ═══════════════════════════════════════════════════════════
+
+test('GitHub Actions workflow exists', () => {
+  assert(fs.existsSync('./.github/workflows/ci.yml'), 'ci.yml not found');
+});
+
+test('CI workflow runs tests', () => {
+  const content = fs.readFileSync('./.github/workflows/ci.yml', 'utf8');
+  assert(content.includes('node test.js'), 'CI should run node test.js');
+  assert(content.includes('node --check'), 'CI should syntax check files');
+});
+
+// ═══════════════════════════════════════════════════════════
 console.log(`\n${'═'.repeat(50)}`);
-console.log(`RESULTS: ${passed} passed, ${failed} failed`);
+console.log(`RESULTS: ${passed} passed, ${failed} failed${skipped ? `, ${skipped} skipped` : ''}`);
 console.log(`${'═'.repeat(50)}\n`);
 
 process.exit(failed > 0 ? 1 : 0);
