@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
 // DB connection via dal
 
-export async function POST() {
+export async function POST(request) {
   try {
+    const { requireAuth } = require('../../../lib/auth');
+    await requireAuth(request, 'admin');
+
     const { MP_SEEDS } = require('../../../lib/products');
     const { sql } = require('../../../lib/dal/db');
     const db = sql();
@@ -80,6 +83,7 @@ export async function POST() {
       totalSeeds: MP_SEEDS.length, vendorErrors: vendorErrors.slice(0, 5), mpErrors: mpErrors.slice(0, 5),
     });
   } catch (e) {
+    if (e instanceof Response) return e;
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

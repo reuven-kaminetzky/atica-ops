@@ -6,8 +6,11 @@ import { NextResponse } from 'next/server';
  * Registers Shopify webhooks pointing to our handler.
  * Run once after deployment. Idempotent.
  */
-export async function POST() {
+export async function POST(request) {
   try {
+    const { requireAuth } = require('../../../../lib/auth');
+    await requireAuth(request, 'admin');
+
     const { createClient } = require('../../../../lib/shopify');
     const client = await createClient();
     if (!client) return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
@@ -43,6 +46,7 @@ export async function POST() {
 
     return NextResponse.json({ registered: true, address, results });
   } catch (e) {
+    if (e instanceof Response) return e;
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
