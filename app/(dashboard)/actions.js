@@ -267,3 +267,33 @@ export async function refreshAlerts() {
     return await dal().alerts.refresh();
   } catch (e) { return { error: e.message }; }
 }
+
+// ── SKUs (Sprint 1) ──────────────────────────────────────
+export async function getSkusByMP(mpId) {
+  'use server';
+  try {
+    return await dal().skus.getByMP(mpId);
+  } catch (e) { return []; }
+}
+
+export async function getFitSizeMatrix(mpId) {
+  'use server';
+  try {
+    return await dal().skus.getFitSizeMatrix(mpId);
+  } catch (e) { return []; }
+}
+
+// ── Inventory (Sprint 2) ─────────────────────────────────
+export async function getStockByMP(mpId) {
+  'use server';
+  try {
+    return await dal().inventory.getStockByMP(mpId);
+  } catch (e) { return []; }
+}
+
+export async function getStockByLocation(locationCode) {
+  'use server';
+  try {
+    return await dal().inventory.getStockByLocation(locationCode);
+  } catch (e) { return []; }
+}
