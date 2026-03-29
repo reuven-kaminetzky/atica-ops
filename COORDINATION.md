@@ -162,9 +162,12 @@ DO NOT TOUCH: lib/products.js, netlify/functions/, lib/dal/, supabase/
 8. Mobile: test all pages, fix layouts.
 
 **NEXT PHASE — Danny (read design docs BEFORE building):**
-9. **PO WORKFLOW:** Read docs/PO_WORKFLOW_ENGINE.md. Rebuild PO detail as stage-specific workflow. Each stage shows ONLY the fields for that stage. Advance button disabled until requirements met. Deadline tracking. Cash flow impact panel.
+9. ~~PO WORKFLOW~~ DONE (stage-specific panels, deadlines, cash flow)
 10. **STACK BUILDER:** Read docs/PRODUCT_STACK_BUILDER.md. Rebuild stack editor with 10 structured sections, per-section completeness, required field markers. Show stack gate status on PO detail.
-11. **UNIFIED DATA EXPLORER:** Read docs/NAVIGATION_ARCHITECTURE.md. Products/Stock/Vendors/Analytics become ONE component with different default presets.
+11. ~~UNIFIED DATA EXPLORER~~ DONE (DataExplorer component with presets)
+12. **CASH FLOW:** Read docs/CASH_FLOW_PROJECTION.md. Rebuild with INFLOW (revenue) + outflow + running cash position. Currently only shows outflow.
+13. **ALERTS ON LANDING PAGE:** Read docs/ARCHITECTURAL_ENVELOPE.md pattern 5. Query alerts table, show badge + list on landing page. "3 payments overdue. 2 products low stock."
+14. **PO IMPACT SIMULATION:** Read docs/STRATEGIC_DESIGN.md section 1. On PO creation, show cash position impact before committing. "This PO pushes cash negative in Week 8."
 
 **Danny calls data through:**
 `actions.js` → domain modules → DAL → Postgres. **Danny NEVER writes SQL.**
@@ -197,10 +200,12 @@ DO NOT TOUCH: app/(dashboard)/ pages, lib/products.js, lib/shopify.js,
 10. Add DAL methods Danny or Bonney request
 
 **NEXT PHASE — Almond (read design docs BEFORE building):**
-11. **PO SCHEMA:** Read docs/PO_WORKFLOW_ENGINE.md. Migration adding 20+ columns to purchase_orders (stage-specific data: sample_images, qc_report, margin_pct, received_quantity, etc.). Update PO DAL with stage-specific validation — each stage checks its required fields before allowing advancement.
-12. **STACK COMPLETENESS:** Read docs/PRODUCT_STACK_BUILDER.md. Add sections JSONB to product_stack. Write completeness calculation in lib/product/ (per-section scoring, weighted overall). Wire gate check into advanceStage — PO can't advance past Design without Construction+Fit at 100%.
-13. **PROTECT DESTRUCTIVE ENDPOINTS:** POST /api/seed and POST /api/migrate can wipe the database. Add admin token check. See docs/ARCHITECTURE_AUDIT.md.
-14. **PO TRANSACTIONS:** Wrap PO creation (purchase_orders + po_payments + po_stage_history) in BEGIN/COMMIT/ROLLBACK.
+11. **ENVELOPE MIGRATION 011:** Read docs/ARCHITECTURAL_ENVELOPE.md. Run migration 011 — creates documents, users, alerts, collections, returns tables. Converts PO stage ENUM→TEXT. Adds channel/wholesale columns. This is foundation — no feature code needed.
+12. **EVENTS:** Add audit_log insert to EVERY DAL write method. One line per method. This enables notifications, activity feed, undo later.
+13. **PO SCHEMA:** Read docs/PO_WORKFLOW_ENGINE.md. Migration adding 20+ columns to purchase_orders. Update PO DAL with stage-specific validation.
+14. **STACK COMPLETENESS:** Read docs/PRODUCT_STACK_BUILDER.md. Add sections JSONB to product_stack. Write completeness calculation in lib/product/. Wire gate check into advanceStage.
+15. **PROTECT DESTRUCTIVE ENDPOINTS:** POST /api/seed and POST /api/migrate can wipe the database. Add admin token check.
+16. **PO TRANSACTIONS:** Wrap PO creation in BEGIN/COMMIT/ROLLBACK.
 
 ---
 
@@ -221,13 +226,18 @@ Check `git log` before editing shared files. If someone pushed in the last 2 hou
 
 | Document | What | Who Needs It |
 |----------|------|-------------|
-| docs/ANALYTICS_DESIGN.md | Flexible Group By + THEN BY tree (ATCM/Lightspeed R model) | Danny, Almond |
-| docs/PO_WORKFLOW_ENGINE.md | 12-stage PO lifecycle, stage-specific requirements, deadlines, cash flow | Danny, Almond, Bonney |
+| docs/ARCHITECTURAL_ENVELOPE.md | 6 patterns for $17M scale — events, documents, users, channels, alerts, workflows | All |
+| docs/STRATEGIC_DESIGN.md | PO impact simulation, collections, returns, markdowns, scaling | All |
+| docs/PO_WORKFLOW_ENGINE.md | 12-stage PO lifecycle, requirements, deadlines, cash flow | Danny, Almond, Bonney |
 | docs/PRODUCT_STACK_BUILDER.md | 10 structured sections, completeness scoring, PO gates | Danny, Almond |
-| docs/NAVIGATION_ARCHITECTURE.md | Products/Stock/Vendors/Analytics = one flexible view | Danny |
-| docs/ARCHITECTURE_AUDIT.md | 9 issues ranked by risk — what will break | All |
-| docs/FOUNDATION.md | What the system is, truth chain, schema tiers | All |
-| docs/ENGINEERING_PRACTICES.md | How we build: design first, one commit | All |
+| docs/ANALYTICS_DESIGN.md | Flexible Group By + THEN BY tree | Danny, Almond |
+| docs/CASH_FLOW_PROJECTION.md | Weekly inflow + outflow + running position algorithm | Danny, Almond |
+| docs/NAVIGATION_ARCHITECTURE.md | Unified DataExplorer with presets | Danny |
+| docs/INTELLIGENCE_LAYER.md | Vendor scoring (Gold/Silver/Bronze) + grade computation (A/B/C/D) | Almond |
+| docs/STORE_ALLOCATION.md | Velocity-based distribution algorithm | Almond, Danny |
+| docs/ARCHITECTURE_AUDIT.md | Issues ranked by risk | All |
+| docs/FOUNDATION.md | What the system is, truth chain | All |
+| docs/ENGINEERING_PRACTICES.md | How we build: design first | All |
 | docs/SYNC_DESIGN.md | Background function architecture | Bonney |
 
 **Rule: READ the design doc BEFORE building the feature. No exceptions.**
