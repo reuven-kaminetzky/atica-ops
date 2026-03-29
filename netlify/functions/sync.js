@@ -4,30 +4,45 @@
  *
  * Routes:
  *   POST /api/sync/trigger   → trigger background sync, return immediately
- *   GET  /api/sync/status    → current sync status from Blob store
+ *   GET  /api/sync/status    → current sync status from database
  *   GET  /api/sync/unmatched → unmatched product titles from last sync
+ *
+ * Status lives in app_settings table (not Blobs) — same place
+ * sync-background.js writes to. Blobs are only used for optional
+ * product caching and history.
  */
 
 const { createHandler, RouteError } = require('../../lib/handler');
-const { getStore } = require('@netlify/blobs');
+const { neon } = require('@netlify/neon');
 
-function syncStore() {
-  return getStore({ name: 'sync', consistency: 'strong' });
+// ── Helpers ─────────────────────────────────────────────────
+
+async function getAppSetting(sql, key) {
+  const [row] = await sql`SELECT value FROM app_settings WHERE key = ${key}`;
+  return row ? JSON.parse(row.value) : null;
+}
+
+async function setAppSetting(sql, key, obj) {
+  const value = JSON.stringify(obj);
+  await sql`
+    INSERT INTO app_settings (key, value) VALUES (${key}, ${value})
+    ON CONFLICT (key) DO UPDATE SET value = ${value}, updated_at = NOW()
+  `;
 }
 
 // ── Handlers ────────────────────────────────────────────────
 
 async function triggerSync() {
-  const store = syncStore();
+  const sql = neon();
 
-  // Check if already running
-  const current = await store.get('sync-status', { type: 'json' }).catch(() => null);
+  // Guard: don't re-trigger if already running
+  const current = await getAppSetting(sql, 'sync_status');
   if (current && current.status === 'running') {
     return { triggered: false, message: 'Sync already running', step: current.step };
   }
 
-  // Set initial status
-  await store.setJSON('sync-status', {
+  // Set initial status in database
+  await setAppSetting(sql, 'sync_status', {
     status: 'starting',
     startedAt: new Date().toISOString(),
     triggeredBy: 'settings-ui',
@@ -48,7 +63,7 @@ async function triggerSync() {
       message: 'Sync started. Poll /api/sync/status for progress.',
     };
   } catch (err) {
-    await store.setJSON('sync-status', {
+    await setAppSetting(sql, 'sync_status', {
       status: 'failed',
       error: `Failed to trigger background function: ${err.message}`,
       updatedAt: new Date().toISOString(),
@@ -58,15 +73,15 @@ async function triggerSync() {
 }
 
 async function syncStatus() {
-  const store = syncStore();
-  const status = await store.get('sync-status', { type: 'json' }).catch(() => null);
+  const sql = neon();
+  const status = await getAppSetting(sql, 'sync_status');
   if (status) return status;
   return { status: 'never_run', message: 'No sync has been run yet.' };
 }
 
 async function unmatchedTitles() {
-  const store = syncStore();
-  const data = await store.get('unmatched-titles', { type: 'json' }).catch(() => null);
+  const sql = neon();
+  const data = await getAppSetting(sql, 'unmatched_titles');
   if (data) return data;
   return { count: 0, titles: [], message: 'No unmatched data. Run a sync first.' };
 }
