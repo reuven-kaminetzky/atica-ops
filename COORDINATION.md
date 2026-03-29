@@ -49,14 +49,23 @@ OWNS:     app/(dashboard)/*.js  (all pages)
 DO NOT TOUCH: lib/products.js, netlify/functions/, lib/dal/, supabase/
 ```
 
+**UX PHILOSOPHY (from Reuven — mandatory):**
+- DO NOT build dashboards full of random data. No KPI cards. No sparklines. No charts on the home page.
+- Reuven wants to LOOK for data when he needs it — drill-down, not data dump.
+- Think Odoo: clean tree navigation. Click to go deeper. Surface is minimal.
+- Landing page: clean entry points into the tree (Products, POs, Stock, Cash Flow). Only show alerts if something needs action (stockout, overdue). Nothing else.
+- Pattern: List view (table) → click row → Detail view → click section → Sub-detail.
+- Each page starts clean. Data appears when you navigate TO it, not when it's thrown at you.
+- Functional, not pretty. Clean, not busy. This is a TOOL, not a dashboard.
+
 **Danny's tasks (in order):**
-1. Dashboard: make KPIs prominent, improve visual hierarchy
-2. Products page: Shopify images, real stock, style count badges
-3. Product detail: styles grid with images and colorways
-4. Settings: verify sync polling UI works with Blob-based status
-5. Cash flow: wire to real po_payments + sales data
-6. PO detail: payment schedule with status colors
-7. Mobile: test all pages on phone, fix layouts
+1. Rebuild landing page: REMOVE KPI cards and data dump. Clean nav entry points + action alerts only.
+2. Products: clean table (name, category, stock, velocity). Click row → detail.
+3. Product detail: header with key numbers, collapsible sections (Styles, POs, Stack).
+4. PO list: table. Click row → PO detail with stage track and payments.
+5. Settings: verify sync polling UI works with Blob-based status.
+6. Cash flow: table of weekly outflow from real po_payments + sales. Not charts.
+7. Mobile: test all pages on phone, fix layouts.
 
 **Danny calls data through:**
 Server actions (actions.js) → domain modules (lib/product/) → DAL (lib/dal/).
