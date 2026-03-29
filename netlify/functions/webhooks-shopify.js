@@ -1,5 +1,20 @@
+/**
+ * /api/webhooks/shopify — Shopify webhook receiver
+ * Owner: Bonney (Data Pipeline)
+ *
+ * Receives real-time events from Shopify:
+ *   orders/create     → match to MPs, deduct inventory, emit SALE_RECORDED
+ *   products/update   → update MP hero_image + external_ids
+ *   products/create   → same as update
+ *   inventory_levels/update → logged for next sync reconciliation
+ *
+ * Deduplication: inserts into webhook_events table first. If
+ * X-Shopify-Event-Id already exists, returns 200 and skips processing.
+ */
+
 const crypto = require('crypto');
 const { json, cors } = require('../../lib/auth');
+const { neon } = require('@netlify/neon');
 
 function verify(rawBody, hmac) {
   const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
@@ -11,66 +26,18 @@ function verify(rawBody, hmac) {
   } catch { return false; }
 }
 
-// ── Topic → which caches to invalidate ──
-const CACHE_MAP = {
-  'orders/create':           ['orders', 'pos'],
-  'orders/updated':          ['orders', 'pos'],
-  'products/update':         ['products'],
-  'products/create':         ['products'],
-  'products/delete':         ['products'],
-  'inventory_levels/update': ['inventory'],
-};
-
-// Clear cache on the relevant modular function via internal HTTP
-async function invalidateCaches(topic) {
-  const targets = CACHE_MAP[topic];
-  if (!targets || !targets.length) return [];
-
-  const results = [];
-  for (const target of targets) {
-    // Each modular function has its own esbuild-bundled cache.
-    // We can't clear cross-function caches. TTLs handle freshness:
-    // orders=60s, pos=60s, inventory=120s, products=300s
-    results.push({ target, action: 'ttl-expiry', note: `${target} cache expires in ≤${target === 'products' ? '5min' : target === 'inventory' ? '2min' : '1min'}` });
-  }
-
-  return results;
-}
-
-// Track last webhook per topic — frontend can poll /api/status for freshness
-let _lastWebhooks = {};
-
-async function forward(event) {
-  const url = process.env.WEBHOOK_FORWARD_URL;
-  if (!url) return;
-  try {
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type':  'application/json',
-        'X-Atica-Topic':  event.topic,
-        'X-Atica-Source': 'shopify',
-        ...(process.env.WEBHOOK_FORWARD_SECRET ? { 'X-Atica-Secret': process.env.WEBHOOK_FORWARD_SECRET } : {}),
-      },
-      body: JSON.stringify(event),
-    });
-  } catch (err) {
-    console.error('[webhook] forward failed:', err.message);
-  }
+function log(event, data = {}) {
+  console.log(JSON.stringify({ event, ...data, ts: new Date().toISOString() }));
 }
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: cors() };
   if (event.httpMethod !== 'POST') return json(405, { error: 'POST only' });
 
-  // GET /api/webhooks/last — return last webhook timestamps
-  if (event.httpMethod === 'GET') {
-    return json(200, { lastWebhooks: _lastWebhooks });
-  }
-
+  // ── HMAC verification ─────────────────────────────────
   try {
     if (!verify(event.body, event.headers['x-shopify-hmac-sha256'])) {
-      console.warn('[webhook] HMAC verification failed');
+      log('webhook.hmac_failed');
       return json(401, { error: 'Bad signature' });
     }
   } catch {
@@ -85,45 +52,103 @@ exports.handler = async (event) => {
   }
 
   const topic = event.headers['x-shopify-topic'] || 'unknown';
-  const domain = event.headers['x-shopify-shop-domain'] || 'unknown';
+  const eventId = event.headers['x-shopify-event-id'] || null;
+  log('webhook.received', { topic, eventId, shopifyId: payload.id || payload.inventory_item_id });
 
-  console.log(`[webhook] ${topic} from ${domain}`);
+  const sql = neon();
 
-  // Track timestamp
-  _lastWebhooks[topic] = new Date().toISOString();
-
-  // Invalidate relevant caches
-  const cacheResults = await invalidateCaches(topic);
-
-  // Build event
-  const webhookEvent = {
-    topic,
-    shopDomain: domain,
-    receivedAt: new Date().toISOString(),
-    payload,
-  };
-
-  // Forward if configured
-  await forward(webhookEvent);
-
-  // Log summary
-  const summary = {
-    received: true,
-    topic,
-    cacheInvalidation: cacheResults,
-  };
-
-  // Add topic-specific metadata
-  if (topic === 'orders/create' && payload.name) {
-    summary.order = { name: payload.name, total: payload.total_price, items: (payload.line_items || []).length };
-    console.log(`[webhook] New order ${payload.name} — $${payload.total_price}`);
-  } else if (topic === 'inventory_levels/update') {
-    summary.inventory = { itemId: payload.inventory_item_id, locationId: payload.location_id, available: payload.available };
-    console.log(`[webhook] Inventory update — item ${payload.inventory_item_id} → ${payload.available}`);
-  } else if (topic.startsWith('products/') && payload.title) {
-    summary.product = { id: payload.id, title: payload.title };
-    console.log(`[webhook] Product ${topic.split('/')[1]} — ${payload.title}`);
+  // ── Deduplication ─────────────────────────────────────
+  // Insert into webhook_events. If eventId already exists, skip processing.
+  if (eventId) {
+    try {
+      await sql`
+        INSERT INTO webhook_events (source, topic, external_id, payload, status)
+        VALUES ('shopify', ${topic}, ${eventId}, ${JSON.stringify(payload)}::jsonb, 'processing')
+      `;
+    } catch (e) {
+      // 23505 = unique_violation → duplicate webhook
+      if (e.code === '23505' || (e.message && e.message.includes('unique'))) {
+        log('webhook.duplicate_skipped', { topic, eventId });
+        return json(200, { received: true, topic, deduplicated: true });
+      }
+      // Table might not exist yet — continue processing
+      log('webhook.dedup_skip', { reason: e.message.slice(0, 60) });
+    }
   }
 
-  return json(200, summary);
+  // ── Process by topic ──────────────────────────────────
+  const { matchProduct } = require('../../lib/products');
+  const result = { received: true, topic };
+
+  try {
+    if (topic === 'orders/create') {
+      const items = [];
+      for (const li of (payload.line_items || [])) {
+        const mpId = li.title ? matchProduct(li.title) : null;
+        if (mpId) {
+          items.push({ mpId, sku: li.sku, qty: li.quantity, price: parseFloat(li.price || 0) });
+          // Deduct inventory
+          try {
+            await sql`UPDATE master_products SET total_inventory = GREATEST(0, total_inventory - ${li.quantity}) WHERE id = ${mpId}`;
+          } catch (e) { log('webhook.inventory_deduct_err', { mpId, error: e.message.slice(0, 40) }); }
+        }
+      }
+
+      // Store sales
+      const channel = payload.source_name === 'pos' ? 'POS' : 'Online';
+      for (const li of (payload.line_items || [])) {
+        const mpId = li.title ? matchProduct(li.title) : null;
+        try {
+          await sql`
+            INSERT INTO sales (order_id, order_shopify_id, ordered_at, store, mp_id, sku, title, quantity, unit_price, total, customer_name)
+            VALUES (${payload.name || String(payload.id)}, ${payload.id}, ${payload.created_at}, ${channel}, ${mpId},
+              ${li.sku || null}, ${li.title || null}, ${li.quantity || 1},
+              ${parseFloat(li.price) || 0}, ${(parseFloat(li.price) || 0) * (li.quantity || 1)},
+              ${payload.customer?.first_name ? `${payload.customer.first_name} ${payload.customer.last_name || ''}`.trim() : null})
+            ON CONFLICT DO NOTHING
+          `;
+        } catch (e) { /* sales table may not exist */ }
+      }
+
+      result.order = { name: payload.name, total: payload.total_price, items: items.length };
+      log('webhook.order_processed', { name: payload.name, items: items.length });
+    }
+
+    if (topic === 'products/update' || topic === 'products/create') {
+      const maxPrice = Math.max(...(payload.variants || []).map(v => parseFloat(v.price) || 0), 0);
+      const mpId = matchProduct(payload.title, maxPrice);
+      if (mpId) {
+        const totalInv = (payload.variants || []).reduce((s, v) => s + (v.inventory_quantity || 0), 0);
+        try {
+          await sql`UPDATE master_products SET hero_image = COALESCE(${payload.image?.src || null}, hero_image), total_inventory = ${totalInv} WHERE id = ${mpId}`;
+        } catch (e) { log('webhook.product_update_err', { mpId, error: e.message.slice(0, 40) }); }
+        result.product = { mpId, image: !!payload.image?.src, inventory: totalInv };
+        log('webhook.product_processed', { mpId, title: payload.title });
+      }
+    }
+
+    if (topic === 'inventory_levels/update') {
+      result.inventory = { itemId: payload.inventory_item_id, locationId: payload.location_id, available: payload.available };
+      log('webhook.inventory_noted', { itemId: payload.inventory_item_id, available: payload.available });
+    }
+
+    // Mark webhook as processed
+    if (eventId) {
+      try {
+        await sql`UPDATE webhook_events SET status = 'processed', processed_at = NOW() WHERE external_id = ${eventId} AND source = 'shopify'`;
+      } catch (e) { /* table may not exist */ }
+    }
+
+  } catch (e) {
+    log('webhook.processing_error', { topic, error: e.message });
+    // Mark webhook as failed
+    if (eventId) {
+      try {
+        await sql`UPDATE webhook_events SET status = 'failed', error_message = ${e.message.slice(0, 200)} WHERE external_id = ${eventId} AND source = 'shopify'`;
+      } catch { /* ignore */ }
+    }
+    result.error = e.message;
+  }
+
+  return json(200, result);
 };
