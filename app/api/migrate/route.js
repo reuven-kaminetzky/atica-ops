@@ -7,6 +7,13 @@ export async function POST(request) {
     const { requireAuth } = require('../../../lib/auth');
     await requireAuth(request, 'admin');
 
+    if (request.headers.get('x-confirm-destructive') !== 'true') {
+      return NextResponse.json({
+        error: 'Destructive operation. Pass header X-Confirm-Destructive: true',
+        warning: 'This runs ALL migration files against the database.',
+      }, { status: 400 });
+    }
+
     const { Pool } = require('@neondatabase/serverless');
     const pool = new Pool({ connectionString: process.env.NETLIFY_DATABASE_URL });
 

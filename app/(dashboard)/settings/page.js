@@ -9,7 +9,14 @@ export default function SettingsPage() {
   async function run(action) {
     setLoading(action);
     try {
-      const res = await fetch(`/api/${action}`, { method: action === 'health' ? 'GET' : 'POST' });
+      const headers = {};
+      if (action === 'seed' || action === 'migrate') {
+        headers['X-Confirm-Destructive'] = 'true';
+      }
+      const res = await fetch(`/api/${action}`, {
+        method: action === 'health' ? 'GET' : 'POST',
+        headers,
+      });
       const data = await res.json();
       setResults(prev => ({ ...prev, [action]: data }));
     } catch (e) {

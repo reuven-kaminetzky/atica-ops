@@ -238,3 +238,32 @@ export async function getAnalyticsDimensions() {
     return dal().analytics.getDimensions();
   } catch (e) { return []; }
 }
+
+// ── Alerts ────────────────────────────────────────────────
+export async function getAlerts(limit = 20) {
+  'use server';
+  try {
+    return await dal().alerts.getUnacknowledged(limit);
+  } catch (e) { return []; }
+}
+
+export async function getAlertSummary() {
+  'use server';
+  try {
+    return await dal().alerts.countByType();
+  } catch (e) { return []; }
+}
+
+export async function acknowledgeAlert(id) {
+  'use server';
+  try {
+    return await dal().alerts.acknowledge(id);
+  } catch (e) { return null; }
+}
+
+export async function refreshAlerts() {
+  'use server';
+  try {
+    return await dal().alerts.refresh();
+  } catch (e) { return { error: e.message }; }
+}

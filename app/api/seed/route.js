@@ -6,6 +6,14 @@ export async function POST(request) {
     const { requireAuth } = require('../../../lib/auth');
     await requireAuth(request, 'admin');
 
+    // Extra guard: destructive endpoint requires confirmation header
+    if (request.headers.get('x-confirm-destructive') !== 'true') {
+      return NextResponse.json({
+        error: 'Destructive operation. Pass header X-Confirm-Destructive: true',
+        warning: 'This will delete and re-seed all master products, vendors, and product stacks.',
+      }, { status: 400 });
+    }
+
     const { MP_SEEDS } = require('../../../lib/products');
     const { sql } = require('../../../lib/dal/db');
     const db = sql();
