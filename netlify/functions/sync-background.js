@@ -164,57 +164,63 @@ exports.handler = async function(event) {
     results.styleErrors = styleErrors;
     log('sync.styles.done', { created: stylesCreated, errors: styleErrors });
 
-    // ── Step 4b: Extract variant options (Fit/Size/Length) ───
-    // Analytics needs variant-level dimensions. Extract from Shopify
-    // option1/option2/option3 and store in app_settings until Almond
-    // creates a proper variants table.
-    const variantSummary = {};
+    // ── Step 4b: Upsert SKUs from variant options ─────────
+    // Each Shopify variant becomes a SKU row (fit + size + length).
+    // Option mapping detected from product.options[].name.
+    await setStatus(sql, { status: 'running', step: 'creating_skus', matched: totalMatched });
+    let skusCreated = 0;
+    let skuErrors = 0;
+
     for (const [mpId, data] of Object.entries(mpMatches)) {
       for (const p of data.products) {
-        const optionNames = (p.options || []).map(o => o.name);
+        // Build option name → position map from product.options
+        // e.g. { fit: 1, size: 2, length: 3 } or { size: 1 }
+        const optMap = {};
+        for (const opt of (p.options || [])) {
+          const name = (opt.name || '').toLowerCase().trim();
+          if (/fit|drop|style/i.test(name)) optMap.fit = opt.position;
+          else if (/size/i.test(name)) optMap.size = opt.position;
+          else if (/length|inseam/i.test(name)) optMap.length = opt.position;
+          else if (/color|colour/i.test(name)) { /* skip color — already on style */ }
+          else if (opt.position === 1 && !optMap.size) optMap.size = opt.position; // fallback: first option = size
+        }
+
+        const styleId = String(p.id);
         for (const v of (p.variants || [])) {
-          const key = `${p.id}:${v.id}`;
-          variantSummary[key] = {
-            styleId: String(p.id),
-            mpId,
-            variantId: v.id,
-            sku: v.sku,
-            price: v.price,
-            inventory: v.inventory_quantity || 0,
-            option1: v.option1 || null,
-            option2: v.option2 || null,
-            option3: v.option3 || null,
-            optionNames,
-          };
+          const fit = optMap.fit ? (v[`option${optMap.fit}`] || null) : null;
+          const size = optMap.size ? (v[`option${optMap.size}`] || null) : (v.option1 || null);
+          const length = optMap.length ? (v[`option${optMap.length}`] || null) : null;
+
+          if (!size && !fit) continue; // skip variants with no dimension data
+
+          try {
+            await sql`
+              INSERT INTO skus (style_id, mp_id, fit, size, length, sku_code, shopify_variant_id, shopify_inventory_item_id)
+              VALUES (${styleId}, ${mpId}, ${fit}, ${size}, ${length},
+                ${v.sku || null}, ${v.id}, ${v.inventory_item_id || null})
+              ON CONFLICT (shopify_variant_id) DO UPDATE SET
+                fit = EXCLUDED.fit, size = EXCLUDED.size, length = EXCLUDED.length,
+                sku_code = EXCLUDED.sku_code, is_active = true
+            `;
+            skusCreated++;
+          } catch (e) {
+            skuErrors++;
+            if (skusCreated === 0 && e.message.includes('does not exist')) {
+              log('sync.skus.table_missing');
+              break;
+            }
+          }
         }
       }
-    }
-    const variantCount = Object.keys(variantSummary).length;
-    results.variantsExtracted = variantCount;
-    log('sync.variants.extracted', { count: variantCount });
 
-    // Store in app_settings as interim (Almond will create proper table)
-    try {
-      // Store summary stats, not full data (too large for JSONB)
-      const fitSet = new Set();
-      const sizeSet = new Set();
-      const lengthSet = new Set();
-      for (const v of Object.values(variantSummary)) {
-        if (v.option1) fitSet.add(v.option1);
-        if (v.option2) sizeSet.add(v.option2);
-        if (v.option3) lengthSet.add(v.option3);
+      // Update status every 500 SKUs
+      if (skusCreated % 500 === 0 && skusCreated > 0) {
+        await setStatus(sql, { status: 'running', step: 'creating_skus', progress: `${skusCreated} SKUs` });
       }
-      const variantMeta = JSON.stringify({
-        updatedAt: new Date().toISOString(),
-        totalVariants: variantCount,
-        uniqueFits: [...fitSet].sort(),
-        uniqueSizes: [...sizeSet].sort(),
-        uniqueLengths: [...lengthSet].sort(),
-        sampleOptionNames: Object.values(variantSummary).slice(0, 3).map(v => v.optionNames),
-      });
-      await sql`INSERT INTO app_settings (key, value) VALUES ('variant_options', ${variantMeta}::jsonb) ON CONFLICT (key) DO UPDATE SET value = ${variantMeta}::jsonb, updated_at = NOW()`;
-      log('sync.variants.stored_meta');
-    } catch (e) { log('sync.variants.store_skip', { reason: e.message.slice(0, 60) }); }
+    }
+    results.skusCreated = skusCreated;
+    results.skuErrors = skuErrors;
+    log('sync.skus.done', { created: skusCreated, errors: skuErrors });
 
     // ── Step 5: Fetch orders (30 days) ──────────────────
     await setStatus(sql, { status: 'running', step: 'fetching_orders' });
