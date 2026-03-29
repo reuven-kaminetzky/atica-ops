@@ -1,10 +1,19 @@
 import { getDataBreakdown } from '../actions';
-import AnalyticsClient from './client';
+import DataExplorer from '../../../components/data-explorer';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AnalyticsPage() {
-  // Initial load: category breakdown. Client re-fetches when user changes groupBy.
-  const initial = await getDataBreakdown({ groupBy: 'category', columns: ['stock', 'sales', 'velocity', 'days', 'incoming'] });
-  return <AnalyticsClient initial={initial} />;
+  const initial = await getDataBreakdown({
+    groupBy: 'category',
+    columns: ['stock', 'incoming', 'sales', 'velocity', 'days', 'x_rate'],
+  });
+  return (
+    <DataExplorer
+      initial={initial}
+      defaultGroupBy="category"
+      title="Analytics"
+      showAllDimensions
+    />
+  );
 }

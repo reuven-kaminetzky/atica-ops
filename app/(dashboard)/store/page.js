@@ -1,166 +1,197 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 
 const STORES = ['Lakewood', 'Flatbush', 'Crown Heights', 'Monsey'];
 
 export default function StorePage() {
   const [store, setStore] = useState('Lakewood');
-  const [data, setData] = useState(null);
+  const [data, setData]   = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load(s) {
     setLoading(true);
     try {
-      // Call server action via API-style fetch since we're client component
       const res = await fetch(`/api/store?name=${encodeURIComponent(s)}`);
-      const d = await res.json();
-      setData(d);
-    } catch (e) {
-      setData({ error: e.message });
-    }
+      setData(await res.json());
+    } catch (e) { setData({ error: e.message }); }
     setLoading(false);
   }
 
   useEffect(() => { load(store); }, [store]);
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Store View</h1>
-        <select value={store} onChange={e => { setStore(e.target.value); }}
-          className="px-3 py-2 rounded-[--radius-sm] border border-border-strong text-sm bg-surface font-semibold">
-          {STORES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+    <div className="max-w-4xl">
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-2xl font-bold tracking-tight">Store</h1>
+        <div className="flex gap-1.5">
+          {STORES.map(s => (
+            <button key={s} onClick={() => setStore(s)}
+              className={`px-3 py-1 rounded text-[12px] font-medium transition-colors ${
+                store === s
+                  ? 'bg-brand text-white'
+                  : 'bg-surface-sunken text-text-secondary hover:bg-surface-raised'
+              }`}>
+              {s}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-text-tertiary">Loading {store}...</div>
+        <p className="text-text-tertiary text-sm py-8">Loading {store}...</p>
       ) : data?.error ? (
-        <div className="p-4 rounded-[--radius-md] bg-danger-light text-danger text-sm">{data.error}</div>
+        <p className="text-danger text-sm py-4">{data.error}</p>
       ) : (
-        <>
-          {/* Confirmation alerts */}
-          {data.needsConfirmation?.length > 0 && (
-            <div className="bg-warning-light border border-warning/20 rounded-[--radius-md] p-4 mb-4">
-              <h2 className="text-sm font-bold text-warning mb-2">⚠ Transfers need your confirmation</h2>
-              {data.needsConfirmation.map(tr => {
-                const hours = tr.delivered_at ? Math.round((Date.now() - new Date(tr.delivered_at)) / 3600000) : 0;
-                return (
-                  <div key={tr.id} className="flex items-center justify-between py-2 border-b border-warning/10 last:border-0">
-                    <div className="text-sm">
-                      <span className="font-semibold">{tr.id}</span>
-                      <span className="text-text-secondary ml-2">{tr.total_units} units · {hours}h ago</span>
-                    </div>
-                    <button onClick={async () => {
-                      try {
-                        await fetch(`/api/transfers/${encodeURIComponent(tr.id)}/confirm`, {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ confirmedBy: store }),
-                        });
-                        load(store);
-                      } catch (e) { console.error(e); }
-                    }}
-                      className={`text-[11px] font-semibold px-3 py-1 rounded cursor-pointer ${
-                        hours >= 4 ? 'bg-danger text-white hover:bg-red-700' : 'bg-warning text-white hover:bg-yellow-700'
-                      }`}>{hours >= 4 ? 'CONFIRM (OVERDUE)' : 'Confirm Receipt'}</button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Incoming transfers (van) */}
-          <Section title="Incoming Deliveries" empty={!data.incomingTransfers?.length} emptyText="No deliveries scheduled">
-            {data.incomingTransfers?.map(tr => (
-              <div key={tr.id} className="flex items-center justify-between py-3 border-b border-border/30 last:border-0">
-                <div>
-                  <div className="font-semibold text-sm">{tr.id}</div>
-                  <div className="text-xs text-text-secondary mt-0.5">
-                    From {tr.from_location} · {tr.total_units} units
-                  </div>
-                  {tr.items && (
-                    <div className="text-xs text-text-tertiary mt-1">
-                      {(typeof tr.items === 'string' ? JSON.parse(tr.items) : tr.items)
-                        .slice(0, 3).map(i => `${i.qty}× ${i.mpName || i.mpId}`).join(', ')}
-                      {(typeof tr.items === 'string' ? JSON.parse(tr.items) : tr.items).length > 3 && ' ...'}
-                    </div>
-                  )}
-                </div>
-                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-                  tr.status === 'in_transit' ? 'bg-success-light text-success' :
-                  tr.status === 'delivered' ? 'bg-info-light text-info' :
-                  'bg-surface-sunken text-text-tertiary'
-                }`}>{tr.status?.replace(/_/g, ' ')}</span>
-              </div>
-            ))}
-          </Section>
-
-          {/* Stock alerts */}
-          <Section title="Stock Alerts" empty={!data.stockAlerts?.length} emptyText="All stock levels healthy">
-            <table className="w-full text-sm border-collapse">
-              <thead><tr className="border-b border-border">
-                <Th>Product</Th><Th>Category</Th><Th right>Stock</Th><Th right>Days</Th><Th>Signal</Th>
-              </tr></thead>
-              <tbody>
-                {data.stockAlerts?.map(mp => {
-                  const stock = parseInt(mp.total_inventory) || 0;
-                  const days = parseInt(mp.days_of_stock) || 999;
-                  return (
-                    <tr key={mp.id} className="border-b border-border/30">
-                      <td className="py-2 px-3 font-semibold">{mp.name}</td>
-                      <td className="py-2 px-3 text-text-secondary">{mp.category}</td>
-                      <td className={`py-2 px-3 text-right font-semibold ${stock === 0 ? 'text-danger' : 'text-warning'}`}>{stock}</td>
-                      <td className="py-2 px-3 text-right text-text-secondary">{days < 999 ? days + 'd' : '—'}</td>
-                      <td className="py-2 px-3">
-                        <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-                          stock === 0 ? 'bg-danger-light text-danger' : 'bg-warning-light text-warning'
-                        }`}>{stock === 0 ? 'OUT' : 'LOW'}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Section>
-
-          {/* PO awareness */}
-          <Section title="Coming Soon (POs)" empty={!data.incomingPOs?.length} emptyText="No shipments expected">
-            {data.incomingPOs?.map(po => (
-              <div key={po.id} className="flex items-center justify-between py-2 border-b border-border/30 last:border-0 text-sm">
-                <div>
-                  <span className="font-semibold">{po.mp_name || po.mp_id || '—'}</span>
-                  <span className="text-text-secondary ml-2">{(po.units || 0).toLocaleString()} units</span>
-                </div>
-                <div className="text-right">
-                  <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
-                    po.stage === 'in_transit' ? 'bg-success-light text-success' : 'bg-surface-sunken text-text-tertiary'
-                  }`}>{po.stage?.replace(/_/g, ' ')}</span>
-                  {po.eta && (
-                    <span className="text-xs text-text-tertiary ml-2">
-                      ETA {new Date(po.eta).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-          </Section>
-        </>
+        <StoreContent store={store} data={data} reload={() => load(store)} />
       )}
     </div>
   );
 }
 
-function Section({ title, children, empty, emptyText }) {
-  return (
-    <div className="bg-surface rounded-[--radius-md] border border-border p-4 mb-3 shadow-[--shadow-subtle]">
-      <h2 className="text-sm font-semibold mb-3 pb-2 border-b border-border/50">{title}</h2>
-      {empty ? <p className="text-sm text-text-tertiary py-4 text-center">{emptyText}</p> : children}
-    </div>
-  );
-}
+function StoreContent({ store, data, reload }) {
+  const needsConfirmation = data?.needsConfirmation || [];
+  const incomingTransfers = data?.incomingTransfers || [];
+  const stockAlerts       = data?.stockAlerts || [];
+  const incomingPOs       = data?.incomingPOs || [];
 
-function Th({ children, right }) {
-  return <th className={`py-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary border-b border-border ${right ? 'text-right' : 'text-left'}`}>{children}</th>;
+  return (
+    <>
+      {/* Unconfirmed deliveries alert */}
+      {needsConfirmation.length > 0 && (
+        <div className="border border-warning/20 bg-warning/5 rounded-[--radius-sm] px-4 py-3 mb-5">
+          <p className="text-sm font-semibold text-warning mb-2">
+            {needsConfirmation.length} transfer{needsConfirmation.length > 1 ? 's' : ''} need confirmation
+          </p>
+          {needsConfirmation.map(tr => {
+            const hours = tr.delivered_at ? Math.round((Date.now() - new Date(tr.delivered_at)) / 3600000) : 0;
+            return (
+              <div key={tr.id} className="flex items-center justify-between py-1.5 border-b border-warning/10 last:border-0 text-sm">
+                <span>
+                  <span className="font-mono text-[12px]">{tr.id}</span>
+                  <span className="text-text-secondary ml-2">{tr.total_units} units · {hours}h ago</span>
+                </span>
+                <button
+                  onClick={async () => {
+                    await fetch(`/api/transfers/${encodeURIComponent(tr.id)}/confirm`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ confirmedBy: store }),
+                    });
+                    reload();
+                  }}
+                  className={`text-xs font-semibold px-3 py-1 rounded transition-colors ${
+                    hours >= 4
+                      ? 'bg-danger text-white hover:bg-danger/80'
+                      : 'bg-warning text-white hover:bg-warning/80'
+                  }`}>
+                  {hours >= 4 ? 'CONFIRM — OVERDUE' : 'Confirm receipt'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Stock alerts */}
+      {stockAlerts.length > 0 && (
+        <div className="mb-7">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary mb-2">Stock Alerts</h2>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] text-text-tertiary uppercase tracking-wider">
+                <th className="pb-2 pr-4 font-medium">Product</th>
+                <th className="pb-2 pr-4 font-medium">Category</th>
+                <th className="pb-2 pr-4 font-medium text-right">Stock</th>
+                <th className="pb-2 font-medium text-right">Days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockAlerts.map(mp => {
+                const stock = parseInt(mp.total_inventory) || 0;
+                const days  = parseInt(mp.days_of_stock) || 999;
+                return (
+                  <tr key={mp.id} className="border-b border-border/50">
+                    <td className="py-2.5 pr-4 font-medium">
+                      <Link href={`/products/${mp.id}`} className="text-text hover:text-brand no-underline">{mp.name}</Link>
+                    </td>
+                    <td className="py-2.5 pr-4 text-text-secondary">{mp.category}</td>
+                    <td className={`py-2.5 pr-4 text-right font-mono text-[12px] ${stock === 0 ? 'text-danger font-bold' : 'text-warning'}`}>
+                      {stock}
+                    </td>
+                    <td className={`py-2.5 text-right font-mono text-[12px] ${days < 30 ? 'text-danger' : days < 60 ? 'text-warning' : 'text-text-secondary'}`}>
+                      {days < 999 ? `${days}d` : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Incoming transfers */}
+      {incomingTransfers.length > 0 && (
+        <div className="mb-7">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary mb-2">Incoming Deliveries</h2>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] text-text-tertiary uppercase tracking-wider">
+                <th className="pb-2 pr-4 font-medium">Transfer</th>
+                <th className="pb-2 pr-4 font-medium">From</th>
+                <th className="pb-2 pr-4 font-medium">Status</th>
+                <th className="pb-2 font-medium text-right">Units</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incomingTransfers.map(tr => (
+                <tr key={tr.id} className="border-b border-border/50">
+                  <td className="py-2.5 pr-4 font-mono text-[12px]">{tr.id}</td>
+                  <td className="py-2.5 pr-4 text-text-secondary">{tr.from_location}</td>
+                  <td className={`py-2.5 pr-4 ${tr.status === 'in_transit' ? 'text-success' : tr.status === 'delivered' ? 'text-info' : 'text-text-secondary'}`}>
+                    {tr.status?.replace(/_/g, ' ')}
+                  </td>
+                  <td className="py-2.5 text-right font-mono text-[12px]">{tr.total_units}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Incoming POs */}
+      {incomingPOs.length > 0 && (
+        <div className="mb-7">
+          <h2 className="text-[11px] font-bold uppercase tracking-widest text-text-tertiary mb-2">Incoming from POs</h2>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left text-[11px] text-text-tertiary uppercase tracking-wider">
+                <th className="pb-2 pr-4 font-medium">Product</th>
+                <th className="pb-2 pr-4 font-medium">Stage</th>
+                <th className="pb-2 pr-4 font-medium text-right">Units</th>
+                <th className="pb-2 font-medium">ETA</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incomingPOs.map(po => (
+                <tr key={po.id} className="border-b border-border/50">
+                  <td className="py-2.5 pr-4 font-medium">{po.mp_name || po.mp_id || '—'}</td>
+                  <td className="py-2.5 pr-4 text-text-secondary">{po.stage?.replace(/_/g, ' ')}</td>
+                  <td className="py-2.5 pr-4 text-right font-mono text-[12px]">{(po.units || 0).toLocaleString()}</td>
+                  <td className="py-2.5 text-text-secondary">
+                    {po.eta ? new Date(po.eta).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {stockAlerts.length === 0 && incomingTransfers.length === 0 && incomingPOs.length === 0 && needsConfirmation.length === 0 && (
+        <p className="text-text-tertiary text-sm py-8">All clear — nothing to action for {store}.</p>
+      )}
+    </>
+  );
 }
