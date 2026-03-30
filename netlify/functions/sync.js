@@ -37,10 +37,16 @@ async function setAppSetting(sql, key, obj) {
 async function triggerSync() {
   const sql = neon();
 
-  // Guard: don't re-trigger if already running
+  // Guard: don't re-trigger if already running (but allow reset after 15 min)
   const current = await getAppSetting(sql, 'sync_status');
   if (current && current.status === 'running') {
-    return { triggered: false, message: 'Sync already running', step: current.step };
+    const startedAt = current.startedAt ? new Date(current.startedAt).getTime() : 0;
+    const elapsed = Date.now() - startedAt;
+    const FIFTEEN_MINUTES = 15 * 60 * 1000;
+    if (elapsed < FIFTEEN_MINUTES) {
+      return { triggered: false, message: 'Sync already running', step: current.step, elapsed: `${Math.round(elapsed / 1000)}s` };
+    }
+    // Stale — sync crashed. Reset and allow re-trigger.
   }
 
   // Set initial status in database
@@ -73,6 +79,16 @@ async function unmatchedTitles() {
   return { count: 0, titles: [], message: 'No unmatched data. Run a sync first.' };
 }
 
+async function resetSync() {
+  const sql = neon();
+  await setAppSetting(sql, 'sync_status', {
+    status: 'reset',
+    resetAt: new Date().toISOString(),
+    message: 'Manually reset via /api/sync/reset',
+  });
+  return { reset: true, message: 'Sync status cleared. You can trigger a new sync.' };
+}
+
 async function variantOptions() {
   const sql = neon();
   const data = await getAppSetting(sql, 'variant_options');
@@ -84,6 +100,7 @@ async function variantOptions() {
 
 const ROUTES = [
   { method: 'POST', path: 'trigger',   handler: triggerSync,    noClient: true },
+  { method: 'POST', path: 'reset',     handler: resetSync,      noClient: true },
   { method: 'GET',  path: 'status',    handler: syncStatus,     noClient: true },
   { method: 'GET',  path: 'unmatched', handler: unmatchedTitles, noClient: true },
   { method: 'GET',  path: 'variants',  handler: variantOptions,  noClient: true },
