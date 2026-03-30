@@ -1,5 +1,5 @@
 /**
- * lib/dal/analytics.js — Flexible Data Breakdown
+ * lib/dal/analytics.js â Flexible Data Breakdown
  *
  * Supports the Group By / THEN BY pattern from ATCM + Lightspeed R.
  * Dynamic GROUP BY queries based on user-selected dimensions.
@@ -19,7 +19,7 @@
 
 const { sql } = require('./db');
 
-// ── Dimension definitions ─────────────────────────────────
+// ââ Dimension definitions âââââââââââââââââââââââââââââââââ
 // Maps user-facing dimension names to SQL expressions
 const DIMENSIONS = {
   category: {
@@ -78,7 +78,7 @@ const DIMENSIONS = {
   },
 };
 
-// ── Column definitions ────────────────────────────────────
+// ââ Column definitions ââââââââââââââââââââââââââââââââââââ
 // Maps user-facing column names to SQL aggregations
 const COLUMNS = {
   stock: 'COALESCE(SUM(mp.total_inventory), 0)::int',
@@ -103,15 +103,15 @@ const SORT_COLUMNS = {
 const VALID_DIMENSIONS = Object.keys(DIMENSIONS);
 const VALID_COLUMNS = Object.keys(COLUMNS);
 
-// ── Main query builder ────────────────────────────────────
+// ââ Main query builder ââââââââââââââââââââââââââââââââââââ
 
 const analytics = {
 
   /**
-   * getBreakdown — the core analytics query
+   * getBreakdown â the core analytics query
    *
    * Returns rows grouped by the primary dimension, with aggregated metrics.
-   * Does NOT return nested children — the client calls again with filters
+   * Does NOT return nested children â the client calls again with filters
    * to drill into a specific group (lazy loading, not recursive SQL).
    */
   async getBreakdown(opts = {}) {
@@ -124,7 +124,7 @@ const analytics = {
 
     const dim = DIMENSIONS[groupBy];
 
-    // Date range for sales (validated as integer — safe for interpolation)
+    // Date range for sales (validated as integer â safe for interpolation)
     const days = Math.max(1, Math.min(365, parseInt(filters.dateRange) || 30));
     const limit = Math.max(1, Math.min(500, parseInt(filters.limit) || 200));
 
@@ -224,10 +224,10 @@ const analytics = {
 
     let rows = [];
     try {
-      const result = await db.unsafe(query, params);
+      const result = await db(query, params);
       rows = Array.isArray(result) ? result : [];
     } catch (e) {
-      // Query failed — return empty with error info
+      // Query failed â return empty with error info
       return { groupBy, dateRange: days, rows: [], totals: {}, error: e.message };
     }
 
@@ -266,7 +266,7 @@ const analytics = {
   },
 
   /**
-   * getDimensions — returns available dimensions for the UI
+   * getDimensions â returns available dimensions for the UI
    */
   getDimensions() {
     return VALID_DIMENSIONS.map(d => ({
@@ -276,7 +276,7 @@ const analytics = {
   },
 
   /**
-   * getColumns — returns available columns for the UI
+   * getColumns â returns available columns for the UI
    */
   getColumns() {
     return VALID_COLUMNS.map(c => ({
