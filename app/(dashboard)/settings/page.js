@@ -91,6 +91,7 @@ export default function SettingsPage() {
               ['API version', '2025-04'],
               ['Plan',        'Shopify Plus'],
               ['Stack',       'Next.js · Neon Postgres · Netlify'],
+              ['Monthly OpEx','$25,000 (edit in app_settings → opex_monthly)'],
             ].map(([k, v]) => (
               <tr key={k} className="border-b border-border/50 last:border-0">
                 <td className="py-1.5 pr-6 text-text-tertiary text-[12px] w-32">{k}</td>

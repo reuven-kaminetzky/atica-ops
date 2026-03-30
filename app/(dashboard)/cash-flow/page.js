@@ -10,6 +10,8 @@ export default async function CashFlowPage() {
 
   // Build a merged week-by-week table
   const now = new Date();
+  const weeksWithRevenue = inflow.filter(r => parseFloat(r.revenue) > 0).length;
+  const hasInflow = weeksWithRevenue >= 4;
   const opexPerWeek = Math.round((opexMonthly || 25000) / 4.33);
 
   const weeks = Array.from({ length: WEEKS }, (_, w) => {
@@ -58,6 +60,18 @@ export default async function CashFlowPage() {
         {overdue.length > 0 && <span className="text-danger font-semibold"> · {overdue.length} overdue</span>}
         {due.length > 0 && <span className="text-warning font-semibold"> · {due.length} due</span>}
       </p>
+
+      {/* Data quality warning */}
+      {!hasInflow && (
+        <div className="border border-warning/20 bg-warning/5 rounded-[--radius-sm] px-4 py-3 mb-5 text-sm">
+          <span className="font-semibold text-warning">Revenue projection unavailable.</span>{' '}
+          <span className="text-text-secondary">
+            {weeksWithRevenue === 0
+              ? 'No sales data yet — run sync to pull orders from Shopify.'
+              : `Only ${weeksWithRevenue} week${weeksWithRevenue > 1 ? 's' : ''} of data. Need 4+ weeks for a reliable projection.`}
+          </span>
+        </div>
+      )}
 
       {/* Overdue alert */}
       {overdue.length > 0 && (
