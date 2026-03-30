@@ -222,6 +222,81 @@ exports.handler = async function(event) {
     results.skuErrors = skuErrors;
     log('sync.skus.done', { created: skusCreated, errors: skuErrors });
 
+    // ── Step 4c: Seed inventory from Shopify levels ─────
+    // Fetches per-location inventory for each Shopify location,
+    // resolves inventory_item_id → sku_id, inserts initial_seed
+    // events. Idempotent: only seeds if no events exist for that SKU+location.
+    await setStatus(sql, { status: 'running', step: 'seeding_inventory' });
+    let invSeeded = 0;
+    let invSkipped = 0;
+    try {
+      const { locations: shopifyLocations } = await client.getLocations();
+      log('sync.inventory.locations', { count: (shopifyLocations || []).length });
+
+      // Map Shopify location names to our location codes
+      const LOC_MAP = {
+        'lakewood': 'LKW', 'flatbush': 'FLT', 'crown heights': 'CRH',
+        'monsey': 'MNS', 'online': 'ONL', 'reserve': 'WH', 'warehouse': 'WH',
+      };
+      function resolveLocationCode(name) {
+        const lower = (name || '').toLowerCase();
+        for (const [key, code] of Object.entries(LOC_MAP)) {
+          if (lower.includes(key)) return code;
+        }
+        return null;
+      }
+
+      for (const loc of (shopifyLocations || [])) {
+        const locCode = resolveLocationCode(loc.name);
+        if (!locCode) { log('sync.inventory.unknown_location', { name: loc.name, id: loc.id }); continue; }
+
+        // Update locations table with Shopify ID
+        try {
+          await sql`UPDATE locations SET shopify_location_id = ${loc.id} WHERE code = ${locCode} AND shopify_location_id IS NULL`;
+        } catch { /* ignore */ }
+
+        const { inventory_levels: levels } = await client.getInventoryLevels(loc.id);
+        for (const level of (levels || [])) {
+          if (!level.inventory_item_id || !level.available) continue;
+
+          // Resolve inventory_item_id → sku_id
+          let skuId = null;
+          try {
+            const [skuRow] = await sql`SELECT id FROM skus WHERE shopify_inventory_item_id = ${level.inventory_item_id} LIMIT 1`;
+            if (skuRow) skuId = skuRow.id;
+          } catch { /* skus table may not exist */ }
+          if (!skuId) continue;
+
+          // Only seed if no events exist yet for this SKU+location
+          try {
+            const [existing] = await sql`SELECT 1 FROM inventory_events WHERE sku_id = ${skuId} AND location_code = ${locCode} LIMIT 1`;
+            if (existing) { invSkipped++; continue; }
+
+            await sql`
+              INSERT INTO inventory_events (sku_id, location_code, event_type, quantity, reference_type, reference_id, notes, created_by)
+              VALUES (${skuId}, ${locCode}, 'initial_seed', ${level.available}, 'shopify_sync', ${String(level.inventory_item_id)},
+                ${'Seeded from Shopify inventory levels'}, 'sync')
+            `;
+            invSeeded++;
+          } catch (e) {
+            if (invSeeded === 0 && e.message.includes('does not exist')) {
+              log('sync.inventory.table_missing');
+              break;
+            }
+          }
+        }
+
+        if (invSeeded % 200 === 0 && invSeeded > 0) {
+          await setStatus(sql, { status: 'running', step: 'seeding_inventory', progress: `${invSeeded} events, ${locCode}` });
+        }
+      }
+    } catch (e) {
+      log('sync.inventory.error', { error: e.message.slice(0, 80) });
+    }
+    results.inventorySeeded = invSeeded;
+    results.inventorySkipped = invSkipped;
+    log('sync.inventory.done', { seeded: invSeeded, skipped: invSkipped });
+
     // ── Step 5: Fetch orders (30 days) ──────────────────
     await setStatus(sql, { status: 'running', step: 'fetching_orders' });
     const { REORDER_VELOCITY_DAYS, SEASONAL_MULTIPLIERS } = require('../../lib/constants');
