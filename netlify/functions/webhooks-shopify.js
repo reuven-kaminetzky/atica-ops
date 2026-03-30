@@ -128,8 +128,38 @@ exports.handler = async (event) => {
     }
 
     if (topic === 'inventory_levels/update') {
-      result.inventory = { itemId: payload.inventory_item_id, locationId: payload.location_id, available: payload.available };
-      log('webhook.inventory_noted', { itemId: payload.inventory_item_id, available: payload.available });
+      // Resolve inventory_item_id → sku_id
+      let skuId = null;
+      try {
+        const [skuRow] = await sql`SELECT id FROM skus WHERE shopify_inventory_item_id = ${payload.inventory_item_id} LIMIT 1`;
+        if (skuRow) skuId = skuRow.id;
+      } catch { /* skus table may not exist */ }
+
+      // Resolve Shopify location_id → our location_code
+      let locCode = null;
+      try {
+        const [locRow] = await sql`SELECT code FROM locations WHERE shopify_location_id = ${payload.location_id} LIMIT 1`;
+        if (locRow) locCode = locRow.code;
+      } catch { /* locations table may not exist */ }
+
+      if (skuId && locCode) {
+        // Compute delta: new available - current on_hand
+        try {
+          const [current] = await sql`SELECT COALESCE(SUM(quantity), 0)::int AS on_hand FROM inventory_events WHERE sku_id = ${skuId} AND location_code = ${locCode}`;
+          const delta = (payload.available || 0) - (current?.on_hand || 0);
+          if (delta !== 0) {
+            await sql`
+              INSERT INTO inventory_events (sku_id, location_code, event_type, quantity, reference_type, reference_id, notes, created_by)
+              VALUES (${skuId}, ${locCode}, 'reconciliation', ${delta}, 'shopify_webhook', ${String(payload.inventory_item_id)},
+                ${'Shopify inventory_levels/update webhook'}, 'webhook')
+            `;
+            log('webhook.inventory_event', { skuId, locCode, delta, available: payload.available });
+          }
+        } catch (e) { log('webhook.inventory_event_err', { error: e.message.slice(0, 60) }); }
+      }
+
+      result.inventory = { itemId: payload.inventory_item_id, locationId: payload.location_id, available: payload.available, skuId, locCode };
+      log('webhook.inventory_processed', { itemId: payload.inventory_item_id, available: payload.available, skuId, locCode });
     }
 
     // Mark webhook as processed
