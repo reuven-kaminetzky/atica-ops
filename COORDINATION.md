@@ -44,6 +44,7 @@ Custom ERP for Atica Man menswear retail.
 |-----|-------|
 | Live URL | https://atica-ops-v3.netlify.app |
 | Site Password | atica2026ops |
+| API Key | atica-admin-2026-ops (use in X-Api-Key header for API routes) |
 | Netlify Site ID | 053ab1d3-c859-49b2-92ba-d115139e8b4c |
 | Netlify Team ID | 69c1d34eb58903aaa4115dc9 |
 | Shopify Store | atica-brand.myshopify.com (Plus) |
@@ -52,6 +53,12 @@ Custom ERP for Atica Man menswear retail.
 | DB | Neon Postgres via @netlify/neon (auto-provisioned) |
 | Repo | github.com/reuven-kaminetzky/atica-ops |
 | Branch | main (push directly, no PRs) |
+
+**AUTH:** `SKIP_AUTH` env var has been DELETED. All API routes now require either:
+- `X-Api-Key: atica-admin-2026-ops` header (full admin access), OR
+- Same-origin browser requests (authenticated by site password cookie)
+
+API calls from code (curl, fetch from other services) MUST include the X-Api-Key header.
 
 ---
 

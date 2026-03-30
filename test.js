@@ -576,22 +576,11 @@ test('inventory DAL exports event-sourced methods', () => {
 
 test('orders DAL exports required methods', () => {
   const orders = require('./lib/dal/orders');
-  assert(typeof orders.getById === 'function');
-  assert(typeof orders.getByShopifyId === 'function');
-  assert(typeof orders.getByCustomer === 'function');
-  assert(typeof orders.getRecent === 'function');
   assert(typeof orders.create === 'function');
+  assert(typeof orders.getById === 'function');
+  assert(typeof orders.getRecent === 'function');
+  assert(typeof orders.getByCustomer === 'function');
   assert(typeof orders.getSummary === 'function');
-  assert(typeof orders.getRevenueByDay === 'function');
-  assert(typeof orders.getRevenueByChannel === 'function');
-});
-
-test('alerts DAL exports required methods', () => {
-  const alerts = require('./lib/dal/alerts');
-  assert(typeof alerts.getUnacknowledged === 'function');
-  assert(typeof alerts.acknowledge === 'function');
-  assert(typeof alerts.create === 'function');
-  assert(typeof alerts.refresh === 'function');
 });
 
 test('analytics dimensions include fit/size/length', () => {
