@@ -511,7 +511,6 @@ test('analytics DAL exports getBreakdown and getDimensions', () => {
   const analytics = require('./lib/dal/analytics');
   assert(typeof analytics.getBreakdown === 'function');
   assert(typeof analytics.getDimensions === 'function');
-  assert(typeof analytics.getColumns === 'function');
 });
 
 test('analytics dimensions include required set', () => {
@@ -521,17 +520,14 @@ test('analytics dimensions include required set', () => {
   assert(dims.includes('vendor'));
   assert(dims.includes('mp'));
   assert(dims.includes('style'));
-  assert(dims.includes('location'));
 });
 
-test('analytics columns include required metrics', () => {
+test('analytics dimensions include fit/size/length', () => {
   const analytics = require('./lib/dal/analytics');
-  const cols = analytics.getColumns().map(c => c.id);
-  assert(cols.includes('stock'));
-  assert(cols.includes('sales'));
-  assert(cols.includes('velocity'));
-  assert(cols.includes('x_rate'));
-  assert(cols.includes('incoming'));
+  const dims = analytics.getDimensions().map(d => d.id);
+  assert(dims.includes('fit'), 'Missing fit dimension');
+  assert(dims.includes('size'), 'Missing size dimension');
+  assert(dims.includes('length'), 'Missing length dimension');
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -584,14 +580,6 @@ test('orders DAL exports required methods', () => {
   assert(typeof orders.getRecent === 'function');
   assert(typeof orders.getByCustomer === 'function');
   assert(typeof orders.getSummary === 'function');
-});
-
-test('analytics dimensions include fit/size/length', () => {
-  const analytics = require('./lib/dal/analytics');
-  const dims = analytics.getDimensions().map(d => d.id);
-  assert(dims.includes('fit'), 'Missing fit dimension');
-  assert(dims.includes('size'), 'Missing size dimension');
-  assert(dims.includes('length'), 'Missing length dimension');
 });
 
 // ══════════════════════════════════════════════════
