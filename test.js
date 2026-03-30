@@ -408,13 +408,16 @@ test('authenticate allows OPTIONS', () => {
   assert(result.ok === true);
 });
 
-test('authenticate allows when SKIP_AUTH=true', () => {
-  const orig = process.env.SKIP_AUTH;
-  process.env.SKIP_AUTH = 'true';
+test('authenticate allows same-origin requests', () => {
+  const result = auth.authenticate({ httpMethod: 'GET', headers: { origin: 'https://atica-ops-v3.netlify.app' } });
+  assert(result.ok === true);
+  assert(result.source === 'session');
+});
+
+test('authenticate allows internal requests (no origin)', () => {
   const result = auth.authenticate({ httpMethod: 'GET', headers: {} });
   assert(result.ok === true);
-  assert(result.source === 'skip');
-  process.env.SKIP_AUTH = orig;
+  assert(result.source === 'internal');
 });
 
 // ═══════════════════════════════════════════════════════════
