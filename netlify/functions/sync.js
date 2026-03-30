@@ -51,27 +51,12 @@ async function triggerSync() {
     updatedAt: new Date().toISOString(),
   });
 
-  // Trigger background function
-  const siteUrl = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://atica-ops.netlify.app';
-  try {
-    const res = await fetch(`${siteUrl}/.netlify/functions/sync-background`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ triggeredBy: 'settings-ui' }),
-    });
-    return {
-      triggered: true,
-      backgroundStatus: res.status,
-      message: 'Sync started. Poll /api/sync/status for progress.',
-    };
-  } catch (err) {
-    await setAppSetting(sql, 'sync_status', {
-      status: 'failed',
-      error: `Failed to trigger background function: ${err.message}`,
-      updatedAt: new Date().toISOString(),
-    });
-    throw new RouteError(502, `Failed to trigger background sync: ${err.message}`);
-  }
+  // Don't call background function from here — the browser does it directly.
+  // This avoids the site password blocking internal function-to-function calls.
+  return {
+    triggered: true,
+    message: 'Status set. Browser should call /.netlify/functions/sync-background directly.',
+  };
 }
 
 async function syncStatus() {

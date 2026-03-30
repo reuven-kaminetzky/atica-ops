@@ -185,10 +185,25 @@ function SyncPanel() {
   async function triggerSync() {
     setStatus({ status: 'starting' });
     try {
-      const res = await fetch('/api/sync/trigger', { method: 'POST' });
-      const data = await res.json();
-      if (data.error) { setStatus({ status: 'failed', error: data.error }); return; }
+      // Step 1: Set status + guard via trigger endpoint (server action equivalent)
+      const triggerRes = await fetch('/api/sync/trigger', { method: 'POST' });
+      const triggerData = await triggerRes.json();
+      if (triggerData.error) { setStatus({ status: 'failed', error: triggerData.error }); return; }
+      if (triggerData.triggered === false) { setStatus(triggerData); return; } // already running
 
+      // Step 2: Call background function DIRECTLY from browser
+      // Browser has the site password cookie — bypasses Netlify's password gate.
+      // The trigger function's internal fetch gets blocked by the password,
+      // but the browser's fetch doesn't.
+      try {
+        await fetch('/.netlify/functions/sync-background', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ triggeredBy: 'settings-ui' }),
+        });
+      } catch { /* background function returns 202 — fetch may not resolve cleanly */ }
+
+      // Step 3: Poll for status
       setPolling(true);
       const poll = setInterval(async () => {
         const s = await checkStatus();
