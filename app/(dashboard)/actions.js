@@ -297,3 +297,39 @@ export async function getStockByLocation(locationCode) {
     return await dal().inventory.getStockByLocation(locationCode);
   } catch (e) { return []; }
 }
+
+// ── Orders (Sprint 3) ──────────────────────────────────
+export async function getOrder(id) {
+  'use server';
+  try {
+    return await dal().orders.getById(id);
+  } catch (e) { return null; }
+}
+
+export async function getRecentOrders(limit = 50) {
+  'use server';
+  try {
+    return await dal().orders.getRecent(limit);
+  } catch (e) { return []; }
+}
+
+export async function getOrdersSummary(days = 30) {
+  'use server';
+  try {
+    return await dal().orders.getSummary(days);
+  } catch (e) { return {}; }
+}
+
+export async function getRevenueByDay(days = 30) {
+  'use server';
+  try {
+    return await dal().orders.getRevenueByDay(days);
+  } catch (e) { return []; }
+}
+
+export async function getRevenueByChannel(days = 30) {
+  'use server';
+  try {
+    return await dal().orders.getRevenueByChannel(days);
+  } catch (e) { return []; }
+}
