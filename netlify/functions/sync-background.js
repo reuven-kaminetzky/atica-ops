@@ -172,31 +172,47 @@ exports.handler = async function(event) {
     // ── Step 4b: Upsert SKUs from variant options ─────────
     // Each Shopify variant becomes a SKU row (fit + size + length).
     // Option mapping detected from product.options[].name.
+    // Shirt sleeve length: three options (fit + neck size + sleeve length)
+    // Suit size+length: may be combined ("38R" → size=38, length=R)
     await setStatus(sql, { status: 'running', step: 'creating_skus', matched: totalMatched });
     let skusCreated = 0;
     let skuErrors = 0;
+    const optionPatterns = {}; // track what patterns we find for debugging
 
     for (const [mpId, data] of Object.entries(mpMatches)) {
       for (const p of data.products) {
         // Build option name → position map from product.options
-        // e.g. { fit: 1, size: 2, length: 3 } or { size: 1 }
         const optMap = {};
+        const optNames = [];
         for (const opt of (p.options || [])) {
           const name = (opt.name || '').toLowerCase().trim();
+          optNames.push(opt.name);
           if (/fit|drop|style/i.test(name)) optMap.fit = opt.position;
+          else if (/neck/i.test(name)) optMap.size = opt.position; // "Neck Size"
+          else if (/sleeve/i.test(name)) optMap.length = opt.position; // "Sleeve Length"
           else if (/size/i.test(name)) optMap.size = opt.position;
           else if (/length|inseam/i.test(name)) optMap.length = opt.position;
-          else if (/color|colour/i.test(name)) { /* skip color — already on style */ }
-          else if (opt.position === 1 && !optMap.size) optMap.size = opt.position; // fallback: first option = size
+          else if (/color|colour/i.test(name)) { /* skip — on style */ }
+          else if (opt.position === 1 && !optMap.size) optMap.size = opt.position;
         }
+
+        // Track option patterns for debugging
+        const pattern = optNames.join(' | ') || 'no options';
+        optionPatterns[pattern] = (optionPatterns[pattern] || 0) + 1;
 
         const styleId = String(p.id);
         for (const v of (p.variants || [])) {
-          const fit = optMap.fit ? (v[`option${optMap.fit}`] || null) : null;
-          const size = optMap.size ? (v[`option${optMap.size}`] || null) : (v.option1 || null);
-          const length = optMap.length ? (v[`option${optMap.length}`] || null) : null;
+          let fit = optMap.fit ? (v[`option${optMap.fit}`] || null) : null;
+          let size = optMap.size ? (v[`option${optMap.size}`] || null) : (v.option1 || null);
+          let length = optMap.length ? (v[`option${optMap.length}`] || null) : null;
 
-          if (!size && !fit) continue; // skip variants with no dimension data
+          // Split combined size+length for suits (e.g., "38R" → size=38, length=R)
+          if (size && !length && /^\d+[SRLT]$/i.test(size)) {
+            length = size.slice(-1).toUpperCase();
+            size = size.slice(0, -1);
+          }
+
+          if (!size && !fit) continue;
 
           try {
             await sql`
@@ -225,7 +241,8 @@ exports.handler = async function(event) {
     }
     results.skusCreated = skusCreated;
     results.skuErrors = skuErrors;
-    log('sync.skus.done', { created: skusCreated, errors: skuErrors });
+    results.optionPatterns = optionPatterns;
+    log('sync.skus.done', { created: skusCreated, errors: skuErrors, patterns: optionPatterns });
 
     // ── Step 4c: Inventory — seed once, reconcile after ──
     // First sync: insert initial_seed events from Shopify inventory levels.
