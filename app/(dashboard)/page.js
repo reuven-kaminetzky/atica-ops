@@ -103,6 +103,7 @@ export default async function DashboardHome() {
 
         <NavGroup label="Retail">
           <Tile href="/store"     icon="⊟" label="Store"      accent="#457b9d" />
+          <Tile href="/sales"     icon="◎" label="Sales"      accent="#2d6a4f" />
           <Tile href="/analytics" icon="◉" label="Analytics"  accent="#1d3557" />
         </NavGroup>
 

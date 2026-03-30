@@ -16,7 +16,9 @@ const NAV = [
     { href: '/warehouse', label: 'Warehouse', icon: '⊡' },
     { href: '/store', label: 'Store', icon: '⊟' },
   ]},
-  { section: 'INTELLIGENCE', items: [
+  { section: 'RETAIL', items: [
+    { href: '/store',     label: 'Store',     icon: '⊟' },
+    { href: '/sales',     label: 'Sales',     icon: '◎' },
     { href: '/analytics', label: 'Analytics', icon: '◩' },
   ]},
   { section: 'SYSTEM', items: [

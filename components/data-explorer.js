@@ -9,6 +9,9 @@ const ALL_DIMENSIONS = [
   { id: 'vendor',   label: 'Vendor' },
   { id: 'mp',       label: 'Product' },
   { id: 'style',    label: 'Style' },
+  { id: 'fit',      label: 'Fit' },
+  { id: 'size',     label: 'Size' },
+  { id: 'length',   label: 'Length' },
   { id: 'location', label: 'Location' },
   { id: 'grade',    label: 'Grade' },
 ];
@@ -46,7 +49,7 @@ export default function DataExplorer({
   // Which dimensions to expose in the GroupBy bar
   const dimensions = showAllDimensions
     ? ALL_DIMENSIONS
-    : ALL_DIMENSIONS.filter(d => ['category', 'vendor', 'mp', 'style', 'location', 'grade'].includes(d.id));
+    : ALL_DIMENSIONS.filter(d => ['category', 'vendor', 'mp', 'style', 'fit', 'size', 'location', 'grade'].includes(d.id));
 
   function fetch(newGroupBy, newCols, newThenBy) {
     startTransition(async () => {
