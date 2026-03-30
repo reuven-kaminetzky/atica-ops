@@ -227,18 +227,19 @@ exports.handler = async function(event) {
     results.skuErrors = skuErrors;
     log('sync.skus.done', { created: skusCreated, errors: skuErrors });
 
-    // ── Step 4c: Seed inventory from Shopify levels ─────
-    // Fetches per-location inventory for each Shopify location,
-    // resolves inventory_item_id → sku_id, inserts initial_seed
-    // events. Idempotent: only seeds if no events exist for that SKU+location.
-    await setStatus(sql, { status: 'running', step: 'seeding_inventory' });
+    // ── Step 4c: Inventory — seed once, reconcile after ──
+    // First sync: insert initial_seed events from Shopify inventory levels.
+    // Subsequent syncs: compare our SUM(events) vs Shopify's current level.
+    // If they differ, insert a reconciliation event with the delta.
+    // Between syncs, webhooks handle changes in real-time.
+    await setStatus(sql, { status: 'running', step: 'inventory_reconciliation' });
     let invSeeded = 0;
-    let invSkipped = 0;
+    let invReconciled = 0;
+    let invOk = 0;
     try {
       const { locations: shopifyLocations } = await client.getLocations();
       log('sync.inventory.locations', { count: (shopifyLocations || []).length });
 
-      // Map Shopify location names to our location codes
       const LOC_MAP = {
         'lakewood': 'LKW', 'flatbush': 'FLT', 'crown heights': 'CRH',
         'monsey': 'MNS', 'online': 'ONL', 'reserve': 'WH', 'warehouse': 'WH',
@@ -262,7 +263,8 @@ exports.handler = async function(event) {
 
         const { inventory_levels: levels } = await client.getInventoryLevels(loc.id);
         for (const level of (levels || [])) {
-          if (!level.inventory_item_id || !level.available) continue;
+          if (!level.inventory_item_id) continue;
+          const shopifyQty = level.available || 0;
 
           // Resolve inventory_item_id → sku_id
           let skuId = null;
@@ -272,35 +274,67 @@ exports.handler = async function(event) {
           } catch { /* skus table may not exist */ }
           if (!skuId) continue;
 
-          // Only seed if no events exist yet for this SKU+location
           try {
-            const [existing] = await sql`SELECT 1 FROM inventory_events WHERE sku_id = ${skuId} AND location_code = ${locCode} LIMIT 1`;
-            if (existing) { invSkipped++; continue; }
+            // Check current state: do events exist for this SKU+location?
+            const [current] = await sql`SELECT COALESCE(SUM(quantity), 0)::int AS on_hand, COUNT(*)::int AS event_count FROM inventory_events WHERE sku_id = ${skuId} AND location_code = ${locCode}`;
 
-            await sql`
-              INSERT INTO inventory_events (sku_id, location_code, event_type, quantity, reference_type, reference_id, notes, created_by)
-              VALUES (${skuId}, ${locCode}, 'initial_seed', ${level.available}, 'shopify_sync', ${String(level.inventory_item_id)},
-                ${'Seeded from Shopify inventory levels'}, 'sync')
-            `;
-            invSeeded++;
+            if (current.event_count === 0) {
+              // SEED: first time — insert initial_seed event
+              if (shopifyQty !== 0) {
+                await sql`
+                  INSERT INTO inventory_events (sku_id, location_code, event_type, quantity, reference_type, reference_id, created_by)
+                  VALUES (${skuId}, ${locCode}, 'initial_seed', ${shopifyQty}, 'shopify_sync', ${String(level.inventory_item_id)}, 'sync')
+                `;
+                invSeeded++;
+              }
+            } else {
+              // RECONCILE: events exist — check if our total matches Shopify
+              const delta = shopifyQty - current.on_hand;
+              if (delta === 0) {
+                invOk++; // perfect match
+              } else {
+                // Drift detected — insert correction event
+                await sql`
+                  INSERT INTO inventory_events (sku_id, location_code, event_type, quantity, reference_type, reference_id, notes, created_by)
+                  VALUES (${skuId}, ${locCode}, 'reconciliation', ${delta}, 'shopify_sync', ${String(level.inventory_item_id)},
+                    ${'Shopify=' + shopifyQty + ' ERP=' + current.on_hand + ' delta=' + delta}, 'sync')
+                `;
+                invReconciled++;
+              }
+            }
           } catch (e) {
-            if (invSeeded === 0 && e.message.includes('does not exist')) {
+            if (invSeeded === 0 && invReconciled === 0 && e.message.includes('does not exist')) {
               log('sync.inventory.table_missing');
               break;
             }
           }
         }
 
-        if (invSeeded % 200 === 0 && invSeeded > 0) {
-          await setStatus(sql, { status: 'running', step: 'seeding_inventory', progress: `${invSeeded} events, ${locCode}` });
+        if ((invSeeded + invReconciled) % 200 === 0 && (invSeeded + invReconciled) > 0) {
+          await setStatus(sql, { status: 'running', step: 'inventory_reconciliation', progress: `${invSeeded} seeded, ${invReconciled} reconciled, ${locCode}` });
         }
       }
     } catch (e) {
       log('sync.inventory.error', { error: e.message.slice(0, 80) });
     }
     results.inventorySeeded = invSeeded;
-    results.inventorySkipped = invSkipped;
-    log('sync.inventory.done', { seeded: invSeeded, skipped: invSkipped });
+    results.inventoryReconciled = invReconciled;
+    results.inventoryOk = invOk;
+    log('sync.inventory.done', { seeded: invSeeded, reconciled: invReconciled, ok: invOk });
+
+    // Alert if reconciliation found significant drift
+    if (invReconciled > 0) {
+      const total = invSeeded + invReconciled + invOk;
+      const driftPct = total > 0 ? Math.round((invReconciled / total) * 100) : 0;
+      if (driftPct > 2) {
+        try {
+          await sql`INSERT INTO alerts (type, severity, title, message)
+            VALUES ('inventory_drift', ${driftPct > 10 ? 'critical' : 'warning'},
+              ${'Inventory drift: ' + invReconciled + ' SKU×locations corrected (' + driftPct + '%)'},
+              ${'Daily sync found ' + invReconciled + ' discrepancies between Shopify and ERP inventory. ' + invOk + ' matched. Check webhook reliability.'})`;
+        } catch { /* alerts table may not exist */ }
+      }
+    }
 
     // ── Step 5: Fetch orders (30 days) ──────────────────
     await setStatus(sql, { status: 'running', step: 'fetching_orders' });
