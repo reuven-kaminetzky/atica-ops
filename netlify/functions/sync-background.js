@@ -109,11 +109,12 @@ exports.handler = async function(event) {
     let mpsUpdated = 0;
     let mpsSkippedRace = 0;
     for (const [mpId, data] of Object.entries(mpMatches)) {
-      try {
+      try 
+      {await sql`UPDATE master_products SET external_ids = ${data.ids}, hero_image = ${data.img}, total_inventory = ${data.inv} WHERE id = ${mpId}`;
+const result = { id: mpId };
         // Always update Shopify linkage (external_ids, hero_image)
-        await sql`UPDATE master_products SET external_ids = ${data.ids}, hero_image = ${data.img} WHERE id = ${mpId}`;
         // Only update inventory if no webhook touched this MP since sync started
-        const [result] = await sql`UPDATE master_products SET total_inventory = ${data.inv} WHERE id = ${mpId} AND updated_at <= ${syncStartedAt}::timestamptz RETURNING id`;
+  
         if (result) {
           mpsUpdated++;
         } else {
