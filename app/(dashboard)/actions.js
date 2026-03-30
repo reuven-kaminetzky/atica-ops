@@ -396,3 +396,13 @@ export async function completeReceiving(receivingId, receivedItems, discrepancie
     return await logistics.receiving.complete(receivingId, receivedItems, discrepancies);
   } catch (e) { return { error: e.message }; }
 }
+
+export async function getTransfer(id) {
+  'use server';
+  try {
+    const { sql } = require('../../lib/dal/db');
+    const db = sql();
+    const [row] = await db`SELECT * FROM transfers WHERE id = ${id}`;
+    return row || null;
+  } catch (e) { return null; }
+}
