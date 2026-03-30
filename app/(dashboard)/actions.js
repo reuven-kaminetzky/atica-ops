@@ -349,6 +349,35 @@ export async function refreshStyleGrades() {
   } catch (e) { return { error: e.message }; }
 }
 
+// ── Stack Completeness (Sprint 4) ───────────────────────
+export async function getStackCompleteness(mpId) {
+  'use server';
+  try {
+    const p = product();
+    const mp = await p.getById(mpId);
+    if (!mp) return { error: 'MP not found' };
+    return p.computeCompleteness(mp.stack || {}, mp);
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function checkPOStackGate(poId) {
+  'use server';
+  try {
+    const p = product();
+    const s = sc();
+    const po = await s.po.getById(poId);
+    if (!po) return { error: 'PO not found' };
+    if (!po.mp_id) return { passed: true };
+    const mp = await p.getById(po.mp_id);
+    if (!mp) return { passed: true };
+    const stages = s.po.STAGES;
+    const currentIdx = stages.findIndex(st => st.name === po.stage);
+    const nextStage = stages[currentIdx + 1];
+    if (!nextStage) return { passed: true };
+    return p.checkStackGate(nextStage.name, mp.stack || {}, mp, po);
+  } catch (e) { return { error: e.message }; }
+}
+
 export async function getVendor(id) {
   'use server';
   try { return await dal().vendors.getById(id); }
