@@ -80,6 +80,9 @@ export default async function ProductDetailPage({ params }) {
             <span className="font-semibold">{pos.length}</span>
           </div>
         )}
+        <Link href={`/products/${mp.id}/inventory`} className="text-brand text-sm no-underline hover:underline ml-auto">
+          Stock matrix →
+        </Link>
       </div>
 
       {/* Collapsible sections */}

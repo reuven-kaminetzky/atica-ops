@@ -1,47 +1,35 @@
-import { getDbHealth, getOperationalSummary } from './actions';
+import { getDbHealth, getOperationalSummary, getAlerts } from './actions';
 import Link from 'next/link';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardHome() {
-  const [health, ops] = await Promise.all([
+  const [health, ops, dbAlerts] = await Promise.all([
     getDbHealth(),
     getOperationalSummary(),
+    getAlerts(20),
   ]);
 
   const inv     = ops?.inventory || {};
   const hasData = inv.linked_mps > 0;
 
-  // Compute alerts from existing operational data
-  const alerts = [];
-  for (const p of (ops?.paymentsDue || [])) {
-    if (p.status === 'overdue') {
-      alerts.push({
-        severity: 'critical',
-        message: `${p.vendor_name || p.po_id} — $${Number(p.amount || 0).toLocaleString()} overdue`,
-        href: '/cash-flow',
-      });
-    } else if (p.status === 'due') {
-      alerts.push({
-        severity: 'warning',
-        message: `${p.vendor_name || p.po_id} — $${Number(p.amount || 0).toLocaleString()} due`,
-        href: '/cash-flow',
-      });
+  // Use DB alerts if available, fall back to computed from operational data
+  let alerts = [];
+  if (dbAlerts.length > 0) {
+    alerts = dbAlerts.map(a => ({
+      severity: a.severity,
+      message: a.title + (a.message ? ` — ${a.message}` : ''),
+      href: a.action_url || '/',
+    }));
+  } else {
+    // Fallback: compute from operational summary until alerts table is seeded
+    for (const p of (ops?.paymentsDue || [])) {
+      if (p.status === 'overdue') alerts.push({ severity: 'critical', message: `${p.vendor_name || p.po_id} — $${Number(p.amount || 0).toLocaleString()} overdue`, href: '/cash-flow' });
+      else if (p.status === 'due') alerts.push({ severity: 'warning', message: `${p.vendor_name || p.po_id} — $${Number(p.amount || 0).toLocaleString()} due`, href: '/cash-flow' });
     }
-  }
-  for (const mp of (ops?.stockAlerts || [])) {
-    if ((parseInt(mp.total_inventory) || 0) === 0) {
-      alerts.push({
-        severity: 'critical',
-        message: `${mp.name} — out of stock`,
-        href: `/products/${mp.id}`,
-      });
-    } else if (parseInt(mp.days_of_stock) < 14) {
-      alerts.push({
-        severity: 'warning',
-        message: `${mp.name} — ${mp.days_of_stock}d cover`,
-        href: `/products/${mp.id}`,
-      });
+    for (const mp of (ops?.stockAlerts || [])) {
+      if ((parseInt(mp.total_inventory) || 0) === 0) alerts.push({ severity: 'critical', message: `${mp.name} — out of stock`, href: `/products/${mp.id}` });
+      else if (parseInt(mp.days_of_stock) < 14) alerts.push({ severity: 'warning', message: `${mp.name} — ${mp.days_of_stock}d cover`, href: `/products/${mp.id}` });
     }
   }
 
