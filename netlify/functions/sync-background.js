@@ -11,6 +11,13 @@
  */
 
 const { neon } = require('@netlify/neon');
+const { createClient } = require('../../lib/shopify');
+const { matchProduct, classifyDemand, adjustVelocity } = require('../../lib/products');
+const { REORDER_VELOCITY_DAYS, SEASONAL_MULTIPLIERS } = require('../../lib/constants');
+
+// Blobs are optional — may not be configured
+let getStore;
+try { getStore = require('@netlify/blobs').getStore; } catch { getStore = null; }
 
 // ── Status helper — writes to database (readable by Next.js routes) ──
 async function setStatus(sql, status) {
@@ -36,7 +43,6 @@ exports.handler = async function(event) {
     log('sync.started');
 
     // ── Connect to Shopify ─────────────────────────────
-    const { createClient } = require('../../lib/shopify');
     const client = await createClient();
     if (!client) {
       await setStatus(sql, { status: 'failed', error: 'Shopify not configured' });
@@ -52,7 +58,7 @@ exports.handler = async function(event) {
 
     // Cache the Shopify data in a blob (optional — Blobs may not be configured)
     try {
-      const { getStore } = require('@netlify/blobs');
+      if (!getStore) throw new Error('Blobs not available');
       const blobStore = getStore('sync');
       await blobStore.setJSON('shopify-products', {
         fetchedAt: new Date().toISOString(),
@@ -70,7 +76,6 @@ exports.handler = async function(event) {
 
     // ── Step 2: Match to MPs ───────────────────────────
     await setStatus(sql, { status: 'running', step: 'matching', products: products.length });
-    const { matchProduct, classifyDemand, adjustVelocity } = require('../../lib/products');
 
     const mpMatches = {};
     const unmatched = [];
@@ -299,7 +304,6 @@ exports.handler = async function(event) {
 
     // ── Step 5: Fetch orders (30 days) ──────────────────
     await setStatus(sql, { status: 'running', step: 'fetching_orders' });
-    const { REORDER_VELOCITY_DAYS, SEASONAL_MULTIPLIERS } = require('../../lib/constants');
     const since = new Date();
     since.setDate(since.getDate() - REORDER_VELOCITY_DAYS);
 
@@ -412,7 +416,7 @@ exports.handler = async function(event) {
 
     // Store history and unmatched in Blobs (optional)
     try {
-      const { getStore } = require('@netlify/blobs');
+      if (!getStore) throw new Error('Blobs not available');
       const blobStore = getStore('sync');
       const historyKey = `sync-history/${completedAt.slice(0, 10)}/${completedAt.slice(11, 19).replace(/:/g, '')}`;
       await blobStore.setJSON(historyKey, { completedAt, results });
