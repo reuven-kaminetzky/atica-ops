@@ -92,8 +92,13 @@ export default async function WarehousePage() {
             </thead>
             <tbody>
               {receivingQueue.map(r => (
-                <tr key={r.id} className="border-b border-border/50">
-                  <td className="py-2.5 pr-4 font-mono text-[12px]">{r.id}</td>
+                <tr key={r.id} className="border-b border-border/50 hover:bg-surface-sunken transition-colors">
+                  <td className="py-2.5 pr-4">
+                    <Link href={`/warehouse/receive/${r.id}`}
+                      className="text-brand no-underline hover:underline font-mono text-[12px]">
+                      {r.id}
+                    </Link>
+                  </td>
                   <td className="py-2.5 pr-4 text-text-secondary">{r.po_id || '—'}</td>
                   <td className="py-2.5 pr-4 text-text-secondary font-mono text-[12px]">{r.container || '—'}</td>
                   <td className={`py-2.5 ${r.status === 'in_progress' ? 'text-warning font-semibold' : 'text-text-tertiary'}`}>
