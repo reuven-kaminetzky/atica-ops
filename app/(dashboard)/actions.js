@@ -333,3 +333,18 @@ export async function getRevenueByChannel(days = 30) {
     return await dal().orders.getRevenueByChannel(days);
   } catch (e) { return []; }
 }
+
+// ── Intelligence Layer ──────────────────────────────────
+export async function getVendorScore(vendorId) {
+  'use server';
+  try {
+    return await dal().vendors.computeScore(vendorId);
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function refreshStyleGrades() {
+  'use server';
+  try {
+    return await dal().vendors.computeStyleGrades();
+  } catch (e) { return { error: e.message }; }
+}
