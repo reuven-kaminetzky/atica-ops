@@ -348,3 +348,9 @@ export async function refreshStyleGrades() {
     return await dal().vendors.computeStyleGrades();
   } catch (e) { return { error: e.message }; }
 }
+
+export async function getVendor(id) {
+  'use server';
+  try { return await dal().vendors.getById(id); }
+  catch (e) { return null; }
+}
