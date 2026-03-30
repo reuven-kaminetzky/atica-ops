@@ -15,6 +15,7 @@
 const crypto = require('crypto');
 const { json, cors } = require('../../lib/auth');
 const { neon } = require('@netlify/neon');
+const { matchProduct } = require('../../lib/products');
 
 function verify(rawBody, hmac) {
   const secret = process.env.SHOPIFY_WEBHOOK_SECRET;
@@ -77,7 +78,6 @@ exports.handler = async (event) => {
   }
 
   // ── Process by topic ──────────────────────────────────
-  const { matchProduct } = require('../../lib/products');
   const result = { received: true, topic };
 
   try {
