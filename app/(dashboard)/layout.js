@@ -14,7 +14,7 @@ const NAV = [
     { href: '/vendors', label: 'Vendors', icon: '⊞' },
     { href: '/cash-flow', label: 'Cash Flow', icon: '◈' },
     { href: '/warehouse', label: 'Warehouse', icon: '⊡' },
-    { href: '/store', label: 'Store', icon: '⊟' },
+    { href: '/transfers', label: 'Transfers', icon: '⇄' },
   ]},
   { section: 'RETAIL', items: [
     { href: '/store',     label: 'Store',     icon: '⊟' },

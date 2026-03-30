@@ -354,3 +354,45 @@ export async function getVendor(id) {
   try { return await dal().vendors.getById(id); }
   catch (e) { return null; }
 }
+
+// ── Transfers ─────────────────────────────────────────────
+export async function createTransfer(data) {
+  'use server';
+  try {
+    const logistics = require('../../lib/logistics');
+    return await logistics.transfer.create(data);
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function advanceTransfer(id, status, by) {
+  'use server';
+  try {
+    const logistics = require('../../lib/logistics');
+    return await logistics.transfer.advanceStatus(id, { status, by });
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function getAllTransfers() {
+  'use server';
+  try {
+    const logistics = require('../../lib/logistics');
+    return await logistics.transfer.getAll();
+  } catch (e) { return []; }
+}
+
+// ── PO Receiving ──────────────────────────────────────────
+export async function startReceiving(receivingId, receivedBy) {
+  'use server';
+  try {
+    const logistics = require('../../lib/logistics');
+    return await logistics.receiving.start(receivingId, receivedBy);
+  } catch (e) { return { error: e.message }; }
+}
+
+export async function completeReceiving(receivingId, receivedItems, discrepancies) {
+  'use server';
+  try {
+    const logistics = require('../../lib/logistics');
+    return await logistics.receiving.complete(receivingId, receivedItems, discrepancies);
+  } catch (e) { return { error: e.message }; }
+}
