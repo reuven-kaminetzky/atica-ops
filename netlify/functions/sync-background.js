@@ -241,8 +241,13 @@ exports.handler = async function(event) {
       log('sync.inventory.locations', { count: (shopifyLocations || []).length });
 
       const LOC_MAP = {
-        'lakewood': 'LKW', 'flatbush': 'FLT', 'crown heights': 'CRH',
-        'monsey': 'MNS', 'online': 'ONL', 'reserve': 'WH', 'warehouse': 'WH',
+        'lakewood': 'LKW', 'flagship': 'LKW',
+        'flatbush': 'FLT', 'avej': 'FLT', 'ave j': 'FLT', 'avenue j': 'FLT',
+        'crown heights': 'CRH',
+        'monsey': 'MNS',
+        'online': 'ONL',
+        'reserve': 'WH', 'warehouse': 'WH', 'main warehouse': 'WH',
+        'studio': 'WH',  // Studio (internal) → warehouse
       };
       function resolveLocationCode(name) {
         const lower = (name || '').toLowerCase();
