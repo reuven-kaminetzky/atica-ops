@@ -16,7 +16,10 @@ export async function POST(request) {
     if (!client) return NextResponse.json({ error: 'Shopify not configured' }, { status: 503 });
 
     const baseUrl = process.env.URL || 'https://atica-ops-v3.netlify.app';
-    const address = `${baseUrl}/api/webhooks/shopify`;
+    // Point webhooks directly to the Netlify function path.
+    // /api/webhooks/shopify redirects through the site password gate.
+    // /.netlify/functions/webhooks-shopify is the direct function invoke URL.
+    const address = `${baseUrl}/.netlify/functions/webhooks-shopify`;
 
     const topics = [
       'inventory_levels/update',
