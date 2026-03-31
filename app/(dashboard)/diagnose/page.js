@@ -11,14 +11,110 @@ export default function DiagnosePage() {
     setLog(prev => [...prev, `${new Date().toLocaleTimeString()} — ${msg}`]);
   }
 
+  async function fixEverything() {
+    setLoading('fix');
+    addLog('🔧 FIX EVERYTHING — running full pipeline...');
+    
+    // Step 1: Migrate
+    addLog('Step 1/4: Running migrations...');
+    try {
+      const r = await fetch('/api/migrate', { method: 'POST', headers: { 'X-Confirm-Destructive': 'true' } });
+      const d = await r.json();
+      if (d.error) { addLog(`⚠️ Migration: ${d.error}`); } 
+      else { addLog(`✅ Migrations: ${d.executed} statements, ${d.tables?.length || 0} tables`); }
+    } catch (e) { addLog(`❌ Migration failed: ${e.message}`); }
+
+    // Step 2: Seed
+    addLog('Step 2/4: Seeding products...');
+    try {
+      const r = await fetch('/api/seed', { method: 'POST', headers: { 'X-Confirm-Destructive': 'true' } });
+      const d = await r.json();
+      if (d.seeded) { addLog(`✅ Seed: ${d.products} products, ${d.vendors} vendors`); }
+      else { addLog(`⚠️ Seed: ${d.error || 'unknown'}`); }
+    } catch (e) { addLog(`❌ Seed failed: ${e.message}`); }
+
+    // Step 3: Sync
+    addLog('Step 3/4: Syncing from Shopify...');
+    try {
+      await fetch('/api/sync/trigger', { method: 'POST' });
+      try {
+        await fetch('/.netlify/functions/sync-background', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: '{"triggeredBy":"fix-everything"}',
+        });
+      } catch { /* 202 */ }
+      
+      // Poll
+      let done = false;
+      for (let i = 0; i < 60 && !done; i++) {
+        await new Promise(r => setTimeout(r, 5000));
+        try {
+          const s = await fetch('/api/sync/status').then(r => r.json());
+          addLog(`  Sync: ${s.step || s.status} ${s.progress || ''}`);
+          if (s.status === 'done') {
+            done = true;
+            const r = s.results || {};
+            addLog(`✅ Sync complete: ${r.matched || 0} matched, ${r.stylesCreated || 0} styles, ${r.salesStored || 0} sales`);
+          } else if (s.status === 'failed') {
+            done = true;
+            addLog(`❌ Sync failed: ${s.error || 'unknown'}`);
+          }
+        } catch { }
+      }
+      if (!done) addLog('⚠️ Sync still running — check back in a minute');
+    } catch (e) { addLog(`❌ Sync failed: ${e.message}`); }
+
+    // Step 4: Register webhooks
+    addLog('Step 4/4: Registering webhooks...');
+    try {
+      const r = await fetch('/api/webhooks/register', { method: 'POST' });
+      const d = await r.json();
+      if (d.registered) { addLog(`✅ Webhooks registered at ${d.address}`); }
+      else { addLog(`⚠️ Webhooks: ${d.error || 'unknown'}`); }
+    } catch (e) { addLog(`⚠️ Webhooks: ${e.message}`); }
+
+    addLog('🏁 DONE — go to /products to see your data');
+    setLoading('');
+  }
+
   async function diagnose() {
     setLoading('diagnose');
     addLog('Checking database...');
     try {
-      const r = await fetch('/api/verify');
+      const r = await fetch('/api/diagnose');
       const d = await r.json();
       setStatus(d);
-      addLog(`Done. ${d.stats?.masterProducts || 0} MPs, ${d.issues?.length || 0} issues`);
+      const c = d.checks || {};
+      
+      // Show key findings
+      if (c.mp_count !== undefined) addLog(`Master Products: ${c.mp_count}`);
+      if (c.ids_column) addLog(`IDs column: ${c.ids_column}`);
+      if (c.ids_populated) addLog(`Linked to Shopify: ${c.ids_populated}`);
+      if (c.styles_count !== undefined) addLog(`Styles: ${c.styles_count}`);
+      if (c.sales_count !== undefined) addLog(`Sales records: ${c.sales_count}`);
+      if (c.vendors_count !== undefined) addLog(`Vendors: ${c.vendors_count}`);
+      
+      if (c.missing_tables?.length > 0) {
+        addLog(`⚠️ MISSING TABLES: ${c.missing_tables.join(', ')}`);
+        addLog('→ Tap "Run All Migrations" to fix');
+      } else if (c.has_all_tables) {
+        addLog('✅ All tables exist');
+      }
+      
+      if (typeof c.ids_column === 'string' && c.ids_column.includes('NOT run')) {
+        addLog('⚠️ Column rename migration not run — sync writes to wrong column!');
+        addLog('→ Tap "Run All Migrations" to fix');
+      }
+      
+      if (c.sync_status && typeof c.sync_status === 'object') {
+        addLog(`Last sync: ${c.sync_status.status} at ${c.sync_status.updatedAt || '?'}`);
+        if (c.sync_status.results) {
+          const r = c.sync_status.results;
+          addLog(`  Matched: ${r.matched || 0}, Styles: ${r.stylesCreated || 0}, Sales: ${r.salesStored || 0}`);
+        }
+      }
+      
+      if (d.error) addLog(`❌ ${d.error}`);
     } catch (e) {
       addLog(`Error: ${e.message}`);
     }
@@ -27,21 +123,29 @@ export default function DiagnosePage() {
 
   async function runMigrations() {
     setLoading('migrate');
-    addLog('Running ALL migrations...');
+    addLog('Running ALL migrations (12 files)...');
     try {
       const r = await fetch('/api/migrate', {
         method: 'POST',
         headers: { 'X-Confirm-Destructive': 'true' },
       });
       const d = await r.json();
-      addLog(`Migrations done: ${d.executed || 0} statements, ${d.errors?.length || 0} errors`);
-      if (d.tables) addLog(`Tables: ${d.tables.join(', ')}`);
-      if (d.errors?.length > 0) {
-        d.errors.slice(0, 5).forEach(e => addLog(`  ⚠ ${e.file}: ${e.error}`));
+      if (d.error) {
+        addLog(`❌ Migration error: ${d.error}`);
+        if (d.warning) addLog(d.warning);
+        return;
       }
-      setStatus(prev => ({ ...prev, migration: d }));
+      addLog(`✅ Migrations done: ${d.executed || 0} statements across ${(d.files || []).length} files`);
+      if (d.tables) addLog(`Tables now: ${d.tables.join(', ')}`);
+      if (d.errors?.length > 0) {
+        addLog(`⚠️ ${d.errors.length} non-fatal errors:`);
+        d.errors.slice(0, 5).forEach(e => addLog(`  ${e.file}: ${e.error}`));
+      } else {
+        addLog('No errors!');
+      }
+      addLog('→ Now tap "Check Database" to verify, then "Sync from Shopify"');
     } catch (e) {
-      addLog(`Migration error: ${e.message}`);
+      addLog(`❌ Migration failed: ${e.message}`);
     }
     setLoading('');
   }
@@ -140,6 +244,10 @@ export default function DiagnosePage() {
       <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>Atica OPS — Diagnostics</h1>
       
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+        <BigBtn onClick={fixEverything} loading={loading === 'fix'} color="#dc2626">
+          🔧 FIX EVERYTHING (migrate → seed → sync → webhooks)
+        </BigBtn>
+        <div style={{ height: '8px' }} />
         <BigBtn onClick={diagnose} loading={loading === 'diagnose'} color="#3b82f6">
           1. Check Database
         </BigBtn>
@@ -167,21 +275,14 @@ export default function DiagnosePage() {
         {log.map((l, i) => <div key={i}>{l}</div>)}
       </div>
 
-      {/* Quick stats if we have them */}
-      {status?.stats && (
-        <div style={{ marginTop: '16px', padding: '12px', background: '#f8f8f8', borderRadius: '8px', fontSize: '14px' }}>
-          <div><strong>Master Products:</strong> {status.stats.masterProducts}</div>
-          <div><strong>Linked to Shopify:</strong> {status.stats.linkedToShopify} ({status.stats.linkedPct}%)</div>
-          <div><strong>With Images:</strong> {status.stats.withImages}</div>
-          <div><strong>Styles:</strong> {status.stats.styles}</div>
-          <div><strong>Sales:</strong> {status.stats.sales}</div>
-          {status.issues?.length > 0 && (
-            <div style={{ marginTop: '8px', color: '#dc2626' }}>
-              <strong>Issues:</strong>
-              {status.issues.map((i, idx) => <div key={idx}>• {i.message}</div>)}
-            </div>
-          )}
-        </div>
+      {/* Raw data dump if available */}
+      {status?.checks && (
+        <details style={{ marginTop: '16px' }}>
+          <summary style={{ cursor: 'pointer', fontSize: '14px', color: '#666' }}>Raw diagnostics</summary>
+          <pre style={{ fontSize: '11px', background: '#f5f5f5', padding: '8px', borderRadius: '6px', overflow: 'auto', maxHeight: '300px' }}>
+            {JSON.stringify(status.checks, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );
