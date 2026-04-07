@@ -199,9 +199,11 @@ export async function updateStack(mpId, updates) {
 export async function getProductList() {
   'use server';
   try {
-    const product = require('../../lib/product');
-    const products = await product.getAll();
-    return products.map(p => ({ id: p.id, name: p.name, category: p.category, code: p.code, fob: p.fob, retail: p.retail, duty: p.duty, hts: p.hts, lead_days: p.lead_days, moq: p.moq, vendor_id: p.vendor_id }));
+    const { sql } = require('../../lib/dal/db');
+    const db = sql();
+    return await db`SELECT id, name, category, code, fob, retail, hero_image, 
+      total_inventory, velocity_per_week, days_of_stock, signal, vendor_id, phase
+      FROM master_products ORDER BY category, name`;
   } catch (e) { return []; }
 }
 
