@@ -1,311 +1,212 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 export default function DiagnosePage() {
-  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState('');
   const [log, setLog] = useState([]);
+  const logRef = useRef(null);
 
-  function addLog(msg) {
-    setLog(prev => [...prev, `${new Date().toLocaleTimeString()} — ${msg}`]);
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [log]);
+
+  function add(msg) {
+    setLog(prev => [...prev, `${new Date().toLocaleTimeString()} ${msg}`]);
+  }
+
+  async function api(path, method = 'GET', headers = {}) {
+    const r = await fetch(path, { method, headers });
+    return r.json();
   }
 
   async function fixEverything() {
     setLoading('fix');
-    addLog('🔧 FIX EVERYTHING — running full pipeline...');
-    
-    // Step 1: Migrate
-    addLog('Step 1/4: Running migrations...');
-    try {
-      const r = await fetch('/api/migrate', { method: 'POST', headers: { 'X-Confirm-Destructive': 'true' } });
-      const d = await r.json();
-      if (d.error) { addLog(`⚠️ Migration: ${d.error}`); } 
-      else { addLog(`✅ Migrations: ${d.executed} statements, ${d.tables?.length || 0} tables`); }
-    } catch (e) { addLog(`❌ Migration failed: ${e.message}`); }
+    setLog([]);
+    add('🔧 STARTING FULL PIPELINE...');
+    add('');
 
-    // Step 2: Seed
-    addLog('Step 2/4: Seeding products...');
+    // ── STEP 1: MIGRATE ──
+    add('━━━ STEP 1: DATABASE MIGRATIONS ━━━');
     try {
-      const r = await fetch('/api/seed', { method: 'POST', headers: { 'X-Confirm-Destructive': 'true' } });
-      const d = await r.json();
-      if (d.seeded) { addLog(`✅ Seed: ${d.products} products, ${d.vendors} vendors`); }
-      else { addLog(`⚠️ Seed: ${d.error || 'unknown'}`); }
-    } catch (e) { addLog(`❌ Seed failed: ${e.message}`); }
-
-    // Step 3: Sync
-    addLog('Step 3/4: Syncing from Shopify...');
-    try {
-      await fetch('/api/sync/trigger', { method: 'POST' });
-      try {
-        await fetch('/.netlify/functions/sync-background', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: '{"triggeredBy":"fix-everything"}',
-        });
-      } catch { /* 202 */ }
-      
-      // Poll
-      let done = false;
-      for (let i = 0; i < 60 && !done; i++) {
-        await new Promise(r => setTimeout(r, 5000));
-        try {
-          const s = await fetch('/api/sync/status').then(r => r.json());
-          addLog(`  Sync: ${s.step || s.status} ${s.progress || ''}`);
-          if (s.status === 'done') {
-            done = true;
-            const r = s.results || {};
-            addLog(`✅ Sync complete: ${r.matched || 0} matched, ${r.stylesCreated || 0} styles, ${r.salesStored || 0} sales`);
-          } else if (s.status === 'failed') {
-            done = true;
-            addLog(`❌ Sync failed: ${s.error || 'unknown'}`);
-          }
-        } catch { }
-      }
-      if (!done) addLog('⚠️ Sync still running — check back in a minute');
-    } catch (e) { addLog(`❌ Sync failed: ${e.message}`); }
-
-    // Step 4: Register webhooks
-    addLog('Step 4/4: Registering webhooks...');
-    try {
-      const r = await fetch('/api/webhooks/register', { method: 'POST' });
-      const d = await r.json();
-      if (d.registered) { addLog(`✅ Webhooks registered at ${d.address}`); }
-      else { addLog(`⚠️ Webhooks: ${d.error || 'unknown'}`); }
-    } catch (e) { addLog(`⚠️ Webhooks: ${e.message}`); }
-
-    addLog('🏁 DONE — go to /products to see your data');
-    setLoading('');
-  }
-
-  async function diagnose() {
-    setLoading('diagnose');
-    addLog('Checking database...');
-    try {
-      const r = await fetch('/api/diagnose');
-      const d = await r.json();
-      setStatus(d);
-      const c = d.checks || {};
-      
-      // Show key findings
-      if (c.mp_count !== undefined) addLog(`Master Products: ${c.mp_count}`);
-      if (c.ids_column) addLog(`IDs column: ${c.ids_column}`);
-      if (c.ids_populated) addLog(`Linked to Shopify: ${c.ids_populated}`);
-      if (c.styles_count !== undefined) addLog(`Styles: ${c.styles_count}`);
-      if (c.sales_count !== undefined) addLog(`Sales records: ${c.sales_count}`);
-      if (c.vendors_count !== undefined) addLog(`Vendors: ${c.vendors_count}`);
-      
-      if (c.missing_tables?.length > 0) {
-        addLog(`⚠️ MISSING TABLES: ${c.missing_tables.join(', ')}`);
-        addLog('→ Tap "Run All Migrations" to fix');
-      } else if (c.has_all_tables) {
-        addLog('✅ All tables exist');
-      }
-      
-      if (typeof c.ids_column === 'string' && c.ids_column.includes('NOT run')) {
-        addLog('⚠️ Column rename migration not run — sync writes to wrong column!');
-        addLog('→ Tap "Run All Migrations" to fix');
-      }
-      
-      if (c.sync_status && typeof c.sync_status === 'object') {
-        addLog(`Last sync: ${c.sync_status.status} at ${c.sync_status.updatedAt || '?'}`);
-        if (c.sync_status.results) {
-          const r = c.sync_status.results;
-          addLog(`  Matched: ${r.matched || 0}, Styles: ${r.stylesCreated || 0}, Sales: ${r.salesStored || 0}`);
+      const d = await api('/api/migrate', 'POST', { 'X-Confirm-Destructive': 'true' });
+      if (d.error) {
+        add(`❌ ${d.error}`);
+        if (d.warning) add(`   ${d.warning}`);
+      } else {
+        add(`✅ ${d.executed} SQL statements executed`);
+        add(`   ${d.tables?.length || 0} tables now exist`);
+        add(`   ${d.mpCount || 0} master products in DB`);
+        add(`   IDs column: ${d.idsColumn || 'unknown'}`);
+        if (d.errors?.length > 0) {
+          add(`   ⚠️ ${d.errors.length} non-fatal errors`);
+          d.errors.slice(0, 3).forEach(e => add(`     ${e.file}: ${e.error}`));
         }
       }
-      
-      if (d.error) addLog(`❌ ${d.error}`);
-    } catch (e) {
-      addLog(`Error: ${e.message}`);
-    }
-    setLoading('');
-  }
+    } catch (e) { add(`❌ Migration failed: ${e.message}`); }
+    add('');
 
-  async function runMigrations() {
-    setLoading('migrate');
-    addLog('Running ALL migrations (12 files)...');
+    // ── STEP 2: SEED ──
+    add('━━━ STEP 2: SEED PRODUCTS ━━━');
     try {
-      const r = await fetch('/api/migrate', {
-        method: 'POST',
-        headers: { 'X-Confirm-Destructive': 'true' },
-      });
-      const d = await r.json();
-      if (d.error) {
-        addLog(`❌ Migration error: ${d.error}`);
-        if (d.warning) addLog(d.warning);
-        return;
-      }
-      addLog(`✅ Migrations done: ${d.executed || 0} statements across ${(d.files || []).length} files`);
-      if (d.tables) addLog(`Tables now: ${d.tables.join(', ')}`);
-      if (d.errors?.length > 0) {
-        addLog(`⚠️ ${d.errors.length} non-fatal errors:`);
-        d.errors.slice(0, 5).forEach(e => addLog(`  ${e.file}: ${e.error}`));
+      const d = await api('/api/seed', 'POST', { 'X-Confirm-Destructive': 'true' });
+      if (d.seeded) {
+        add(`✅ ${d.products} master products, ${d.vendors} vendors, ${d.stacks} stacks`);
       } else {
-        addLog('No errors!');
+        add(`❌ Seed failed: ${d.error || JSON.stringify(d)}`);
       }
-      addLog('→ Now tap "Check Database" to verify, then "Sync from Shopify"');
-    } catch (e) {
-      addLog(`❌ Migration failed: ${e.message}`);
-    }
-    setLoading('');
-  }
+    } catch (e) { add(`❌ Seed failed: ${e.message}`); }
+    add('');
 
-  async function runSeed() {
-    setLoading('seed');
-    addLog('Seeding 41 MPs + 10 vendors...');
+    // ── STEP 3: SYNC ──
+    add('━━━ STEP 3: SYNC FROM SHOPIFY ━━━');
     try {
-      const r = await fetch('/api/seed', {
-        method: 'POST',
-        headers: { 'X-Confirm-Destructive': 'true' },
-      });
-      const d = await r.json();
-      addLog(`Seed: ${d.seeded ? 'OK' : 'FAILED'} — ${d.products || 0} products, ${d.vendors || 0} vendors`);
-    } catch (e) {
-      addLog(`Seed error: ${e.message}`);
-    }
-    setLoading('');
-  }
+      // Set status via trigger
+      const trigger = await api('/api/sync/trigger', 'POST');
+      add(`Trigger: ${trigger.message || trigger.error || 'OK'}`);
 
-  async function runSync() {
-    setLoading('sync');
-    addLog('Triggering sync...');
-    try {
-      // Set status
-      await fetch('/api/sync/trigger', { method: 'POST' });
-      addLog('Trigger OK. Calling background function...');
-      
-      // Call background function directly
+      // Call background function directly (bypasses site password)
+      add('Calling background sync function...');
       try {
         await fetch('/.netlify/functions/sync-background', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ triggeredBy: 'diagnose' }),
+          body: JSON.stringify({ triggeredBy: 'fix-everything' }),
         });
-      } catch { /* background returns 202 */ }
-      
-      addLog('Sync started. Polling...');
-      
+      } catch { /* 202 accepted */ }
+
       // Poll for completion
-      let attempts = 0;
-      const poll = setInterval(async () => {
-        attempts++;
+      add('Polling for completion (this takes 1-3 minutes)...');
+      let done = false;
+      let lastStep = '';
+      for (let i = 0; i < 60 && !done; i++) {
+        await new Promise(r => setTimeout(r, 5000));
         try {
-          const s = await fetch('/api/sync/status').then(r => r.json());
-          const step = s.step || s.status || 'unknown';
+          const s = await api('/api/sync/status');
+          const step = s.step || s.status || '?';
           const progress = s.progress || '';
-          addLog(`Sync: ${step} ${progress}`);
-          
+          if (step !== lastStep) {
+            add(`  → ${step} ${progress}`);
+            lastStep = step;
+          }
           if (s.status === 'done') {
-            clearInterval(poll);
-            setLoading('');
-            addLog(`✅ SYNC COMPLETE — matched: ${s.results?.matched || '?'}, styles: ${s.results?.stylesCreated || '?'}, sales: ${s.results?.salesStored || '?'}`);
-            if (s.results?.optionPatterns) {
-              addLog(`Option patterns: ${JSON.stringify(s.results.optionPatterns)}`);
+            done = true;
+            const r = s.results || {};
+            add(`✅ SYNC COMPLETE`);
+            add(`   Matched: ${r.matched || 0} products to MPs`);
+            add(`   Unmatched: ${r.unmatched || 0}`);
+            add(`   Styles created: ${r.stylesCreated || 0}`);
+            add(`   Sales stored: ${r.salesStored || 0}`);
+            add(`   MPs updated: ${r.mpsUpdated || 0}`);
+            add(`   Velocity updated: ${r.velocityUpdated || 0}`);
+            if (r.optionPatterns) {
+              add(`   Option patterns found:`);
+              for (const [k, v] of Object.entries(r.optionPatterns)) {
+                add(`     [${k}] × ${v}`);
+              }
             }
           } else if (s.status === 'failed') {
-            clearInterval(poll);
-            setLoading('');
-            addLog(`❌ SYNC FAILED: ${s.error || 'unknown'}`);
+            done = true;
+            add(`❌ SYNC FAILED: ${s.error || 'unknown'}`);
           }
-        } catch (e) {
-          addLog(`Poll error: ${e.message}`);
-        }
-        if (attempts > 60) { // 5 min max
-          clearInterval(poll);
-          setLoading('');
-          addLog('Polling timed out after 5 min');
-        }
-      }, 5000);
-    } catch (e) {
-      addLog(`Sync error: ${e.message}`);
-      setLoading('');
-    }
+        } catch (e) { /* keep polling */ }
+      }
+      if (!done) add('⏳ Sync still running — check back in a minute');
+    } catch (e) { add(`❌ Sync failed: ${e.message}`); }
+    add('');
+
+    // ── STEP 4: WEBHOOKS ──
+    add('━━━ STEP 4: REGISTER WEBHOOKS ━━━');
+    try {
+      const d = await api('/api/webhooks/register', 'POST');
+      if (d.registered) {
+        add(`✅ Webhooks registered at:`);
+        add(`   ${d.address}`);
+        d.results?.forEach(w => add(`   ${w.topic}: ${w.status}`));
+      } else {
+        add(`⚠️ ${d.error || JSON.stringify(d)}`);
+      }
+    } catch (e) { add(`⚠️ Webhooks: ${e.message}`); }
+    add('');
+
+    // ── STEP 5: VERIFY ──
+    add('━━━ STEP 5: VERIFY ━━━');
+    try {
+      const d = await api('/api/diagnose');
+      const c = d.checks || {};
+      add(`Master Products: ${c.mp_count}`);
+      add(`IDs column: ${c.ids_column}`);
+      add(`Linked to Shopify: ${c.ids_populated}`);
+      add(`Styles: ${c.styles_count}`);
+      add(`Sales: ${c.sales_count}`);
+      if (c.missing_tables?.length > 0) {
+        add(`⚠️ Missing tables: ${c.missing_tables.join(', ')}`);
+      } else {
+        add(`✅ All expected tables exist`);
+      }
+      if (c.mp_sample?.length > 0) {
+        add('Sample products:');
+        c.mp_sample.forEach(p => add(`  ${p.name}: stock=${p.total_inventory}, img=${p.has_image}`));
+      }
+    } catch (e) { add(`Verify: ${e.message}`); }
+    add('');
+    add('🏁 DONE. Go to /products to see your data.');
+
+    setLoading('');
   }
 
-  async function registerWebhooks() {
-    setLoading('webhooks');
-    addLog('Registering webhooks...');
+  async function checkOnly() {
+    setLoading('check');
+    setLog([]);
+    add('Checking database...');
     try {
-      const r = await fetch('/api/webhooks/register', { method: 'POST' });
-      const d = await r.json();
-      addLog(`Webhooks: ${d.registered ? 'OK' : 'FAILED'}`);
-      if (d.results) {
-        d.results.forEach(w => addLog(`  ${w.topic}: ${w.status}`));
-      }
-      if (d.error) addLog(`Error: ${d.error}`);
-    } catch (e) {
-      addLog(`Webhook error: ${e.message}`);
-    }
+      const d = await api('/api/diagnose');
+      const c = d.checks || {};
+      add(`Tables: ${Array.isArray(c.tables) ? c.tables.join(', ') : c.tables}`);
+      add(`MP columns: ${Array.isArray(c.mp_columns) ? c.mp_columns.join(', ') : c.mp_columns}`);
+      add(`MPs: ${c.mp_count}`);
+      add(`IDs: ${c.ids_column}`);
+      add(`Shopify linked: ${c.ids_populated}`);
+      add(`Styles: ${c.styles_count}`);
+      add(`Sales: ${c.sales_count}`);
+      add(`Vendors: ${c.vendors_count}`);
+      add(`Missing tables: ${c.missing_tables?.length ? c.missing_tables.join(', ') : 'none'}`);
+      if (c.sync_status) add(`Sync: ${JSON.stringify(c.sync_status).slice(0, 200)}`);
+      if (c.mp_sample) c.mp_sample.forEach(p => add(`  ${p.name}: inv=${p.total_inventory} img=${p.has_image}`));
+    } catch (e) { add(`Error: ${e.message}`); }
     setLoading('');
   }
 
   return (
     <div style={{ padding: '16px', fontFamily: 'system-ui', maxWidth: '600px', margin: '0 auto' }}>
-      <h1 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '16px' }}>Atica OPS — Diagnostics</h1>
+      <h1 style={{ fontSize: '22px', fontWeight: 'bold', marginBottom: '4px' }}>Diagnostics</h1>
+      <p style={{ fontSize: '13px', color: '#888', marginBottom: '16px' }}>
+        Fix Everything runs: migrations → seed → sync → webhooks → verify
+      </p>
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-        <BigBtn onClick={fixEverything} loading={loading === 'fix'} color="#dc2626">
-          🔧 FIX EVERYTHING (migrate → seed → sync → webhooks)
-        </BigBtn>
-        <div style={{ height: '8px' }} />
-        <BigBtn onClick={diagnose} loading={loading === 'diagnose'} color="#3b82f6">
-          1. Check Database
-        </BigBtn>
-        <BigBtn onClick={runMigrations} loading={loading === 'migrate'} color="#8b5cf6">
-          2. Run All Migrations
-        </BigBtn>
-        <BigBtn onClick={runSeed} loading={loading === 'seed'} color="#f59e0b">
-          3. Seed Products (41 MPs)
-        </BigBtn>
-        <BigBtn onClick={runSync} loading={loading === 'sync'} color="#10b981">
-          4. Sync from Shopify
-        </BigBtn>
-        <BigBtn onClick={registerWebhooks} loading={loading === 'webhooks'} color="#6366f1">
-          5. Register Webhooks
-        </BigBtn>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+        <button onClick={fixEverything} disabled={!!loading}
+          style={{ padding: '18px', fontSize: '18px', fontWeight: 'bold', color: 'white',
+            background: loading ? '#999' : '#dc2626', border: 'none', borderRadius: '12px',
+            cursor: loading ? 'wait' : 'pointer' }}>
+          {loading === 'fix' ? '⏳ Working...' : '🔧 FIX EVERYTHING'}
+        </button>
+        <button onClick={checkOnly} disabled={!!loading}
+          style={{ padding: '12px', fontSize: '14px', fontWeight: '600', color: 'white',
+            background: loading ? '#999' : '#3b82f6', border: 'none', borderRadius: '10px',
+            cursor: loading ? 'wait' : 'pointer' }}>
+          {loading === 'check' ? '⏳ Checking...' : '🔍 Check Database Only'}
+        </button>
       </div>
 
-      {/* Live log */}
-      <div style={{ 
-        background: '#111', color: '#0f0', padding: '12px', borderRadius: '8px',
-        fontSize: '13px', fontFamily: 'monospace', maxHeight: '400px', overflowY: 'auto',
-        lineHeight: '1.6'
+      <div ref={logRef} style={{ 
+        background: '#0a0a0a', color: '#22c55e', padding: '12px', borderRadius: '10px',
+        fontSize: '12px', fontFamily: 'monospace', maxHeight: '500px', overflowY: 'auto',
+        lineHeight: '1.7', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
       }}>
-        {log.length === 0 && <span style={{ color: '#555' }}>Tap a button above to start...</span>}
+        {log.length === 0 && <span style={{ color: '#444' }}>Tap a button to start...</span>}
         {log.map((l, i) => <div key={i}>{l}</div>)}
       </div>
-
-      {/* Raw data dump if available */}
-      {status?.checks && (
-        <details style={{ marginTop: '16px' }}>
-          <summary style={{ cursor: 'pointer', fontSize: '14px', color: '#666' }}>Raw diagnostics</summary>
-          <pre style={{ fontSize: '11px', background: '#f5f5f5', padding: '8px', borderRadius: '6px', overflow: 'auto', maxHeight: '300px' }}>
-            {JSON.stringify(status.checks, null, 2)}
-          </pre>
-        </details>
-      )}
     </div>
-  );
-}
-
-function BigBtn({ onClick, loading, color, children }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      style={{
-        padding: '16px 20px',
-        fontSize: '16px',
-        fontWeight: '600',
-        color: 'white',
-        background: loading ? '#999' : color,
-        border: 'none',
-        borderRadius: '10px',
-        cursor: loading ? 'wait' : 'pointer',
-        opacity: loading ? 0.7 : 1,
-      }}
-    >
-      {loading ? 'Working...' : children}
-    </button>
   );
 }
