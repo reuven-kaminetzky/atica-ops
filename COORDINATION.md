@@ -9,26 +9,31 @@
 ## 1. SETUP (run this first)
 
 ```bash
-git clone https://github.com/reuven-kaminetzky/atica-ops.git
-cd atica-ops
-npm install
-node test.js          # expect 96+ passed, 0 failed
+git clone https://<GITHUB_PAT>@github.com/reuven-kaminetzky/atica-ops.git
+cd atica-ops && npm install
+
+export DATABASE_URL="postgresql://neondb_owner:<NEON_PASSWORD>@ep-spring-resonance-ajszcm1m-pooler.c-3.us-east-2.aws.neon.tech/neondb?sslmode=require"
+export SHOPIFY_ACCESS_TOKEN="<SHOPIFY_TOKEN>"
+export SHOPIFY_STORE_URL="atica-brand.myshopify.com"
+export ATICA_API_KEY="atica-admin-2026-ops"
+
+node test.js          # expect 89+ passed, 0 failed
 npx next build        # expect 'Compiled successfully'
 cat COORDINATION.md   # find your name, read your tasks
 ```
 
-If git asks for auth, use PAT: `<ask Reuven for PAT>`
-
 **Before every push:**
 ```bash
-git pull origin main
-node test.js
-npx next build
-git add -A && git diff --cached --stat
-git commit -m "one purpose per commit"
-git push origin main
+git pull origin main && node test.js && npx next build && git push origin main
 ```
 If push rejected: `git pull origin main --rebase && git push origin main`
+
+**CRITICAL FIRST TASK FOR ANY NEW SESSION:**
+Run all 13 migrations against the database. This is the #1 blocker.
+See supabase/migrations/ — run them in order 001 through 013.
+
+**Diagnose page:** https://atica-ops-v3.netlify.app/diagnose (pw: atica2026ops)
+Tap "Fix Everything" to run migrations + seed + sync + webhooks from the browser.
 
 ---
 
