@@ -101,33 +101,33 @@ exports.handler = async function(event) {
     log('sync.matched', { matched: totalMatched, unmatched: unmatched.length, mps: Object.keys(mpMatches).length });
 
     // ── Step 3: Update master_products ──────────────────
-    // Race guard: only update total_inventory if the row hasn't been
-    // modified since sync started (e.g., by a webhook). external_ids
-    // and hero_image are always safe to overwrite.
     await setStatus(sql, { status: 'running', step: 'updating_mps', matched: totalMatched });
-    const syncStartedAt = new Date(started).toISOString();
+    
+    // Detect column name: external_ids (post-migration 005) or shopify_product_ids (pre)
+    let idsCol = 'external_ids';
+    try {
+      await sql`SELECT external_ids FROM master_products LIMIT 1`;
+    } catch {
+      idsCol = 'shopify_product_ids';
+      log('sync.column_fallback', { using: idsCol });
+    }
+
     let mpsUpdated = 0;
-    let mpsSkippedRace = 0;
     for (const [mpId, data] of Object.entries(mpMatches)) {
-      try 
-      {await sql`UPDATE master_products SET external_ids = ${data.ids}, hero_image = ${data.img}, total_inventory = ${data.inv} WHERE id = ${mpId}`;
-const result = { id: mpId };
-        // Always update Shopify linkage (external_ids, hero_image)
-        // Only update inventory if no webhook touched this MP since sync started
-  
-        if (result) {
-          mpsUpdated++;
+      try {
+        if (idsCol === 'external_ids') {
+          await sql`UPDATE master_products SET external_ids = ${data.ids}, hero_image = ${data.img}, total_inventory = ${data.inv} WHERE id = ${mpId}`;
         } else {
-          mpsSkippedRace++;
-          log('sync.mp.race_skip', { mpId, reason: 'updated_at newer than sync start' });
+          await sql`UPDATE master_products SET shopify_product_ids = ${data.ids}, hero_image = ${data.img}, total_inventory = ${data.inv} WHERE id = ${mpId}`;
         }
+        mpsUpdated++;
       } catch (e) {
         log('sync.mp.error', { mpId, error: e.message.slice(0, 80) });
       }
     }
     results.mpsUpdated = mpsUpdated;
-    results.mpsSkippedRace = mpsSkippedRace;
-    log('sync.mps.updated', { count: mpsUpdated });
+    results.idsColumn = idsCol;
+    log('sync.mps.updated', { count: mpsUpdated, idsCol });
 
     // ── Step 4: Upsert styles (batch) ───────────────────
     await setStatus(sql, { status: 'running', step: 'creating_styles', matched: totalMatched });
